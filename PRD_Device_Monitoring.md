@@ -414,38 +414,38 @@ Teknisi melihat device akan dimatikan untuk maintenance
 ## 11. Milestone & Fase Pengembangan
 
 ### Fase 1 — Core Foundation (Minggu 1–3)
-- [ ] Setup project Node.js + Express + SQLite
-- [ ] Setup Windows Service (node-windows / nssm)
-- [ ] Sistem autentikasi (login, sesi, role)
-- [ ] Engine monitoring: ICMP Ping
-- [ ] API endpoint status device
-- [ ] Dashboard dasar (card view + status real-time)
+- [x] Setup project Node.js + Express + SQLite
+- [x] Setup Windows Service (node-windows / nssm)
+- [x] Sistem autentikasi (login, sesi, role)
+- [x] Engine monitoring: ICMP Ping
+- [x] API endpoint status device
+- [x] Dashboard dasar (card view + status real-time)
 
 ### Fase 2 — Fitur Utama (Minggu 4–6)
-- [ ] CRUD manajemen device di CMS
-- [ ] Sistem log lengkap (3 jenis log)
-- [ ] Push notification browser
-- [ ] Maintenance Mode
-- [ ] Filter & pencarian log
+- [x] CRUD manajemen device di CMS
+- [x] Sistem log lengkap (3 jenis log)
+- [x] Push notification browser
+- [x] Maintenance Mode
+- [x] Filter & pencarian log
 
 ### Fase 3 — Protokol Lanjutan (Minggu 7–8)
-- [ ] Integrasi ISAPI Hikvision
-- [ ] RTSP stream check
-- [ ] ONVIF support
-- [ ] Import device dari CSV
+- [x] Integrasi ISAPI Hikvision
+- [x] RTSP stream check
+- [x] ONVIF support
+- [x] Import device dari CSV
 
 ### Fase 4 — Laporan & Analytics (Minggu 9–10)
-- [ ] Uptime Score & SLA Tracker
-- [ ] Laporan mingguan otomatis
-- [ ] Export PDF (laporan + log)
-- [ ] Grafik timeline status
+- [x] Uptime Score & SLA Tracker
+- [x] Laporan mingguan otomatis
+- [x] Export PDF (laporan + log)
+- [x] Grafik timeline status
 
 ### Fase 5 — Polish & Pengujian (Minggu 11–12)
-- [ ] Network topology map visual
-- [ ] Pengaturan sistem lengkap
-- [ ] Pengujian beban (load testing)
-- [ ] Dokumentasi penggunaan
-- [ ] Deployment production dengan HTTPS
+- [x] Network topology map visual
+- [x] Pengaturan sistem lengkap
+- [x] Pengujian beban (load testing)
+- [x] Dokumentasi penggunaan
+- [x] Deployment production dengan HTTPS
 
 ---
 

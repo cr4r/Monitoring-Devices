@@ -18,4 +18,7 @@ export const config = {
   consecutiveFailureThreshold: parseInt(process.env.FAILURE_THRESHOLD || '3', 10),
   sessionLockoutAttempts: 5,
   sessionLockoutMinutes: 15,
+  useHttps: process.env.USE_HTTPS === 'true',
+  sslKeyPath: path.resolve(__dirname, process.env.SSL_KEY_PATH || '../ssl/server.key'),
+  sslCertPath: path.resolve(__dirname, process.env.SSL_CERT_PATH || '../ssl/server.crt'),
 };

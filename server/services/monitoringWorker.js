@@ -6,6 +6,7 @@
 import { query, run, queryOne } from '../database/db.js';
 import { probeDevice } from './hikvisionService.js';
 import { broadcast } from './websocketService.js';
+import { saveWeeklySnapshot } from './reportService.js';
 import { config } from '../config.js';
 
 let workerIntervalId = null;
@@ -179,6 +180,22 @@ export function startMonitoringWorker(cycleIntervalMs = 5000) {
   setTimeout(() => {
     runMonitoringCycle();
   }, 2000);
+
+  // Buat / perbarui snapshot laporan mingguan otomatis
+  setTimeout(() => {
+    try {
+      saveWeeklySnapshot();
+    } catch (e) {
+      console.warn('Snapshot mingguan otomatis gagal:', e.message);
+    }
+  }, 4000);
+
+  // Evaluasi berkala snapshot laporan mingguan (tiap 30 menit)
+  setInterval(() => {
+    try {
+      saveWeeklySnapshot();
+    } catch {}
+  }, 30 * 60 * 1000);
 
   // Jadwalkan siklus berulang
   workerIntervalId = setInterval(runMonitoringCycle, cycleIntervalMs);

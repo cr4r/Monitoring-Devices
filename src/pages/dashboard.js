@@ -5,8 +5,8 @@
 
 import Swal from 'sweetalert2';
 import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi } from '../data/mock-devices.js';
-import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance } from '../api.js';
-import { renderTimeline24h, destroyAllCharts } from '../components/charts.js';
+import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice } from '../api.js';
+import { renderTimeline24h, renderAggregateTimeline, destroyAllCharts } from '../components/charts.js';
 import { getTimeline24h } from '../data/mock-reports.js';
 import { getSession } from '../main.js';
 
@@ -16,6 +16,12 @@ let canvasCtx = null;
 let mapTransform = { x: 0, y: 0, scale: 1 };
 let isDragging = false;
 let lastMouse = { x: 0, y: 0 };
+let mapAnimId = null;
+let draggedNode = null;
+let dragStartMouse = { x: 0, y: 0 };
+let isNodeMoved = false;
+let customNodePositions = {};
+let virtualNodes = [];
 
 export function renderDashboard() {
   const counts = getStatusCounts();
@@ -137,31 +143,54 @@ export function renderDashboard() {
           <div class="tab-content ${currentTab === 'peta' ? 'active' : ''}" id="tab-content-peta">
             <div class="network-map-wrapper">
               <div class="network-map-toolbar">
-                <button class="btn btn-secondary btn-sm" id="map-zoom-in">🔍+</button>
-                <button class="btn btn-secondary btn-sm" id="map-zoom-out">🔍−</button>
-                <button class="btn btn-secondary btn-sm" id="map-reset">↺ Reset</button>
+                <button class="btn btn-secondary btn-sm" id="map-zoom-in" title="Perbesar Tampilan">🔍+</button>
+                <button class="btn btn-secondary btn-sm" id="map-zoom-out" title="Perkecil Tampilan">🔍−</button>
+                <button class="btn btn-secondary btn-sm" id="map-reset" title="Reset Posisi & Zoom">↺ Reset</button>
+                <button class="btn btn-secondary btn-sm" id="map-auto-layout" title="Tata Ulang Hierarki Otomatis">📐 Auto-Layout</button>
                 <div class="map-legend">
+                  <div class="map-legend-item"><div class="map-legend-dot" style="background:#0284c7; border-radius:3px;"></div> Gateway & Switch</div>
                   <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-online);"></div> Online</div>
                   <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-offline);"></div> Offline</div>
                   <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-maintenance);"></div> Maintenance</div>
-                  <div class="map-legend-item"><div class="map-legend-dot" style="background:rgba(99,102,241,0.8); border-radius:3px;"></div> Switch/Router (mock)</div>
                 </div>
               </div>
-              <canvas id="networkCanvas" width="900" height="500" style="width:100%; height:500px;"></canvas>
+              <div style="position:relative; width:100%; overflow:hidden;">
+                <canvas id="networkCanvas" width="960" height="560" style="width:100%; height:560px;"></canvas>
+                <div id="map-tooltip" style="position:absolute; display:none; pointer-events:none; z-index:20; background:rgba(15,23,42,0.94); backdrop-filter:blur(8px); border:1px solid rgba(99,102,241,0.5); border-radius:8px; padding:8px 12px; font-size:0.78rem; color:#f1f5f9; box-shadow:0 10px 25px -5px rgba(0,0,0,0.6);"></div>
+              </div>
             </div>
           </div>
 
           <!-- TAB: TIMELINE -->
           <div class="tab-content ${currentTab === 'timeline' ? 'active' : ''}" id="tab-content-timeline">
-            <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
-              <label class="form-label" style="margin:0;">Pilih Device:</label>
-              <select class="form-control timeline-device-select" id="timeline-device-select" style="width:auto; min-width:200px;">
-                ${mockDevices.map((d) => `<option value="${d.id}">${d.nama}</option>`).join('')}
-              </select>
-              <span class="text-xs text-muted">Data 24 jam terakhir</span>
+            <!-- Global Aggregate Timeline -->
+            <div class="chart-container" style="margin-bottom:20px;">
+              <div class="chart-header">
+                <div>
+                  <div class="chart-title">🌐 Tren Global Status Perangkat (24 Jam Terakhir)</div>
+                  <div class="chart-subtitle" style="font-size:0.78rem; color:var(--color-muted);">Distribusi seluruh perangkat online vs offline per jam</div>
+                </div>
+              </div>
+              <div style="height:250px;">
+                <canvas id="aggregate-timeline-chart"></canvas>
+              </div>
             </div>
+
+            <!-- Per-Device Timeline -->
             <div class="chart-container">
-              <div style="height:300px;">
+              <div class="chart-header" style="flex-wrap:wrap; gap:10px;">
+                <div>
+                  <div class="chart-title">📉 Respons & Status per Perangkat (24 Jam)</div>
+                  <div class="chart-subtitle" style="font-size:0.78rem; color:var(--color-muted);">Visualisasi latency koneksi (ms) dan deteksi offline</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label class="form-label" style="margin:0; font-size:0.8rem;">Pilih Perangkat:</label>
+                  <select class="form-control timeline-device-select" id="timeline-device-select" style="width:auto; min-width:220px; font-size:0.82rem; padding:4px 10px;">
+                    ${mockDevices.map((d) => `<option value="${d.id}">${d.nama} (${d.ip})</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+              <div style="height:260px;">
                 <canvas id="timeline-chart"></canvas>
               </div>
             </div>
@@ -307,6 +336,11 @@ export function initDashboardEvents(navigate) {
       document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(`tab-content-${currentTab}`)?.classList.add('active');
+
+      if (mapAnimId) {
+        cancelAnimationFrame(mapAnimId);
+        mapAnimId = null;
+      }
 
       if (currentTab === 'peta') initNetworkMap();
       if (currentTab === 'timeline') initTimeline();
@@ -591,86 +625,347 @@ function startCountdownTimers() {
   });
 }
 
-// ---- NETWORK MAP (Canvas) ----
+// ---- NETWORK MAP (Hierarchical Topology Canvas) ----
+function computeMapLayout(w, h, force = false) {
+  const groups = getGroups();
+  const effectiveGroups = groups.length > 0 ? groups : ['Umum'];
+
+  // 1. Gateway
+  const gwPos = (!force && customNodePositions['__gw__']) || { x: w / 2, y: 55 };
+  const gwNode = {
+    id: '__gw__',
+    type: 'gateway',
+    nama: 'Gateway Router',
+    ip: '192.168.1.1',
+    status: 'online',
+    icon: '🌐',
+    x: gwPos.x,
+    y: gwPos.y,
+    w: 136,
+    h: 36,
+  };
+
+  // 2. Core Switch
+  const corePos = (!force && customNodePositions['__core__']) || { x: w / 2, y: 140 };
+  const coreNode = {
+    id: '__core__',
+    type: 'core_switch',
+    nama: 'Core Switch L3',
+    ip: '192.168.1.2',
+    status: 'online',
+    icon: '🔀',
+    x: corePos.x,
+    y: corePos.y,
+    w: 136,
+    h: 36,
+  };
+
+  // 3. Group Switches
+  const groupNodes = effectiveGroups.map((grp, idx) => {
+    const defaultX = (w / (effectiveGroups.length + 1)) * (idx + 1);
+    const defaultY = 240;
+    const pos = (!force && customNodePositions['__grp_' + grp]) || { x: defaultX, y: defaultY };
+    return {
+      id: '__grp_' + grp,
+      type: 'group_switch',
+      nama: `Switch ${grp}`,
+      ip: `VLAN ${10 + (idx + 1) * 10}`,
+      grup: grp,
+      status: 'online',
+      icon: '📦',
+      x: pos.x,
+      y: pos.y,
+      w: 125,
+      h: 34,
+    };
+  });
+
+  virtualNodes = [gwNode, coreNode, ...groupNodes];
+
+  // 4. Device Nodes per Group
+  effectiveGroups.forEach((grp) => {
+    const devs = mockDevices.filter((d) => (d.grup || 'Umum') === grp);
+    const grpNode = groupNodes.find((g) => g.grup === grp) || coreNode;
+    const cols = Math.min(devs.length, 3);
+    const spacingX = 85;
+
+    devs.forEach((d, j) => {
+      if (!force && customNodePositions[d.id]) {
+        d.mapPos = { ...customNodePositions[d.id] };
+        return;
+      }
+      const col = j % cols;
+      const row = Math.floor(j / cols);
+      const startX = grpNode.x - ((cols - 1) * spacingX) / 2;
+      const x = startX + col * spacingX;
+      const y = grpNode.y + 90 + row * 82;
+      d.mapPos = { x, y };
+      customNodePositions[d.id] = { x, y };
+    });
+  });
+
+  // Handle orphan devices
+  const orphanDevs = mockDevices.filter((d) => !effectiveGroups.includes(d.grup || 'Umum'));
+  orphanDevs.forEach((d, j) => {
+    if (!force && customNodePositions[d.id]) {
+      d.mapPos = { ...customNodePositions[d.id] };
+      return;
+    }
+    const x = coreNode.x + (j % 2 === 0 ? -120 : 120) * (Math.floor(j / 2) + 1);
+    const y = coreNode.y + 160;
+    d.mapPos = { x, y };
+    customNodePositions[d.id] = { x, y };
+  });
+}
+
+function findNodeAt(vx, vy) {
+  // Check devices first
+  for (let i = mockDevices.length - 1; i >= 0; i--) {
+    const d = mockDevices[i];
+    if (!d.mapPos) continue;
+    const dist = Math.hypot(d.mapPos.x - vx, d.mapPos.y - vy);
+    if (dist <= 20) {
+      return { type: 'device', data: d };
+    }
+  }
+
+  // Check virtual nodes
+  for (let i = virtualNodes.length - 1; i >= 0; i--) {
+    const v = virtualNodes[i];
+    if (Math.abs(v.x - vx) <= v.w / 2 && Math.abs(v.y - vy) <= v.h / 2) {
+      return { type: 'virtual', data: v };
+    }
+  }
+  return null;
+}
+
+function showDeviceMapModal(d) {
+  const statusColor = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+  const statusBadge = `<span style="background:${statusColor}22; color:${statusColor}; border:1px solid ${statusColor}66; padding:3px 10px; border-radius:999px; font-weight:700; font-size:0.8rem;">● ${d.status.toUpperCase()}</span>`;
+
+  Swal.fire({
+    title: `${d.jenis === 'cctv' ? '📷' : '💻'} ${d.nama}`,
+    html: `
+      <div style="text-align:left; font-size:0.86rem; display:flex; flex-direction:column; gap:10px; padding:6px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+          <span style="color:#94a3b8;">Status Jaringan</span>
+          <div>${statusBadge}</div>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:#94a3b8;">Alamat IP</span>
+          <code style="color:var(--color-accent); font-weight:700;">${d.ip}</code>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:#94a3b8;">Grup & Lokasi</span>
+          <span style="color:#f1f5f9;">${d.grup} / ${d.lokasi}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:#94a3b8;">Metode Probe</span>
+          <span style="color:#cbd5e1; font-weight:600;">${(d.metode || 'icmp').toUpperCase()}</span>
+        </div>
+        ${d.responseTime !== null && d.responseTime !== undefined ? `
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:#94a3b8;">Latensi Respons</span>
+          <span style="color:#22c55e; font-weight:700;">${d.responseTime} ms</span>
+        </div>` : ''}
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:#94a3b8;">Terakhir Online</span>
+          <span style="color:#94a3b8;">${d.status === 'online' ? 'Saat Ini' : formatTimeAgo(d.lastOnline)}</span>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:16px;">
+        <button id="modal-ping-btn" class="btn btn-secondary btn-sm" style="flex:1;">📡 Probe</button>
+        <button id="modal-maint-btn" class="btn btn-warning btn-sm" style="flex:1;">🔧 Maintenance</button>
+        <button id="modal-detail-btn" class="btn btn-primary btn-sm" style="flex:1;">🔍 Detail</button>
+      </div>
+    `,
+    showConfirmButton: false,
+    showCloseButton: true,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+    width: 420,
+    didOpen: () => {
+      document.getElementById('modal-ping-btn')?.addEventListener('click', () => {
+        Swal.close();
+        window.dashboardPingDevice(d.id);
+      });
+      document.getElementById('modal-maint-btn')?.addEventListener('click', () => {
+        Swal.close();
+        if (d.status === 'maintenance') {
+          window.dashboardEndMaintenance(d.id);
+        } else {
+          window.dashboardSetMaintenance(d.id);
+        }
+      });
+      document.getElementById('modal-detail-btn')?.addEventListener('click', () => {
+        Swal.close();
+        window.dashboardDetailDevice(d.id);
+      });
+    },
+  });
+}
+
 function initNetworkMap() {
   const canvas = document.getElementById('networkCanvas');
+  const tooltip = document.getElementById('map-tooltip');
   if (!canvas) return;
 
   const ctx = canvas.getContext('2d');
   canvasCtx = ctx;
 
-  // Set actual canvas resolution
-  canvas.width = canvas.offsetWidth;
-  canvas.height = 500;
+  canvas.width = canvas.offsetWidth || 960;
+  canvas.height = 560;
 
-  drawMap(ctx, canvas.width, canvas.height);
+  computeMapLayout(canvas.width, canvas.height, false);
 
-  // Mouse events for drag/zoom
+  if (mapAnimId) {
+    cancelAnimationFrame(mapAnimId);
+    mapAnimId = null;
+  }
+
+  const runLoop = () => {
+    if (!document.getElementById('networkCanvas')) {
+      if (mapAnimId) cancelAnimationFrame(mapAnimId);
+      mapAnimId = null;
+      return;
+    }
+    drawMap(ctx, canvas.width, canvas.height);
+    mapAnimId = requestAnimationFrame(runLoop);
+  };
+  runLoop();
+
+  // Mouse interaction
   canvas.addEventListener('mousedown', (e) => {
-    isDragging = true;
+    const vx = (e.offsetX - mapTransform.x) / mapTransform.scale;
+    const vy = (e.offsetY - mapTransform.y) / mapTransform.scale;
+    const hit = findNodeAt(vx, vy);
+
+    dragStartMouse = { x: e.offsetX, y: e.offsetY };
+    isNodeMoved = false;
+
+    if (hit) {
+      draggedNode = hit;
+    } else {
+      isDragging = true;
+    }
     lastMouse = { x: e.offsetX, y: e.offsetY };
   });
 
   canvas.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    mapTransform.x += e.offsetX - lastMouse.x;
-    mapTransform.y += e.offsetY - lastMouse.y;
-    lastMouse = { x: e.offsetX, y: e.offsetY };
-    drawMap(ctx, canvas.width, canvas.height);
+    const vx = (e.offsetX - mapTransform.x) / mapTransform.scale;
+    const vy = (e.offsetY - mapTransform.y) / mapTransform.scale;
+
+    if (draggedNode) {
+      const dx = (e.offsetX - lastMouse.x) / mapTransform.scale;
+      const dy = (e.offsetY - lastMouse.y) / mapTransform.scale;
+      if (Math.hypot(e.offsetX - dragStartMouse.x, e.offsetY - dragStartMouse.y) > 4) {
+        isNodeMoved = true;
+      }
+      if (draggedNode.type === 'device') {
+        draggedNode.data.mapPos.x += dx;
+        draggedNode.data.mapPos.y += dy;
+        customNodePositions[draggedNode.data.id] = { ...draggedNode.data.mapPos };
+      } else {
+        draggedNode.data.x += dx;
+        draggedNode.data.y += dy;
+        customNodePositions[draggedNode.data.id] = { x: draggedNode.data.x, y: draggedNode.data.y };
+      }
+      lastMouse = { x: e.offsetX, y: e.offsetY };
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+
+    if (isDragging) {
+      mapTransform.x += e.offsetX - lastMouse.x;
+      mapTransform.y += e.offsetY - lastMouse.y;
+      lastMouse = { x: e.offsetX, y: e.offsetY };
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+
+    // Hover tooltip
+    const hit = findNodeAt(vx, vy);
+    if (hit && tooltip) {
+      canvas.style.cursor = 'pointer';
+      if (hit.type === 'device') {
+        const d = hit.data;
+        const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+        tooltip.innerHTML = `
+          <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
+            <span>${d.jenis === 'cctv' ? '📷' : '💻'}</span>
+            <span>${d.nama}</span>
+          </div>
+          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">${d.ip}</div>
+          <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+            <span style="color:${color}; font-weight:700;">● ${d.status.toUpperCase()}</span>
+            ${d.responseTime !== null && d.responseTime !== undefined ? `<span style="color:#22c55e;">${d.responseTime}ms</span>` : ''}
+          </div>
+          <div style="font-size:0.7rem; color:#64748b; margin-top:4px;">Klik untuk tindakan</div>
+        `;
+      } else {
+        const v = hit.data;
+        tooltip.innerHTML = `
+          <div style="font-weight:700; color:#fff;">${v.icon} ${v.nama}</div>
+          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem;">${v.ip}</div>
+          <div style="font-size:0.7rem; color:#38bdf8; margin-top:4px;">Infrastruktur Utama Jaringan</div>
+        `;
+      }
+      tooltip.style.left = `${Math.min(canvas.offsetWidth - 220, e.offsetX + 15)}px`;
+      tooltip.style.top = `${Math.min(canvas.offsetHeight - 100, e.offsetY + 15)}px`;
+      tooltip.style.display = 'block';
+    } else {
+      canvas.style.cursor = 'grab';
+      if (tooltip) tooltip.style.display = 'none';
+    }
   });
 
-  canvas.addEventListener('mouseup', () => { isDragging = false; });
-  canvas.addEventListener('mouseleave', () => { isDragging = false; });
+  const endDrag = () => {
+    if (draggedNode && !isNodeMoved) {
+      if (draggedNode.type === 'device') {
+        showDeviceMapModal(draggedNode.data);
+      }
+    }
+    draggedNode = null;
+    isDragging = false;
+  };
 
+  canvas.addEventListener('mouseup', endDrag);
+  canvas.addEventListener('mouseleave', () => {
+    endDrag();
+    if (tooltip) tooltip.style.display = 'none';
+  });
+
+  // Wheel zoom
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const delta = e.deltaY < 0 ? 0.1 : -0.1;
+    const delta = e.deltaY < 0 ? 0.08 : -0.08;
     mapTransform.scale = Math.max(0.5, Math.min(2.5, mapTransform.scale + delta));
-    drawMap(ctx, canvas.width, canvas.height);
   }, { passive: false });
 
-  // Toolbar buttons
+  // Toolbar
   document.getElementById('map-zoom-in')?.addEventListener('click', () => {
     mapTransform.scale = Math.min(2.5, mapTransform.scale + 0.2);
-    drawMap(ctx, canvas.width, canvas.height);
   });
   document.getElementById('map-zoom-out')?.addEventListener('click', () => {
     mapTransform.scale = Math.max(0.5, mapTransform.scale - 0.2);
-    drawMap(ctx, canvas.width, canvas.height);
   });
   document.getElementById('map-reset')?.addEventListener('click', () => {
     mapTransform = { x: 0, y: 0, scale: 1 };
-    drawMap(ctx, canvas.width, canvas.height);
   });
-
-  // Click to show device info
-  canvas.addEventListener('click', (e) => {
-    const mx = (e.offsetX - mapTransform.x) / mapTransform.scale;
-    const my = (e.offsetY - mapTransform.y) / mapTransform.scale;
-    const hit = mockDevices.find((d) => {
-      const dx = d.mapPos.x - mx;
-      const dy = d.mapPos.y - my;
-      return Math.sqrt(dx * dx + dy * dy) < 18;
+  document.getElementById('map-auto-layout')?.addEventListener('click', () => {
+    customNodePositions = {};
+    computeMapLayout(canvas.width, canvas.height, true);
+    mapTransform = { x: 0, y: 0, scale: 1 };
+    Swal.fire({
+      toast: true,
+      position: 'top-end',
+      icon: 'success',
+      title: 'Topologi berhasil diselaraskan otomatis!',
+      timer: 1500,
+      showConfirmButton: false,
+      background: '#1a1d2e',
+      color: '#e2e8f0',
     });
-    if (hit) {
-      Swal.fire({
-        title: hit.nama,
-        html: `
-          <div style="text-align:left; font-size:0.88rem; display:flex; flex-direction:column; gap:8px;">
-            <div><b>IP:</b> <code>${hit.ip}</code></div>
-            <div><b>Jenis:</b> ${hit.jenis === 'cctv' ? '📷 CCTV' : '💻 Komputer'}</div>
-            <div><b>Status:</b> <span style="color:${hit.status === 'online' ? '#22c55e' : hit.status === 'offline' ? '#ef4444' : '#eab308'}; font-weight:700;">${hit.status.toUpperCase()}</span></div>
-            <div><b>Lokasi:</b> ${hit.lokasi}</div>
-            <div><b>Metode:</b> ${hit.metode.toUpperCase()}</div>
-          </div>
-        `,
-        background: '#1a1d2e',
-        color: '#e2e8f0',
-        confirmButtonText: 'Tutup',
-        confirmButtonColor: '#6366f1',
-        width: 360,
-      });
-    }
   });
 }
 
@@ -680,75 +975,206 @@ function drawMap(ctx, w, h) {
   ctx.translate(mapTransform.x, mapTransform.y);
   ctx.scale(mapTransform.scale, mapTransform.scale);
 
-  // Grid background dots
-  ctx.fillStyle = 'rgba(255,255,255,0.03)';
-  for (let x = 0; x < w / mapTransform.scale; x += 30) {
-    for (let y = 0; y < h / mapTransform.scale; y += 30) {
+  // Background grid dots
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  const step = 28;
+  const boundX = (w * 1.5) / mapTransform.scale;
+  const boundY = (h * 1.5) / mapTransform.scale;
+  for (let x = -boundX; x < boundX; x += step) {
+    for (let y = -boundY; y < boundY; y += step) {
       ctx.beginPath();
       ctx.arc(x, y, 1, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // Central router/switch node
-  const centerX = w / 2 / mapTransform.scale;
-  const centerY = h / 2 / mapTransform.scale;
+  const gw = virtualNodes.find((v) => v.id === '__gw__');
+  const core = virtualNodes.find((v) => v.id === '__core__');
+  const groupHubs = virtualNodes.filter((v) => v.type === 'group_switch');
 
-  // Draw connections first
-  mockDevices.forEach((d) => {
-    const color = d.status === 'online' ? 'rgba(34,197,94,0.3)' :
-                  d.status === 'offline' ? 'rgba(239,68,68,0.2)' : 'rgba(234,179,8,0.2)';
+  const now = Date.now();
+
+  // 1. Connection: Gateway -> Core Switch
+  if (gw && core) {
     ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.lineTo(d.mapPos.x, d.mapPos.y);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.setLineDash(d.status === 'offline' ? [4, 4] : []);
+    ctx.moveTo(gw.x, gw.y + gw.h / 2);
+    ctx.lineTo(core.x, core.y - core.h / 2);
+    ctx.strokeStyle = '#0284c7';
+    ctx.lineWidth = 2.5;
     ctx.stroke();
-    ctx.setLineDash([]);
+
+    // Pulse bead
+    const tGw = (now / 1500) % 1;
+    const pxGw = gw.x;
+    const pyGw = (gw.y + gw.h / 2) + (core.y - core.h / 2 - (gw.y + gw.h / 2)) * tGw;
+    ctx.fillStyle = '#38bdf8';
+    ctx.beginPath();
+    ctx.arc(pxGw, pyGw, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 2. Connection: Core Switch -> Group Switches
+  if (core) {
+    groupHubs.forEach((grp, idx) => {
+      ctx.beginPath();
+      ctx.moveTo(core.x, core.y + core.h / 2);
+      ctx.lineTo(grp.x, grp.y - grp.h / 2);
+      ctx.strokeStyle = 'rgba(99,102,241,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Traveling packet
+      const tGrp = ((now / 2000) + idx * 0.25) % 1;
+      const px = core.x + (grp.x - core.x) * tGrp;
+      const py = (core.y + core.h / 2) + (grp.y - grp.h / 2 - (core.y + core.h / 2)) * tGrp;
+      ctx.fillStyle = '#a5b4fc';
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // 3. Connection: Group Switch -> Devices
+  mockDevices.forEach((d) => {
+    if (!d.mapPos) return;
+    const grp = groupHubs.find((g) => g.grup === (d.grup || 'Umum')) || core;
+    if (!grp) return;
+
+    ctx.beginPath();
+    ctx.moveTo(grp.x, grp.y + grp.h / 2);
+    ctx.lineTo(d.mapPos.x, d.mapPos.y);
+
+    if (d.status === 'online') {
+      ctx.strokeStyle = 'rgba(34,197,94,0.4)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // Flowing packet bead
+      const tDev = ((now / 2200) + (d.id * 0.17)) % 1;
+      const startY = grp.y + grp.h / 2;
+      const px = grp.x + (d.mapPos.x - grp.x) * tDev;
+      const py = startY + (d.mapPos.y - startY) * tDev;
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (d.status === 'offline') {
+      ctx.strokeStyle = 'rgba(239,68,68,0.45)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = 'rgba(234,179,8,0.45)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([6, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   });
 
-  // Draw central switch
-  ctx.save();
-  ctx.shadowColor = 'rgba(99,102,241,0.6)';
-  ctx.shadowBlur = 15;
-  ctx.fillStyle = '#6366f1';
-  ctx.beginPath();
-  ctx.roundRect(centerX - 20, centerY - 12, 40, 24, 6);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.fillStyle = '#fff';
-  ctx.font = '10px Inter, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('SWITCH', centerX, centerY + 4);
-
-  // Draw device nodes
-  mockDevices.forEach((d) => {
-    const color = d.status === 'online' ? '#22c55e' : d.status === 'offline' ? '#ef4444' : '#eab308';
-    const glowColor = d.status === 'online' ? 'rgba(34,197,94,0.4)' : d.status === 'offline' ? 'rgba(239,68,68,0.3)' : 'rgba(234,179,8,0.3)';
+  // 4. Draw Virtual Nodes
+  virtualNodes.forEach((node) => {
+    const rx = node.x - node.w / 2;
+    const ry = node.y - node.h / 2;
 
     ctx.save();
-    ctx.shadowColor = glowColor;
+    let grad;
+    if (node.type === 'gateway') {
+      ctx.shadowColor = 'rgba(2,132,199,0.5)';
+      ctx.shadowBlur = 12;
+      grad = ctx.createLinearGradient(rx, ry, rx + node.w, ry + node.h);
+      grad.addColorStop(0, '#0369a1');
+      grad.addColorStop(1, '#0c4a6e');
+    } else if (node.type === 'core_switch') {
+      ctx.shadowColor = 'rgba(99,102,241,0.5)';
+      ctx.shadowBlur = 12;
+      grad = ctx.createLinearGradient(rx, ry, rx + node.w, ry + node.h);
+      grad.addColorStop(0, '#4f46e5');
+      grad.addColorStop(1, '#312e81');
+    } else {
+      ctx.shadowColor = 'rgba(139,92,246,0.4)';
+      ctx.shadowBlur = 10;
+      grad = ctx.createLinearGradient(rx, ry, rx + node.w, ry + node.h);
+      grad.addColorStop(0, '#6d28d9');
+      grad.addColorStop(1, '#431407');
+    }
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, node.w, node.h, 8);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    // Node text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${node.icon} ${node.nama}`, node.x, node.y - 1);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '9px monospace';
+    ctx.fillText(node.ip, node.x, node.y + 12);
+  });
+
+  // 5. Draw Device Nodes
+  mockDevices.forEach((d) => {
+    if (!d.mapPos) return;
+    const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+
+    // Pulsing aura on online devices
+    if (d.status === 'online') {
+      const pulsePhase = ((now / 1500) + d.id * 0.2) % 1;
+      ctx.beginPath();
+      ctx.arc(d.mapPos.x, d.mapPos.y, 14 + pulsePhase * 10, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(34,197,94,${0.5 * (1 - pulsePhase)})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Node body
+    ctx.save();
+    ctx.shadowColor = d.status === 'online' ? 'rgba(34,197,94,0.5)' : (d.status === 'offline' ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)');
     ctx.shadowBlur = 10;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(d.mapPos.x, d.mapPos.y, 12, 0, Math.PI * 2);
+    ctx.arc(d.mapPos.x, d.mapPos.y, 14, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     ctx.restore();
 
-    // Icon text
-    ctx.fillStyle = '#fff';
+    // Icon
+    ctx.fillStyle = '#ffffff';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(d.jenis === 'cctv' ? '📷' : '💻', d.mapPos.x, d.mapPos.y + 5);
+    ctx.fillText(d.jenis === 'cctv' ? '📷' : '💻', d.mapPos.x, d.mapPos.y + 4);
 
-    // Label
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '9px Inter, sans-serif';
+    // Name label
+    ctx.fillStyle = '#f1f5f9';
+    ctx.font = '600 9.5px Inter, sans-serif';
     ctx.textAlign = 'center';
-    const shortName = d.nama.length > 15 ? d.nama.substring(0, 15) + '…' : d.nama;
+    const shortName = d.nama.length > 13 ? d.nama.substring(0, 13) + '…' : d.nama;
     ctx.fillText(shortName, d.mapPos.x, d.mapPos.y + 26);
+
+    // IP label
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '8.5px monospace';
+    ctx.fillText(d.ip, d.mapPos.x, d.mapPos.y + 36);
+
+    // Latency badge if online
+    if (d.status === 'online' && d.responseTime !== null && d.responseTime !== undefined) {
+      ctx.fillStyle = '#4ade80';
+      ctx.font = 'bold 8px Inter, sans-serif';
+      ctx.fillText(`${d.responseTime}ms`, d.mapPos.x, d.mapPos.y - 18);
+    }
   });
 
   ctx.restore();
@@ -756,10 +1182,38 @@ function drawMap(ctx, w, h) {
 
 // ---- TIMELINE ----
 function initTimeline() {
+  const currentTotal = mockDevices.length || 1;
+  const currentOnline = mockDevices.filter((d) => d.status === 'online').length;
+  const currentOffline = Math.max(0, currentTotal - currentOnline);
+
+  // Bangun data agregat global 24 jam terakhir
+  const aggData = Array.from({ length: 24 }, (_, i) => {
+    const hour = (new Date().getHours() - (23 - i) + 24) % 24;
+    return {
+      hour: `${hour.toString().padStart(2, '0')}:00`,
+      online: Math.max(0, currentOnline - (i % 6 === 2 ? 1 : 0)),
+      offline: Math.max(0, currentOffline + (i % 6 === 2 ? 1 : 0)),
+    };
+  });
+  renderAggregateTimeline('aggregate-timeline-chart', aggData);
+
   const select = document.getElementById('timeline-device-select');
   if (!select) return;
 
-  const renderChart = (deviceId) => {
+  const renderChart = async (deviceId) => {
+    try {
+      const res = await apiGetDevice(deviceId).catch(() => null);
+      if (res && res.data && res.data.timeline24h) {
+        const mapped = res.data.timeline24h.map((t) => ({
+          jam: t.hour,
+          status: t.status,
+          responseTime: t.latency || 1,
+        }));
+        renderTimeline24h('timeline-chart', mapped);
+        return;
+      }
+    } catch {}
+
     const data = getTimeline24h(parseInt(deviceId));
     renderTimeline24h('timeline-chart', data);
   };

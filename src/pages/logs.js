@@ -6,6 +6,7 @@
 import Swal from 'sweetalert2';
 import { apiGetLogs } from '../api.js';
 import { formatDateWithTz } from '../settingsManager.js';
+import { exportLogsPdf } from '../services/pdfService.js';
 
 let activeTab = 'status';
 let logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
@@ -362,30 +363,65 @@ export function initLogsEvents() {
     refresh();
   });
 
-  // Export PDF
+  // Export PDF Riil
   document.getElementById('log-export-btn')?.addEventListener('click', async () => {
     const data = getActiveLogData();
-    await Swal.fire({
+    if (data.length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Tidak Ada Log',
+        text: 'Tidak ada baris log yang sesuai dengan kriteria filter aktif untuk diekspor.',
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+      return;
+    }
+
+    const { isConfirmed } = await Swal.fire({
       title: '📄 Export Log ke PDF',
       html: `
         <div style="text-align:left; font-size:0.88rem; color:#94a3b8;">
           <p>Total entri yang akan diekspor: <b style="color:#f1f5f9;">${data.length} baris</b></p>
-          <p style="margin-top:8px;">Filter aktif akan diterapkan pada PDF.</p>
-          <p style="margin-top:4px; font-size:0.78rem; color:#64748b;">Fitur export PDF memerlukan koneksi ke backend untuk generate PDF server-side. Demo ini akan menampilkan simulasi.</p>
+          <p style="margin-top:6px;">Kategori aktif: <b style="color:var(--color-accent);">${activeTab.toUpperCase()}</b></p>
+          <p style="margin-top:6px; font-size:0.78rem; color:#64748b;">Kriteria pencarian dan rentang tanggal akan dicantumkan secara otomatis pada dokumen resmi PDF.</p>
         </div>
       `,
       icon: 'info',
       showCancelButton: true,
-      confirmButtonText: '📥 Download PDF (Demo)',
+      confirmButtonText: '📥 Unduh PDF Sekarang',
       cancelButtonText: 'Batal',
       confirmButtonColor: '#6366f1',
+      cancelButtonColor: '#374151',
       background: '#1a1d2e',
       color: '#e2e8f0',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        simulatePdfExport('log-sistem', data.length);
-      }
     });
+
+    if (isConfirmed) {
+      try {
+        Swal.fire({
+          title: 'Membuat Berkas PDF...',
+          html: '<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div><div style="margin-top:12px; font-size:0.85rem; color:#94a3b8;">Menyusun tabel log sistem...</div></div>',
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+          timer: 600,
+        });
+
+        const filename = await exportLogsPdf(activeTab, data, logFilters);
+
+        Swal.fire({
+          icon: 'success',
+          title: 'PDF Log Berhasil Diunduh',
+          html: `<span style="font-size:0.85rem; color:#94a3b8;">Berkas <b>${filename}</b> (${data.length} baris) telah berhasil digenerate dan otomatis tersimpan.</span>`,
+          confirmButtonColor: '#6366f1',
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Ekspor PDF', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
+    }
   });
 
   bindLogRowsSelect();
@@ -403,26 +439,3 @@ function bindLogRowsSelect() {
   });
 }
 
-function simulatePdfExport(type, count) {
-  Swal.fire({
-    title: 'Menggenerate PDF...',
-    html: `<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div></div>`,
-    showConfirmButton: false,
-    allowOutsideClick: false,
-    background: '#1a1d2e',
-    color: '#e2e8f0',
-    timer: 2000,
-  }).then(() => {
-    Swal.fire({
-      icon: 'success',
-      title: 'PDF Siap!',
-      html: `<span style="font-size:0.88rem; color:#94a3b8;">File <b>devwatch-${type}-${new Date().toISOString().slice(0, 10)}.pdf</b> berhasil digenerate (${count} entri).</span>`,
-      confirmButtonText: '✅ OK',
-      confirmButtonColor: '#6366f1',
-      background: '#1a1d2e',
-      color: '#e2e8f0',
-    });
-  });
-}
-
-export { simulatePdfExport };

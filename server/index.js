@@ -5,6 +5,7 @@
 
 import express from 'express';
 import http from 'http';
+import https from 'https';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -28,7 +29,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const server = http.createServer(app);
+
+let server;
+let isHttps = false;
+
+if (config.useHttps && fs.existsSync(config.sslKeyPath) && fs.existsSync(config.sslCertPath)) {
+  const sslOptions = {
+    key: fs.readFileSync(config.sslKeyPath),
+    cert: fs.readFileSync(config.sslCertPath),
+  };
+  server = https.createServer(sslOptions, app);
+  isHttps = true;
+} else {
+  server = http.createServer(app);
+  isHttps = false;
+}
 
 // Middleware dasar
 app.use(cors());
@@ -88,11 +103,13 @@ async function startServer() {
     });
 
     // 4. Dengarkan Port
+    const proto = isHttps ? 'https' : 'http';
+    const wsProto = isHttps ? 'wss' : 'ws';
     server.listen(config.port, config.host, () => {
       console.log(`=================================================`);
-      console.log(`📡 DevWatch Backend Server Berjalan`);
-      console.log(`🌐 URL: http://localhost:${config.port}`);
-      console.log(`🔌 WebSocket: ws://localhost:${config.port}/ws`);
+      console.log(`📡 DevWatch Backend Server Berjalan (${isHttps ? 'HTTPS / TLS' : 'HTTP Mode'})`);
+      console.log(`🌐 URL: ${proto}://localhost:${config.port}`);
+      console.log(`🔌 WebSocket: ${wsProto}://localhost:${config.port}/ws`);
       console.log(`📁 Database: ${config.dbPath}`);
       console.log(`=================================================`);
     });

@@ -19,10 +19,12 @@ import { renderAbout, initAboutEvents } from './pages/about.js';
 import { destroyAllCharts } from './components/charts.js';
 import { connectWebSocket } from './api.js';
 import { initSettingsManager } from './settingsManager.js';
+import { initBrowserNotificationService } from './services/browserNotification.js';
 
-// Inisialisasi pengaturan dinamis & WebSocket
+// Inisialisasi pengaturan dinamis, WebSocket, dan Push Notifications
 initSettingsManager();
 connectWebSocket();
+initBrowserNotificationService();
 
 // ---- SESSION MANAGEMENT ----
 const SESSION_KEY = 'devwatch_session';

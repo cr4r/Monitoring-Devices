@@ -11,7 +11,9 @@
     "start": "node server/index.js",
     "seed": "node server/database/seed.js",
     "service:install": "node server/scripts/install-service.js",
-    "service:uninstall": "node server/scripts/uninstall-service.js"
+    "service:uninstall": "node server/scripts/uninstall-service.js",
+    "test:load": "node server/scripts/load-test.js",
+    "cert:generate": "node server/scripts/generate-cert.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -27,6 +29,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "selfsigned": "^5.5.0",
     "vite": "^5.4.10"
   }
 }

@@ -6,7 +6,7 @@
 import express from 'express';
 import { query, queryOne, run } from '../database/db.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { probeDevice } from '../services/hikvisionService.js';
+import { probeDevice, getIsapiDeviceInfo } from '../services/hikvisionService.js';
 import { broadcast } from '../services/websocketService.js';
 
 const router = express.Router();
@@ -117,6 +117,17 @@ router.get('/:id', authenticateToken, (req, res) => {
       timeline24h,
     },
   });
+});
+
+// GET /api/devices/:id/isapi — Ambil detail metadata ISAPI Hikvision
+router.get('/:id/isapi', authenticateToken, async (req, res) => {
+  const device = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
+  if (!device) {
+    return res.status(404).json({ success: false, message: 'Perangkat tidak ditemukan.' });
+  }
+
+  const isapiData = await getIsapiDeviceInfo(device);
+  res.json({ success: true, data: isapiData });
 });
 
 // POST /api/devices — Tambah perangkat baru
@@ -443,34 +454,55 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
   }
 
   let imported = 0;
+  let skipped = 0;
   for (const d of devices) {
-    if (!d.nama || !d.ip) continue;
-    run(
-      `INSERT INTO devices (nama, ip, hostname, jenis, metode, interval_detik, grup, lokasi, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'offline')`,
-      [
-        d.nama.trim(),
-        d.ip.trim(),
-        d.hostname || null,
-        d.jenis || 'Komputer',
-        d.metode || 'PING',
-        parseInt(d.interval_detik, 10) || 60,
-        d.grup || 'Umum',
-        d.lokasi || 'Kantor',
-      ]
-    );
-    imported++;
+    if (!d.nama || !d.ip) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      const jenisClean = normalizeJenis(d.jenis);
+      const metodeClean = normalizeMetode(d.metode);
+      const intervalClean = Math.max(10, Math.min(3600, parseInt(d.interval_detik || d.interval || d.intervalDetik, 10) || 60));
+      const portClean = d.port ? parseInt(d.port, 10) || null : (metodeClean === 'RTSP' ? 554 : metodeClean === 'ISAPI' ? 80 : null);
+
+      run(
+        `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline')`,
+        [
+          String(d.nama).trim(),
+          String(d.ip).trim(),
+          d.hostname ? String(d.hostname).trim() : null,
+          jenisClean,
+          metodeClean,
+          portClean,
+          intervalClean,
+          (d.grup && String(d.grup).trim()) || 'Umum',
+          (d.lokasi && String(d.lokasi).trim()) || 'Kantor',
+          d.deskripsi ? String(d.deskripsi).trim() : null,
+        ]
+      );
+      imported++;
+    } catch (err) {
+      console.warn('Gagal mengimpor baris CSV:', d, err.message);
+      skipped++;
+    }
   }
 
   run(
     `INSERT INTO config_logs (user_id, user_nama, aksi, detail)
      VALUES (?, ?, 'Impor CSV', ?)`,
-    [req.user.id, req.user.nama, `Mengimpor ${imported} perangkat dari berkas CSV`]
+    [req.user.id, req.user.nama, `Mengimpor ${imported} perangkat dari berkas CSV (${skipped} dilewati)`]
   );
+
+  broadcast('devices_updated', { action: 'import_csv', count: imported });
 
   res.json({
     success: true,
-    message: `Berhasil mengimpor ${imported} perangkat ke dalam sistem.`,
+    message: `Berhasil mengimpor ${imported} perangkat ke dalam sistem. ${skipped > 0 ? `(${skipped} dilewati)` : ''}`,
+    imported,
+    skipped,
     count: imported,
   });
 });

@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { apiGetSettings, apiUpdateSettings } from '../api.js';
+import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiCleanLogs } from '../api.js';
 import { applySystemSettings } from '../settingsManager.js';
 
 let activeSection = 'umum';
@@ -450,7 +450,10 @@ function renderLog() {
       </div>
 
       <div style="display:flex; justify-content:space-between; margin-top:8px; flex-wrap:wrap; gap:8px;">
-        <button class="btn btn-secondary" id="manual-backup-btn">💾 Backup Sekarang</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" id="manual-backup-btn">💾 Backup Sekarang</button>
+          <button class="btn btn-secondary" id="clean-logs-btn" style="border-color:rgba(239,68,68,0.4); color:#fca5a5;">🧹 Bersihkan Log Lama</button>
+        </div>
         <button class="btn btn-primary" id="save-log-btn">💾 Simpan Pengaturan</button>
       </div>
     </div>
@@ -687,29 +690,134 @@ function bindSaveButtons() {
     };
   });
 
-  // Manual backup button
+  // Manual backup button (Real SQLite backup)
   const manualBackupBtn = document.getElementById('manual-backup-btn');
   if (manualBackupBtn) {
     manualBackupBtn.onclick = async () => {
-      await Swal.fire({
-        title: 'Backup Database',
-        html: '<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div><p style="margin-top:12px; color:#94a3b8;">Membuat backup database SQLite ke direktori tujuan...</p></div>',
+      Swal.fire({
+        title: 'Membuat Cadangan Database...',
+        html: '<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div><p style="margin-top:12px; color:#94a3b8;">Melakukan checkpoint WAL dan menyalin database SQLite...</p></div>',
         showConfirmButton: false,
         allowOutsideClick: false,
-        timer: 1500,
         background: '#1a1d2e',
         color: '#e2e8f0',
       });
-      const backupPath = getVal('backup_target_path', 'D:\\Backup\\DevWatch');
-      Swal.fire({
-        icon: 'success',
-        title: 'Backup Berhasil',
-        text: `Database berhasil dibackup ke ${backupPath}\\devwatch-${new Date().toISOString().slice(0, 10)}.sqlite`,
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#6366f1',
+
+      try {
+        const res = await apiTriggerBackup();
+        const data = res.data || {};
+        const token = localStorage.getItem('token') || '';
+        const downloadUrl = `/api/settings/backup/download?token=${encodeURIComponent(token)}`;
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Cadangan Berhasil Dibuat',
+          html: `
+            <div style="text-align:left; font-size:0.85rem; color:#94a3b8;">
+              <p>Berkas cadangan berhasil disalin secara aman ke server:</p>
+              <div style="margin:8px 0; padding:8px 12px; background:rgba(255,255,255,0.05); border-radius:6px; font-family:var(--font-mono); color:#e2e8f0;">
+                <b>${data.filename || 'devwatch-backup.sqlite'}</b> (${data.sizeKb || 0} KB)
+              </div>
+              <p style="font-size:0.78rem; color:#64748b;">Lokasi: ${data.filepath || 'Folder backups server'}</p>
+            </div>
+          `,
+          showCancelButton: true,
+          confirmButtonText: '📥 Unduh File .sqlite',
+          cancelButtonText: 'Tutup',
+          confirmButtonColor: '#6366f1',
+          cancelButtonColor: '#374151',
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        }).then((result) => {
+          if (result.isConfirmed) {
+            window.location.href = downloadUrl;
+          }
+        });
+      } catch (err) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal Membuat Cadangan',
+          text: err.message,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      }
+    };
+  }
+
+  // Clean logs button (Real log cleanup)
+  const cleanLogsBtn = document.getElementById('clean-logs-btn');
+  if (cleanLogsBtn) {
+    cleanLogsBtn.onclick = async () => {
+      const currentRetention = getVal('retention_days', '90');
+      const { isConfirmed } = await Swal.fire({
+        title: '🧹 Bersihkan Log Lama',
+        html: `
+          <div style="text-align:left; font-size:0.85rem; color:#94a3b8;">
+            <p>Seluruh riwayat log status, aktivitas, dan perubahan konfigurasi yang lebih lama dari batas retensi akan dihapus permanen untuk menghemat ruang penyimpanan:</p>
+            <div style="margin-top:10px;">
+              <label style="font-weight:600; color:var(--color-heading);">Batas Retensi:</label>
+              <select class="form-control" id="swal-clean-retention" style="margin-top:4px;">
+                <option value="30" ${currentRetention === '30' ? 'selected' : ''}>Lebih dari 30 hari</option>
+                <option value="60" ${currentRetention === '60' ? 'selected' : ''}>Lebih dari 60 hari</option>
+                <option value="90" ${currentRetention === '90' ? 'selected' : ''}>Lebih dari 90 hari (default)</option>
+                <option value="180" ${currentRetention === '180' ? 'selected' : ''}>Lebih dari 180 hari</option>
+              </select>
+            </div>
+          </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: '🧹 Bersihkan Sekarang',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#374151',
         background: '#1a1d2e',
         color: '#e2e8f0',
       });
+
+      if (isConfirmed) {
+        const select = document.getElementById('swal-clean-retention');
+        const days = select ? parseInt(select.value, 10) : 90;
+
+        Swal.fire({
+          title: 'Membersihkan Log...',
+          didOpen: () => Swal.showLoading(),
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+
+        try {
+          const res = await apiCleanLogs(days);
+          const del = res.deleted || {};
+          Swal.fire({
+            icon: 'success',
+            title: 'Pembersihan Selesai',
+            html: `
+              <div style="font-size:0.85rem; color:#94a3b8;">
+                <p>${res.message || 'Pembersihan log lama berhasil.'}</p>
+                <div style="margin-top:8px; display:inline-block; text-align:left; font-size:0.8rem; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px;">
+                  <div>• Log Status: <b>${del.statusLogs || 0}</b> dihapus</div>
+                  <div>• Log Aktivitas: <b>${del.activityLogs || 0}</b> dihapus</div>
+                  <div>• Log Konfigurasi: <b>${del.configLogs || 0}</b> dihapus</div>
+                </div>
+              </div>
+            `,
+            background: '#1a1d2e',
+            color: '#e2e8f0',
+          });
+        } catch (err) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal Membersihkan Log',
+            text: err.message,
+            background: '#1a1d2e',
+            color: '#e2e8f0',
+          });
+        }
+      }
     };
   }
 }

@@ -152,9 +152,21 @@ export async function apiGetLogs(params = {}) {
   return request(`/logs${query ? `?${query}` : ''}`);
 }
 
+export async function apiGetIsapiInfo(id) {
+  return request(`/devices/${id}/isapi`);
+}
+
 // ---- REPORTS ----
-export async function apiGetWeeklyReport() {
-  return request('/reports/weekly');
+export async function apiGetWeeklyReport(archiveId = null) {
+  return request(`/reports/weekly${archiveId ? `?id=${archiveId}` : ''}`);
+}
+
+export async function apiGetWeeklyArchives() {
+  return request('/reports/weekly/archives');
+}
+
+export async function apiSaveWeeklySnapshot() {
+  return request('/reports/weekly/snapshot', { method: 'POST' });
 }
 
 export async function apiGetSlaReport() {
@@ -206,6 +218,19 @@ export async function apiUpdateSettings(payload) {
   return request('/settings', {
     method: 'PUT',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function apiTriggerBackup() {
+  return request('/settings/backup', {
+    method: 'POST',
+  });
+}
+
+export async function apiCleanLogs(retentionDays = 90) {
+  return request('/settings/clean-logs', {
+    method: 'POST',
+    body: JSON.stringify({ retentionDays }),
   });
 }
 

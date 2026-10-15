@@ -1,0 +1,42 @@
+# ================================================================
+# DevWatch — Caddyfile
+# Konfigurasi Reverse Proxy Produksi dengan Automatic HTTPS (Caddy 2)
+# ================================================================
+
+# Ganti dengan domain atau IP publik server Anda
+# Contoh: monitoring.kantor.com, devwatch.local, atau :443
+monitoring.kantor.com {
+    # Otomatisasi sertifikat TLS (Let's Encrypt / ZeroSSL)
+    # email admin@kantor.com
+
+    # Reverse proxy ke DevWatch Node.js backend & frontend
+    reverse_proxy 127.0.0.1:3000 {
+        # Dukungan penuh WebSocket upgrade
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Header keamanan HTTP modern
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Logging akses
+    log {
+        output file /var/log/caddy/devwatch-access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}
+
+# Opsi Self-Signed / Local Testing Caddy
+# localhost:8443 {
+#     tls internal
+#     reverse_proxy 127.0.0.1:3000
+# }

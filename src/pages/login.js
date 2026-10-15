@@ -6,8 +6,8 @@
 import Swal from 'sweetalert2';
 import { setSession } from '../main.js';
 import { apiLogin } from '../api.js';
-
 import { getAppSetting } from '../settingsManager.js';
+import { requestBrowserPushPermission } from '../services/browserNotification.js';
 
 let failCount = 0;
 let lockoutUntil = null;
@@ -180,6 +180,9 @@ export function initLoginEvents(navigate) {
         avatar: res.user.avatar,
         loginAt: new Date().toISOString(),
       });
+
+      // Minta izin push notification browser sesuai PRD 6.5
+      requestBrowserPushPermission().catch(() => {});
 
       await Swal.fire({
         icon: 'success',

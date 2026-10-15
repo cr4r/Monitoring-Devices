@@ -4,6 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
+import Papa from 'papaparse';
 import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi } from '../data/mock-devices.js';
 import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiImportCsv, apiBulkDeleteDevices } from '../api.js';
 import { getSession } from '../main.js';
@@ -418,43 +419,7 @@ export function initDevicesEvents(navigate) {
     }
   };
 
-  window.devDuplicateBtn = async (id) => {
-    const device = mockDevices.find((d) => d.id === id);
-    if (!device) return;
-    const result = await Swal.fire({
-      title: '📋 Duplikat Device',
-      input: 'text',
-      inputLabel: 'Nama device baru',
-      inputValue: `${device.nama} (Copy)`,
-      showCancelButton: true,
-      confirmButtonText: 'Duplikat',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#6366f1',
-      background: '#1a1d2e',
-      color: '#e2e8f0',
-    });
-    if (result.isConfirmed && result.value) {
-      try {
-        await apiCreateDevice({
-          nama: result.value,
-          ip: device.ip,
-          jenis: device.jenis,
-          metode: device.metode,
-          port: device.port,
-          interval: device.interval,
-          grup: device.grup,
-          lokasi: device.lokasi,
-          deskripsi: device.deskripsi,
-          hostname: device.hostname ? `${device.hostname}-COPY` : null,
-        });
-        await syncDevicesFromApi();
-        Swal.fire({ icon: 'success', title: 'Device Diduplikat', text: `${result.value} berhasil ditambahkan ke database.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-        refreshTable();
-      } catch (err) {
-        Swal.fire({ icon: 'error', title: 'Gagal Duplikasi', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
-      }
-    }
-  };
+  window.devDuplicateBtn = (id) => showDeviceForm(id, refreshTable, true);
 
   window.devEditBtn = (id) => showDeviceForm(id, refreshTable);
 
@@ -474,19 +439,21 @@ export function initDevicesEvents(navigate) {
   });
 }
 
-async function showDeviceForm(id, onSave) {
+async function showDeviceForm(id, onSave, isDuplicate = false) {
   const device = id ? mockDevices.find((d) => d.id === id) : null;
-  const isEdit = !!device;
+  const isEdit = !!device && !isDuplicate;
+
+  const defaultNama = isDuplicate && device ? `${device.nama} (Salinan)` : (device?.nama || '');
 
   const { value: formData, isConfirmed } = await Swal.fire({
-    title: isEdit ? `✏️ Edit Device` : '➕ Tambah Device Baru',
+    title: isDuplicate ? `📋 Duplikat Device` : isEdit ? `✏️ Edit Device` : '➕ Tambah Device Baru',
     width: 640,
     html: `
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px; padding:4px 0;">
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label">Nama Device <span class="required">*</span></label>
-            <input type="text" id="sf-nama" class="form-control" placeholder="CCTV Lobby Lantai 1" value="${device?.nama || ''}" />
+            <input type="text" id="sf-nama" class="form-control" placeholder="CCTV Lobby Lantai 1" value="${defaultNama}" />
           </div>
           <div class="form-group">
             <label class="form-label">IP Address <span class="required">*</span></label>
@@ -610,6 +577,25 @@ function exportCSV() {
   });
 }
 
+function downloadCsvTemplate() {
+  const headers = ['Nama', 'IP Address', 'Hostname', 'Jenis', 'Metode', 'Port', 'Interval', 'Grup', 'Lokasi', 'Deskripsi'];
+  const samples = [
+    ['PC Kasir 01', '192.168.1.101', 'pc-kasir-01', 'Komputer', 'PING', '', '60', 'Kasir', 'Lantai 1', 'PC Kasir Utama'],
+    ['CCTV Lobby Lantai 1', '192.168.1.150', 'cctv-lobby', 'CCTV Hikvision', 'ISAPI', '80', '60', 'Keamanan', 'Lobby Lt. 1', 'Kamera gerbang masuk'],
+    ['CCTV Area Parkir', '192.168.1.151', 'cctv-parkir', 'CCTV Hikvision', 'RTSP', '554', '60', 'Keamanan', 'Parkir Belakang', 'Kamera outdoor RTSP'],
+    ['Kamera Koridor ONVIF', '192.168.1.152', 'cam-onvif', 'CCTV Hikvision', 'ONVIF', '80', '60', 'Keamanan', 'Koridor Timur', 'Kamera profil ONVIF'],
+  ];
+
+  const csvRows = [headers, ...samples].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csvRows], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'devwatch-template-import-devices.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 let parsedCsvDevices = [];
 
 async function showImportCSV(onSave) {
@@ -618,22 +604,33 @@ async function showImportCSV(onSave) {
     title: '📂 Import Device dari CSV',
     html: `
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
-        <div class="alert-banner info">
-          ℹ️ Format CSV: Nama, IP, Jenis (komputer/cctv), Metode (ping/isapi/rtsp/onvif), Interval (detik), Grup
+        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:10px 14px;">
+          <div>
+            <div style="font-weight:600; font-size:0.85rem; color:var(--color-heading);">Gunakan format CSV standar</div>
+            <div style="font-size:0.75rem; color:var(--color-muted);">Kolom: Nama, IP, Jenis, Metode, Port, Interval, Grup, Lokasi</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-download-csv-template" style="padding:5px 12px; font-size:0.78rem; white-space:nowrap;">
+            📥 Unduh Template
+          </button>
         </div>
+
         <div class="csv-drop-zone" id="csv-drop-zone">
           <input type="file" id="csv-file-input" accept=".csv" />
           <div class="csv-drop-icon">📂</div>
           <div style="font-weight:600; color:var(--color-text-secondary);">Klik atau drag & drop file CSV di sini</div>
-          <div style="font-size:0.78rem; color:var(--color-muted);">Format: .csv, maks 1000 baris</div>
+          <div style="font-size:0.78rem; color:var(--color-muted);">Mendukung format koma/titik koma, maks 1.000 baris</div>
         </div>
+
         <div id="csv-preview" style="display:none;">
-          <div style="font-weight:600; margin-bottom:8px; color:var(--color-heading);">Preview:</div>
-          <div class="table-wrapper import-preview-table" id="csv-preview-table"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-weight:600; color:var(--color-heading);" id="csv-preview-count">Preview Perangkat:</div>
+            <span class="badge badge-online" id="csv-valid-badge">Siap Diimpor</span>
+          </div>
+          <div class="table-wrapper import-preview-table" id="csv-preview-table" style="max-height:220px; overflow-y:auto;"></div>
         </div>
       </div>
     `,
-    width: 600,
+    width: 680,
     background: '#1a1d2e',
     color: '#e2e8f0',
     showCancelButton: true,
@@ -642,6 +639,7 @@ async function showImportCSV(onSave) {
     confirmButtonColor: '#6366f1',
     cancelButtonColor: '#374151',
     didOpen: () => {
+      document.getElementById('btn-download-csv-template')?.addEventListener('click', downloadCsvTemplate);
       const fileInput = document.getElementById('csv-file-input');
       fileInput?.addEventListener('change', (e) => handleCSVPreview(e.target.files[0]));
     },
@@ -655,7 +653,7 @@ async function showImportCSV(onSave) {
       Swal.fire({
         icon: 'success',
         title: 'Import CSV Berhasil',
-        text: `${res.imported || parsedCsvDevices.length} device berhasil dimasukkan ke sistem.`,
+        text: `${res.imported || res.count || parsedCsvDevices.length} perangkat berhasil dimasukkan ke sistem.`,
         background: '#1a1d2e',
         color: '#e2e8f0',
       });
@@ -667,33 +665,102 @@ async function showImportCSV(onSave) {
 
 function handleCSVPreview(file) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const lines = e.target.result.split('\n').filter((l) => l.trim());
-    if (lines.length <= 1) return;
-    const header = lines[0].split(',').map((h) => h.replace(/"/g, '').trim().toLowerCase());
-    const rawRows = lines.slice(1).map((l) => l.split(',').map((c) => c.replace(/"/g, '').trim()));
 
-    parsedCsvDevices = rawRows.map((r) => ({
-      nama: r[0] || 'Device CSV',
-      ip: r[1] || '127.0.0.1',
-      jenis: (r[2] || 'komputer').toLowerCase(),
-      metode: (r[3] || 'ping').toLowerCase(),
-      interval: parseInt(r[4]) || 60,
-      grup: r[5] || 'Umum',
-    }));
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: 'greedy',
+    complete: (results) => {
+      const rawData = results.data || [];
+      if (rawData.length === 0) {
+        Swal.showValidationMessage?.('Berkas CSV kosong atau tidak memiliki data.');
+        return;
+      }
 
-    const preview = document.getElementById('csv-preview');
-    const table = document.getElementById('csv-preview-table');
-    if (preview) preview.style.display = 'block';
-    if (table) {
-      table.innerHTML = `
-        <table class="data-table">
-          <thead><tr>${header.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
-          <tbody>${rawRows.slice(0, 5).map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table>
-      `;
-    }
-  };
-  reader.readAsText(file, 'UTF-8');
+      parsedCsvDevices = rawData.map((row) => {
+        // Ambil nilai dengan pencocokan nama kolom fleksibel
+        const getVal = (...keys) => {
+          for (const k of keys) {
+            const match = Object.keys(row).find((rk) => rk.trim().toLowerCase() === k.toLowerCase());
+            if (match && row[match] !== undefined && row[match] !== null && String(row[match]).trim() !== '') {
+              return String(row[match]).trim();
+            }
+          }
+          return '';
+        };
+
+        const nama = getVal('nama', 'name', 'device', 'perangkat') || 'Device CSV';
+        const ip = getVal('ip address', 'ip_address', 'ip', 'host', 'target') || '127.0.0.1';
+        const hostname = getVal('hostname', 'host_name') || '';
+        const jenisRaw = getVal('jenis', 'type', 'kategori') || 'Komputer';
+        const jenis = jenisRaw.toLowerCase().includes('cctv') || jenisRaw.toLowerCase().includes('hikvision')
+          ? 'CCTV Hikvision'
+          : 'Komputer';
+
+        const metodeRaw = getVal('metode', 'method', 'protocol') || 'PING';
+        const metodeUp = metodeRaw.toUpperCase();
+        const metode = ['PING', 'ISAPI', 'RTSP', 'ONVIF'].includes(metodeUp) ? metodeUp : 'PING';
+
+        const portRaw = getVal('port', 'tcp_port');
+        const port = portRaw ? parseInt(portRaw, 10) || null : (metode === 'RTSP' ? 554 : metode === 'ISAPI' ? 80 : null);
+        const intervalRaw = getVal('interval', 'interval_detik', 'interval (detik)', 'polling');
+        const interval_detik = Math.max(10, Math.min(3600, parseInt(intervalRaw, 10) || 60));
+        const grup = getVal('grup', 'group', 'kelompok') || 'Umum';
+        const lokasi = getVal('lokasi', 'location', 'ruang', 'lantai') || 'Kantor';
+        const deskripsi = getVal('deskripsi', 'description', 'keterangan') || '';
+
+        return {
+          nama,
+          ip,
+          hostname,
+          jenis,
+          metode,
+          port,
+          interval_detik,
+          grup,
+          lokasi,
+          deskripsi,
+        };
+      }).filter((d) => d.nama && d.ip && d.ip !== '');
+
+      const preview = document.getElementById('csv-preview');
+      const table = document.getElementById('csv-preview-table');
+      const countEl = document.getElementById('csv-preview-count');
+      if (countEl) countEl.innerText = `Preview Perangkat (${parsedCsvDevices.length} baris valid):`;
+      if (preview) preview.style.display = 'block';
+
+      if (table) {
+        table.innerHTML = `
+          <table class="data-table" style="font-size:0.75rem;">
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>IP Address</th>
+                <th>Jenis</th>
+                <th>Metode</th>
+                <th>Port</th>
+                <th>Grup</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${parsedCsvDevices.slice(0, 8).map((d) => `
+                <tr>
+                  <td><b>${d.nama}</b></td>
+                  <td><code>${d.ip}</code></td>
+                  <td>${d.jenis}</td>
+                  <td><span class="chip">${d.metode}</span></td>
+                  <td>${d.port || '—'}</td>
+                  <td>${d.grup}</td>
+                </tr>
+              `).join('')}
+              ${parsedCsvDevices.length > 8 ? `<tr><td colspan="6" style="text-align:center; color:var(--color-muted);">...dan ${parsedCsvDevices.length - 8} perangkat lainnya</td></tr>` : ''}
+            </tbody>
+          </table>
+        `;
+      }
+    },
+    error: (err) => {
+      Swal.fire({ icon: 'error', title: 'Format CSV Salah', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+    },
+  });
 }
+

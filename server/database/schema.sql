@@ -99,9 +99,28 @@ CREATE TABLE IF NOT EXISTS system_settings (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS weekly_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  minggu_ke TEXT NOT NULL,
+  tahun INTEGER NOT NULL,
+  periode_label TEXT NOT NULL,
+  periode_mulai DATETIME NOT NULL,
+  periode_selesai DATETIME NOT NULL,
+  total_devices INTEGER NOT NULL DEFAULT 0,
+  online_devices INTEGER NOT NULL DEFAULT 0,
+  average_uptime REAL NOT NULL DEFAULT 100.0,
+  target_sla REAL NOT NULL DEFAULT 99.0,
+  total_incidents INTEGER NOT NULL DEFAULT 0,
+  total_downtime_hours REAL NOT NULL DEFAULT 0.0,
+  summary_json TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
 CREATE INDEX IF NOT EXISTS idx_devices_ip ON devices(ip);
 CREATE INDEX IF NOT EXISTS idx_device_status_logs_waktu ON device_status_logs(waktu);
 CREATE INDEX IF NOT EXISTS idx_user_activity_waktu ON user_activity_logs(waktu);
 CREATE INDEX IF NOT EXISTS idx_config_logs_waktu ON config_logs(waktu);
 CREATE INDEX IF NOT EXISTS idx_incidents_device ON incidents(device_id);
+CREATE INDEX IF NOT EXISTS idx_weekly_reports_minggu ON weekly_reports(minggu_ke, tahun);
+

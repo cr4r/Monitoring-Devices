@@ -80,6 +80,72 @@ export function renderTimeline24h(canvasId, data) {
   });
 }
 
+// ---- Grafik Agregat Timeline Global 24 Jam ----
+export function renderAggregateTimeline(canvasId, timelineData) {
+  destroyChart(canvasId);
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const labels = timelineData.map((d) => d.hour || d.jam);
+  const onlineCounts = timelineData.map((d) => d.online ?? d.uptimePct ?? 0);
+  const offlineCounts = timelineData.map((d) => d.offline ?? 0);
+
+  chartInstances[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Device Online',
+          data: onlineCounts,
+          backgroundColor: 'rgba(34, 197, 94, 0.85)',
+          borderRadius: 4,
+          stack: 'stack0',
+        },
+        {
+          label: 'Device Offline',
+          data: offlineCounts,
+          backgroundColor: 'rgba(239, 68, 68, 0.85)',
+          borderRadius: 4,
+          stack: 'stack0',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { color: '#94a3b8', font: { size: 10 } },
+        },
+        tooltip: {
+          backgroundColor: '#1a1d2e',
+          borderColor: 'rgba(255,255,255,0.07)',
+          borderWidth: 1,
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 10 } },
+        },
+        y: {
+          stacked: true,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 10 }, stepSize: 1 },
+          beginAtZero: true,
+          title: { display: true, text: 'Jumlah Perangkat', color: '#64748b', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
 // ---- Uptime bar horizontal ----
 export function renderUptimeBar(canvasId, devices, field = 'uptime24h') {
   destroyChart(canvasId);

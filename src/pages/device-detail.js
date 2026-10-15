@@ -5,7 +5,7 @@
 
 import Swal from 'sweetalert2';
 import { mockDevices, updateDeviceStatus, syncDevicesFromApi } from '../data/mock-devices.js';
-import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance } from '../api.js';
+import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice, apiGetIsapiInfo } from '../api.js';
 import { uptimePerDevice, insiden, getTimeline24h } from '../data/mock-reports.js';
 import { renderTimeline24h } from '../components/charts.js';
 import { getSession } from '../main.js';
@@ -171,6 +171,16 @@ export function renderDeviceDetail(params = {}) {
               </div>
             `).join('')}
           </div>
+          ${(String(device.jenis).toLowerCase().includes('cctv') || ['ISAPI', 'ONVIF', 'RTSP'].includes((device.metode || '').toUpperCase())) ? `
+            <div id="isapi-info-panel" style="margin-top:14px; padding:12px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px;">
+              <div style="font-weight:700; font-size:0.85rem; color:var(--color-heading); margin-bottom:8px;">
+                📹 Status Protokol Kamera (${(device.metode || 'ISAPI').toUpperCase()})
+              </div>
+              <div id="isapi-info-content" style="font-size:0.78rem; color:var(--color-muted);">
+                Memuat detail ISAPI / ONVIF dari perangkat...
+              </div>
+            </div>
+          ` : ''}
         </div>
       </div>
 
@@ -242,15 +252,56 @@ export function renderDeviceDetail(params = {}) {
 export function initDeviceDetailEvents(navigate) {
   document.getElementById('back-btn')?.addEventListener('click', () => navigate('devices'));
 
-  // Render timeline chart
-  const timelineData = getTimeline24h(1);
-  setTimeout(() => renderTimeline24h('detail-timeline-chart', timelineData), 100);
-
   const getDetailId = () => {
     const hash = window.location.hash || '';
     const match = hash.match(/id=(\d+)/);
     return match ? parseInt(match[1]) : 1;
   };
+
+  const id = getDetailId();
+
+  // Ambil data timeline 24 jam riil dari database
+  apiGetDevice(id).then((res) => {
+    if (res && res.data && res.data.timeline24h) {
+      const mapped = res.data.timeline24h.map((t) => ({
+        jam: t.hour,
+        status: t.status,
+        responseTime: t.latency || 1,
+      }));
+      renderTimeline24h('detail-timeline-chart', mapped);
+    } else {
+      const timelineData = getTimeline24h(id);
+      renderTimeline24h('detail-timeline-chart', timelineData);
+    }
+  }).catch(() => {
+    const timelineData = getTimeline24h(id);
+    renderTimeline24h('detail-timeline-chart', timelineData);
+  });
+
+  // Ambil metadata ISAPI/ONVIF jika perangkat kamera
+  const isapiPanel = document.getElementById('isapi-info-content');
+  if (isapiPanel) {
+    apiGetIsapiInfo(id).then((res) => {
+      const d = res?.data;
+      if (d?.supported && d?.metadata) {
+        const m = d.metadata;
+        isapiPanel.innerHTML = `
+          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; color:var(--color-text);">
+            <div><span style="color:var(--color-muted);">Model:</span> <b>${m.model || 'Hikvision CCTV'}</b></div>
+            <div><span style="color:var(--color-muted);">Firmware:</span> <b>${m.firmwareVersion || 'ISAPI v2.0'}</b></div>
+            <div><span style="color:var(--color-muted);">Serial:</span> <b>${m.serialNumber || '—'}</b></div>
+            <div><span style="color:var(--color-muted);">Status ISAPI:</span> <span class="badge badge-online">Aktif</span></div>
+          </div>
+        `;
+      } else if (d?.supported) {
+        isapiPanel.innerHTML = `<span style="color:var(--color-online);">✅ Endpoint protokol aktif merespons permintaan. (${d.message || 'Challenge 401 OK'})</span>`;
+      } else {
+        isapiPanel.innerHTML = `<span style="color:var(--color-muted);">${d?.message || 'Protokol tidak merespons.'}</span>`;
+      }
+    }).catch(() => {
+      if (isapiPanel) isapiPanel.innerHTML = '<span style="color:var(--color-muted);">Informasi protokol belum tersedia.</span>';
+    });
+  }
 
   // Ping
   document.getElementById('detail-ping-btn')?.addEventListener('click', async () => {
