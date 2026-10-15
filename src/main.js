@@ -18,8 +18,10 @@ import { renderSettings, initSettingsEvents } from './pages/settings.js';
 import { renderAbout, initAboutEvents } from './pages/about.js';
 import { destroyAllCharts } from './components/charts.js';
 import { connectWebSocket } from './api.js';
+import { initSettingsManager } from './settingsManager.js';
 
-// Hubungkan WebSocket real-time
+// Inisialisasi pengaturan dinamis & WebSocket
+initSettingsManager();
 connectWebSocket();
 
 // ---- SESSION MANAGEMENT ----

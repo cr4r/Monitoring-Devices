@@ -9,19 +9,23 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
+function getSystemSettingsObject() {
+  const rows = query('SELECT kategori, kunci, nilai FROM system_settings');
+  const categorized = {};
+  const flat = {};
+  for (const row of rows) {
+    if (!categorized[row.kategori]) {
+      categorized[row.kategori] = {};
+    }
+    categorized[row.kategori][row.kunci] = row.nilai;
+    flat[row.kunci] = row.nilai;
+  }
+  return { ...categorized, ...flat, _categories: categorized };
+}
+
 // GET /api/settings — Mengambil seluruh konfigurasi
 router.get('/', authenticateToken, (req, res) => {
-  const rows = query('SELECT kategori, kunci, nilai FROM system_settings');
-
-  // Kelompokkan berdasarkan kategori
-  const settings = {};
-  for (const row of rows) {
-    if (!settings[row.kategori]) {
-      settings[row.kategori] = {};
-    }
-    settings[row.kategori][row.kunci] = row.nilai;
-  }
-
+  const settings = getSystemSettingsObject();
   res.json({ success: true, data: settings });
 });
 
@@ -36,6 +40,7 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
   let updatedCount = 0;
 
   for (const [kategoriOrKey, val] of Object.entries(updates)) {
+    if (kategoriOrKey === '_categories') continue;
     if (typeof val === 'object' && val !== null) {
       // Format { umum: { app_name: 'DevWatch' } }
       for (const [kunci, subVal] of Object.entries(val)) {
@@ -50,8 +55,10 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
     } else {
       // Format langsung { app_name: 'DevWatch' }
       run(
-        `UPDATE system_settings SET nilai = ?, updated_at = datetime('now') WHERE kunci = ?`,
-        [String(val), kategoriOrKey]
+        `INSERT INTO system_settings (kategori, kunci, nilai, updated_at)
+         VALUES ('umum', ?, ?, datetime('now'))
+         ON CONFLICT(kunci) DO UPDATE SET nilai = excluded.nilai, updated_at = excluded.updated_at`,
+        [kategoriOrKey, String(val)]
       );
       updatedCount++;
     }
@@ -63,9 +70,12 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
     [req.user.id, req.user.nama, `Memperbarui ${updatedCount} parameter konfigurasi sistem`]
   );
 
+  const updatedSettings = getSystemSettingsObject();
+
   res.json({
     success: true,
     message: 'Pengaturan sistem berhasil disimpan.',
+    data: updatedSettings,
   });
 });
 

@@ -4,23 +4,23 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockUsers } from '../data/mock-users.js';
 import { apiGetUsers, apiCreateUser, apiUpdateUser, apiDeleteUser, apiResetPassword } from '../api.js';
 import { getSession } from '../main.js';
+import { formatDateWithTz } from '../settingsManager.js';
 
 let userSearchTerm = '';
-let liveUsers = null;
+let liveUsers = [];
 
 export async function fetchLiveUsers() {
   try {
     const res = await apiGetUsers();
-    if (res && res.data) {
+    if (res && res.data && Array.isArray(res.data)) {
       liveUsers = res.data.map((u) => ({
         id: u.id,
         nama: u.nama,
         email: u.email,
         role: u.role,
-        status: u.is_active === 1 ? 'aktif' : 'nonaktif',
+        status: u.status || 'aktif',
         avatar: (u.nama || 'U').split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase(),
         lastLogin: u.last_login,
         ipAkses: '127.0.0.1',
@@ -29,12 +29,12 @@ export async function fetchLiveUsers() {
       }));
     }
   } catch {
-    liveUsers = null;
+    // Tangani error jaringan
   }
 }
 
 function getUsersList() {
-  return liveUsers || mockUsers;
+  return liveUsers;
 }
 
 export function renderUsers() {
@@ -70,21 +70,21 @@ export function renderUsers() {
         <div class="stat-card total">
           <div class="stat-icon total">👥</div>
           <div class="stat-info">
-            <div class="stat-value">${list.length}</div>
+            <div class="stat-value" id="user-stat-total">${list.length}</div>
             <div class="stat-label">Total Pengguna</div>
           </div>
         </div>
         <div class="stat-card online-stat">
           <div class="stat-icon online-stat">✅</div>
           <div class="stat-info">
-            <div class="stat-value text-online">${list.filter((u) => u.status === 'aktif').length}</div>
+            <div class="stat-value text-online" id="user-stat-aktif">${list.filter((u) => u.status === 'aktif').length}</div>
             <div class="stat-label">Akun Aktif</div>
           </div>
         </div>
         <div class="stat-card offline-stat">
           <div class="stat-icon offline-stat">⛔</div>
           <div class="stat-info">
-            <div class="stat-value text-offline">${list.filter((u) => u.status === 'nonaktif').length}</div>
+            <div class="stat-value text-offline" id="user-stat-nonaktif">${list.filter((u) => u.status === 'nonaktif').length}</div>
             <div class="stat-label">Akun Nonaktif</div>
           </div>
         </div>
@@ -152,7 +152,7 @@ function renderUsersTable(search = '', filterRole = 'all', filterStatus = 'all')
         </span>
       </td>
       <td style="font-size:0.78rem; color:var(--color-muted);">
-        ${u.lastLogin ? new Date(u.lastLogin).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '—'}
+        ${formatDateWithTz(u.lastLogin)}
       </td>
       <td><span class="ip-text">${u.ipAkses || '—'}</span></td>
       <td>
@@ -205,6 +205,13 @@ export function initUsersEvents() {
 
   const refresh = async () => {
     await fetchLiveUsers();
+    const list = getUsersList();
+    const elTotal = document.getElementById('user-stat-total');
+    const elAktif = document.getElementById('user-stat-aktif');
+    const elNonaktif = document.getElementById('user-stat-nonaktif');
+    if (elTotal) elTotal.textContent = list.length;
+    if (elAktif) elAktif.textContent = list.filter((u) => u.status === 'aktif').length;
+    if (elNonaktif) elNonaktif.textContent = list.filter((u) => u.status === 'nonaktif').length;
     const wrapper = document.getElementById('users-table-wrapper');
     if (wrapper) wrapper.innerHTML = renderUsersTable(userSearchTerm, roleFilter, statusFilter);
   };
@@ -252,7 +259,7 @@ export function initUsersEvents() {
     });
     if (result.isConfirmed) {
       try {
-        await apiUpdateUser(id, { isActive: newStatus === 'aktif' ? 1 : 0 });
+        await apiUpdateUser(id, { status: newStatus });
         await refresh();
         Swal.fire({ icon: 'success', title: `Pengguna ${newStatus === 'aktif' ? 'Diaktifkan' : 'Dinonaktifkan'}`, timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
       } catch (err) {

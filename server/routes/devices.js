@@ -11,6 +11,19 @@ import { broadcast } from '../services/websocketService.js';
 
 const router = express.Router();
 
+function normalizeJenis(val) {
+  if (!val) return 'Komputer';
+  const low = String(val).toLowerCase();
+  return low.includes('cctv') ? 'CCTV Hikvision' : 'Komputer';
+}
+
+function normalizeMetode(val) {
+  if (!val) return 'PING';
+  const up = String(val).toUpperCase();
+  const valid = ['PING', 'ISAPI', 'RTSP', 'ONVIF'];
+  return valid.includes(up) ? up : 'PING';
+}
+
 // GET /api/devices — Daftar perangkat dengan filter & statistik
 router.get('/', authenticateToken, (req, res) => {
   const { status, jenis, grup, search } = req.query;
@@ -129,6 +142,9 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
     });
   }
 
+  const cleanJenis = normalizeJenis(jenis);
+  const cleanMetode = normalizeMetode(metode);
+
   const result = run(
     `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, target_sla, status, last_check, last_seen_online)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline', datetime('now'), datetime('now'))`,
@@ -136,8 +152,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
       nama.trim(),
       ip.trim(),
       hostname ? hostname.trim() : null,
-      jenis,
-      metode.toUpperCase(),
+      cleanJenis,
+      cleanMetode,
       port ? parseInt(port, 10) : null,
       parseInt(interval_detik, 10) || 60,
       grup.trim(),
@@ -193,6 +209,9 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
     target_sla,
   } = req.body;
 
+  const cleanJenis = jenis ? normalizeJenis(jenis) : null;
+  const cleanMetode = metode ? normalizeMetode(metode) : null;
+
   run(
     `UPDATE devices
      SET nama = coalesce(?, nama),
@@ -209,17 +228,17 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
          updated_at = datetime('now')
      WHERE id = ?`,
     [
-      nama?.trim(),
-      ip?.trim(),
-      hostname?.trim(),
-      jenis,
-      metode ? metode.toUpperCase() : null,
-      port ? parseInt(port, 10) : null,
-      interval_detik ? parseInt(interval_detik, 10) : null,
-      grup?.trim(),
-      lokasi?.trim(),
-      deskripsi,
-      target_sla ? parseFloat(target_sla) : null,
+      nama?.trim() ?? null,
+      ip?.trim() ?? null,
+      hostname?.trim() ?? null,
+      cleanJenis ?? null,
+      cleanMetode ?? null,
+      port !== undefined && port !== '' ? parseInt(port, 10) : null,
+      interval_detik !== undefined && interval_detik !== '' ? parseInt(interval_detik, 10) : null,
+      grup?.trim() ?? null,
+      lokasi?.trim() ?? null,
+      deskripsi ?? null,
+      target_sla !== undefined && target_sla !== '' ? parseFloat(target_sla) : null,
       dev.id,
     ]
   );
@@ -235,6 +254,42 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
   res.json({
     success: true,
     message: `Perangkat ${dev.nama} berhasil diperbarui.`,
+  });
+});
+
+// POST /api/devices/bulk-delete — Hapus banyak perangkat sekaligus (Admin only)
+router.post('/bulk-delete', authenticateToken, requireRole(['admin']), (req, res) => {
+  const { ids } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ success: false, message: 'Daftar ID perangkat yang akan dihapus tidak valid.' });
+  }
+
+  const validIds = ids.map((id) => parseInt(id, 10)).filter((id) => !isNaN(id) && id > 0);
+  if (validIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'Tidak ada ID perangkat valid yang dipilih.' });
+  }
+
+  const placeholders = validIds.map(() => '?').join(',');
+  const devicesToDelete = query(`SELECT id, nama, ip FROM devices WHERE id IN (${placeholders})`, validIds);
+
+  run(`DELETE FROM devices WHERE id IN (${placeholders})`, validIds);
+
+  for (const d of devicesToDelete) {
+    run(
+      `INSERT INTO config_logs (user_id, user_nama, aksi, device_id, device_nama, detail)
+       VALUES (?, ?, 'Hapus Perangkat (Massal)', ?, ?, ?)`,
+      [req.user.id, req.user.nama, d.id, d.nama, `Menghapus massal perangkat ${d.nama} (${d.ip})`]
+    );
+  }
+
+  broadcast('devices_deleted', { ids: validIds });
+
+  res.json({
+    success: true,
+    message: `${devicesToDelete.length} perangkat berhasil dihapus dari sistem.`,
+    deletedCount: devicesToDelete.length,
+    deletedIds: validIds,
   });
 });
 
@@ -284,6 +339,7 @@ router.post('/:id/ping', authenticateToken, requireRole(['admin', 'teknisi']), a
     );
   }
 
+  const status = result.alive ? 'online' : 'offline';
   res.json({
     success: true,
     data: {
@@ -291,9 +347,18 @@ router.post('/:id/ping', authenticateToken, requireRole(['admin', 'teknisi']), a
       nama: dev.nama,
       ip: dev.ip,
       alive: result.alive,
+      status,
       time: result.time,
+      responseTime: result.time,
       statusText: result.statusText,
+      method: dev.metode || 'PING',
     },
+    alive: result.alive,
+    status,
+    time: result.time,
+    responseTime: result.time,
+    statusText: result.statusText,
+    method: dev.metode || 'PING',
   });
 });
 

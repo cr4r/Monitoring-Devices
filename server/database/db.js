@@ -30,12 +30,16 @@ if (fs.existsSync(schemaPath)) {
   db.exec(schemaSql);
 }
 
+function sanitizeParams(params = []) {
+  return Array.isArray(params) ? params.map((p) => (p === undefined ? null : p)) : params;
+}
+
 /**
  * Eksekusi query SELECT dengan hasil array object
  */
 export function query(sql, params = []) {
   const stmt = db.prepare(sql);
-  return stmt.all(...params);
+  return stmt.all(...sanitizeParams(params));
 }
 
 /**
@@ -43,7 +47,7 @@ export function query(sql, params = []) {
  */
 export function queryOne(sql, params = []) {
   const stmt = db.prepare(sql);
-  return stmt.get(...params) || null;
+  return stmt.get(...sanitizeParams(params)) || null;
 }
 
 /**
@@ -51,7 +55,7 @@ export function queryOne(sql, params = []) {
  */
 export function run(sql, params = []) {
   const stmt = db.prepare(sql);
-  return stmt.run(...params);
+  return stmt.run(...sanitizeParams(params));
 }
 
 /**

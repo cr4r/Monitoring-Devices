@@ -10,45 +10,46 @@ export async function seedDatabase() {
   console.log('Memeriksa kelengkapan data database DevWatch...');
 
   // 1. Seed Pengguna (Admin, Teknisi, Viewer)
-  const existingUser = queryOne('SELECT id FROM users LIMIT 1');
-  if (!existingUser) {
-    console.log('Menyemai data pengguna bawaan...');
+  const defaultUsers = [
+    {
+      nama: 'Ahmad Rizky',
+      email: 'admin@kantor.com',
+      password: 'admin123',
+      role: 'admin',
+      avatar: 'AR',
+      status: 'aktif',
+    },
+    {
+      nama: 'Budi Santoso',
+      email: 'teknisi@kantor.com',
+      password: 'teknisi123',
+      role: 'teknisi',
+      avatar: 'BS',
+      status: 'aktif',
+    },
+    {
+      nama: 'Citra Dewi',
+      email: 'viewer@kantor.com',
+      password: 'viewer123',
+      role: 'viewer',
+      avatar: 'CD',
+      status: 'aktif',
+    },
+  ];
+
+  for (const u of defaultUsers) {
     const salt = bcrypt.genSaltSync(10);
-
-    const users = [
-      {
-        nama: 'Ahmad Rizky',
-        email: 'admin@kantor.com',
-        password: 'admin123',
-        role: 'admin',
-        avatar: 'AR',
-        status: 'aktif',
-      },
-      {
-        nama: 'Budi Santoso',
-        email: 'teknisi@kantor.com',
-        password: 'teknisi123',
-        role: 'teknisi',
-        avatar: 'BS',
-        status: 'aktif',
-      },
-      {
-        nama: 'Citra Dewi',
-        email: 'viewer@kantor.com',
-        password: 'viewer123',
-        role: 'viewer',
-        avatar: 'CD',
-        status: 'aktif',
-      },
-    ];
-
-    for (const u of users) {
-      const hash = bcrypt.hashSync(u.password, salt);
+    const hash = bcrypt.hashSync(u.password, salt);
+    const existing = queryOne('SELECT id FROM users WHERE email = ?', [u.email]);
+    if (!existing) {
       run(
         `INSERT INTO users (nama, email, password_hash, role, avatar, status, notif_settings)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [u.nama, u.email, hash, u.role, u.avatar, u.status, JSON.stringify({ enabled: true })]
       );
+      console.log(`[Seed]: Pengguna default ${u.email} berhasil ditambahkan.`);
+    } else {
+      run('UPDATE users SET password_hash = ? WHERE email = ?', [hash, u.email]);
     }
   }
 

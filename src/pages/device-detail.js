@@ -9,6 +9,7 @@ import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance } from '../api.j
 import { uptimePerDevice, insiden, getTimeline24h } from '../data/mock-reports.js';
 import { renderTimeline24h } from '../components/charts.js';
 import { getSession } from '../main.js';
+import { formatDateWithTz } from '../settingsManager.js';
 
 export function renderDeviceDetail(params = {}) {
   const id = parseInt(params.id || 1);
@@ -130,7 +131,7 @@ export function renderDeviceDetail(params = {}) {
           <div style="font-size:0.85rem; color:var(--color-text-secondary);">
             <b>Alasan:</b> ${device.maintenanceInfo.alasan}<br>
             <b>Oleh:</b> ${device.maintenanceInfo.oleh}<br>
-            <b>Estimasi selesai:</b> ${new Date(device.maintenanceInfo.estimasiSelesai).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+            <b>Estimasi selesai:</b> ${formatDateWithTz(device.maintenanceInfo.estimasiSelesai)}
           </div>
         </div>` : ''}
       </div>
@@ -224,8 +225,8 @@ export function renderDeviceDetail(params = {}) {
                     ${inc.durasi ? `<span class="chip">⏱️ ${inc.durasi}</span>` : ''}
                   </div>
                   <div style="font-size:0.8rem; color:var(--color-muted);">
-                    ${new Date(inc.mulai).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
-                    ${inc.selesai ? ` → ${new Date(inc.selesai).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}` : ''}
+                    ${formatDateWithTz(inc.mulai)}
+                    ${inc.selesai ? ` → ${formatDateWithTz(inc.selesai)}` : ''}
                   </div>
                   <div style="font-size:0.82rem; color:var(--color-text-secondary); margin-top:4px;">${inc.penyebab}</div>
                 </div>
@@ -269,21 +270,22 @@ export function initDeviceDetailEvents(navigate) {
 
     try {
       const res = await apiPingDevice(id);
-      const isOnline = res.status === 'online';
-      const ms = res.responseTime;
-      device.status = res.status;
+      const pingData = res.data || res;
+      const isOnline = Boolean(pingData.alive || pingData.status === 'online');
+      const ms = pingData.responseTime ?? pingData.time;
+      device.status = isOnline ? 'online' : 'offline';
       device.responseTime = ms;
 
       Swal.fire({
         title: 'Hasil Probe Jaringan',
         html: isOnline
           ? `<div style="text-align:center;">
-              <div style="font-size:2.5rem; font-weight:800; color:var(--color-online);">${ms !== null ? ms + ' ms' : 'OK'}</div>
-              <div style="color:#94a3b8; font-size:0.85rem;">${device.ip} Online ✅ (${res.method || device.metode})</div>
+              <div style="font-size:2.5rem; font-weight:800; color:var(--color-online);">${ms !== null && ms !== undefined ? ms + ' ms' : 'OK'}</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">${device.ip} Online ✅ (${pingData.method || device.metode})</div>
             </div>`
           : `<div style="text-align:center;">
               <div style="font-size:2.2rem; font-weight:800; color:var(--color-offline);">Offline / Timeout</div>
-              <div style="color:#94a3b8; font-size:0.85rem;">${device.ip} ${res.error || 'Request Timeout'} ❌</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">${device.ip} ${pingData.statusText || pingData.error || 'Request Timeout'} ❌</div>
             </div>`,
         background: '#1a1d2e',
         color: '#e2e8f0',

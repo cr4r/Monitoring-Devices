@@ -5,8 +5,9 @@
 
 import Swal from 'sweetalert2';
 import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi } from '../data/mock-devices.js';
-import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiImportCsv } from '../api.js';
+import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiImportCsv, apiBulkDeleteDevices } from '../api.js';
 import { getSession } from '../main.js';
+import { getAppSetting } from '../settingsManager.js';
 
 let currentPage = 1;
 let rowsPerPage = 25;
@@ -14,6 +15,7 @@ let searchTerm = '';
 let filterGrup = 'all';
 let filterStatus = 'all';
 let filterJenis = 'all';
+let selectedDeviceIds = new Set();
 
 export function renderDevices() {
   const session = getSession();
@@ -34,6 +36,18 @@ export function renderDevices() {
           <button class="btn btn-secondary btn-sm" id="export-csv-btn">📥 Export CSV</button>
           <button class="btn btn-primary" id="add-device-btn">➕ Tambah Device</button>
           ` : ''}
+        </div>
+      </div>
+
+      <!-- Bulk Actions Bar -->
+      <div id="bulk-actions-bar" style="display:${selectedDeviceIds.size > 0 ? 'flex' : 'none'}; align-items:center; justify-content:space-between; padding:12px 18px; background:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.35); border-radius:10px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.3rem;">⚠️</span>
+          <span id="bulk-selected-count" style="font-weight:700; color:#f87171;">${selectedDeviceIds.size} device dipilih</span>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-secondary btn-sm" id="bulk-deselect-btn">Batalkan Pilihan</button>
+          ${isAdmin ? `<button class="btn btn-sm" id="bulk-delete-btn" style="background:#ef4444; color:#fff; font-weight:700; padding:6px 14px;">🗑️ Hapus Terpilih</button>` : ''}
         </div>
       </div>
 
@@ -74,8 +88,11 @@ export function renderDevices() {
 
 function getFiltered() {
   return mockDevices.filter((d) => {
-    if (filterJenis !== 'all' && d.jenis !== filterJenis) return false;
-    if (filterStatus !== 'all' && d.status !== filterStatus) return false;
+    if (filterJenis !== 'all') {
+      const j = (d.jenis || '').toLowerCase();
+      if (!j.includes(filterJenis)) return false;
+    }
+    if (filterStatus !== 'all' && (d.status || '').toLowerCase() !== filterStatus) return false;
     if (filterGrup !== 'all' && d.grup !== filterGrup) return false;
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
@@ -112,6 +129,9 @@ function renderDevicesTable(canEdit, isAdmin) {
 
     return `
       <tr>
+        <td style="width:40px; text-align:center;">
+          <input type="checkbox" class="device-select-checkbox" data-id="${d.id}" ${selectedDeviceIds.has(d.id) ? 'checked' : ''} style="cursor:pointer; transform:scale(1.15);" />
+        </td>
         <td>
           <div style="display:flex; align-items:center; gap:8px;">
             <span>${d.jenis === 'cctv' ? '📷' : '💻'}</span>
@@ -146,7 +166,7 @@ function renderDevicesTable(canEdit, isAdmin) {
     `;
   }).join('') : `
     <tr>
-      <td colspan="8">
+      <td colspan="9">
         <div class="empty-state">
           <div class="empty-icon">🖥️</div>
           <div class="empty-title">Tidak ada device ditemukan</div>
@@ -155,6 +175,8 @@ function renderDevicesTable(canEdit, isAdmin) {
       </td>
     </tr>
   `;
+
+  const allPagedSelected = paged.length > 0 && paged.every((d) => selectedDeviceIds.has(d.id));
 
   return `
     <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-color); flex-wrap:wrap; gap:8px;">
@@ -172,6 +194,9 @@ function renderDevicesTable(canEdit, isAdmin) {
       <table class="data-table">
         <thead>
           <tr>
+            <th style="width:40px; text-align:center;">
+              <input type="checkbox" id="select-all-devices" ${allPagedSelected ? 'checked' : ''} style="cursor:pointer; transform:scale(1.15);" />
+            </th>
             <th>Nama Device</th>
             <th>IP Address</th>
             <th>Jenis</th>
@@ -207,10 +232,109 @@ export function initDevicesEvents(navigate) {
   const canEdit = session?.role === 'admin' || session?.role === 'teknisi';
   const isAdmin = session?.role === 'admin';
 
+  const updateBulkBar = () => {
+    const bar = document.getElementById('bulk-actions-bar');
+    const label = document.getElementById('bulk-selected-count');
+    if (bar && label) {
+      if (selectedDeviceIds.size > 0) {
+        bar.style.display = 'flex';
+        label.textContent = `${selectedDeviceIds.size} device dipilih`;
+      } else {
+        bar.style.display = 'none';
+      }
+    }
+  };
+
+  const bindCheckboxes = () => {
+    const master = document.getElementById('select-all-devices');
+    const rowBoxes = document.querySelectorAll('.device-select-checkbox');
+
+    if (master) {
+      master.addEventListener('change', (e) => {
+        const checked = e.target.checked;
+        const filtered = getFiltered();
+        const start = (currentPage - 1) * rowsPerPage;
+        const paged = filtered.slice(start, start + rowsPerPage);
+        paged.forEach((d) => {
+          if (checked) selectedDeviceIds.add(d.id);
+          else selectedDeviceIds.delete(d.id);
+        });
+        rowBoxes.forEach((box) => { box.checked = checked; });
+        updateBulkBar();
+      });
+    }
+
+    rowBoxes.forEach((box) => {
+      box.addEventListener('change', (e) => {
+        const id = parseInt(e.target.getAttribute('data-id'));
+        if (e.target.checked) selectedDeviceIds.add(id);
+        else selectedDeviceIds.delete(id);
+        if (master) {
+          const filtered = getFiltered();
+          const start = (currentPage - 1) * rowsPerPage;
+          const paged = filtered.slice(start, start + rowsPerPage);
+          master.checked = paged.length > 0 && paged.every((d) => selectedDeviceIds.has(d.id));
+        }
+        updateBulkBar();
+      });
+    });
+  };
+
   const refreshTable = () => {
     const wrapper = document.getElementById('devices-table-wrapper');
-    if (wrapper) wrapper.innerHTML = renderDevicesTable(canEdit, isAdmin);
+    if (wrapper) {
+      wrapper.innerHTML = renderDevicesTable(canEdit, isAdmin);
+      bindCheckboxes();
+      updateBulkBar();
+    }
   };
+
+  bindCheckboxes();
+  updateBulkBar();
+
+  // Bulk action buttons
+  document.getElementById('bulk-deselect-btn')?.addEventListener('click', () => {
+    selectedDeviceIds.clear();
+    refreshTable();
+  });
+
+  document.getElementById('bulk-delete-btn')?.addEventListener('click', async () => {
+    const count = selectedDeviceIds.size;
+    if (count === 0) return;
+
+    const result = await Swal.fire({
+      title: `🗑️ Hapus ${count} Device?`,
+      html: `Yakin ingin menghapus <b>${count} device</b> sekaligus?<br><span style="font-size:0.82rem; color:#ef4444;">Perangkat yang dipilih akan dihapus permanen dari database.</span>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: `Ya, Hapus ${count} Device`,
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#374151',
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await apiBulkDeleteDevices(Array.from(selectedDeviceIds));
+        selectedDeviceIds.clear();
+        await syncDevicesFromApi();
+        Swal.fire({
+          icon: 'success',
+          title: 'Device Dihapus',
+          text: `${count} device berhasil dihapus dari database.`,
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+        refreshTable();
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Menghapus', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
+    }
+  });
 
   // Filters
   document.getElementById('dev-search')?.addEventListener('input', (e) => { searchTerm = e.target.value; currentPage = 1; refreshTable(); });
@@ -239,9 +363,10 @@ export function initDevicesEvents(navigate) {
 
     try {
       const res = await apiPingDevice(id);
-      const isOnline = res.status === 'online';
-      const ms = res.responseTime;
-      device.status = res.status;
+      const pingData = res.data || res;
+      const isOnline = Boolean(pingData.alive || pingData.status === 'online');
+      const ms = pingData.responseTime ?? pingData.time;
+      device.status = isOnline ? 'online' : 'offline';
       device.responseTime = ms;
       refreshTable();
 
@@ -249,12 +374,12 @@ export function initDevicesEvents(navigate) {
         title: 'Hasil Probe',
         html: isOnline
           ? `<div style="text-align:center;">
-              <div style="font-size:2.2rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms !== null ? ms + ' ms' : 'OK'}</div>
-              <div style="color:#94a3b8;">${device.ip} merespons probe (${res.method || device.metode}) ✅</div>
+              <div style="font-size:2.2rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms !== null && ms !== undefined ? ms + ' ms' : 'OK'}</div>
+              <div style="color:#94a3b8;">${device.ip} merespons probe (${pingData.method || device.metode}) ✅</div>
             </div>`
           : `<div style="text-align:center;">
               <div style="font-size:2rem; font-weight:800; color:var(--color-offline); margin:8px 0;">Offline / Timeout</div>
-              <div style="color:#94a3b8;">${device.ip} ${res.error || 'Request Timeout'} ❌</div>
+              <div style="color:#94a3b8;">${device.ip} ${pingData.statusText || pingData.error || 'Request Timeout'} ❌</div>
             </div>`,
         background: '#1a1d2e',
         color: '#e2e8f0',
@@ -283,6 +408,7 @@ export function initDevicesEvents(navigate) {
     if (result.isConfirmed) {
       try {
         await apiDeleteDevice(id);
+        selectedDeviceIds.delete(id);
         await syncDevicesFromApi();
         Swal.fire({ icon: 'success', title: 'Device Dihapus', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
         refreshTable();
@@ -369,17 +495,17 @@ async function showDeviceForm(id, onSave) {
           <div class="form-group">
             <label class="form-label">Jenis Device</label>
             <select id="sf-jenis" class="form-control">
-              <option value="komputer" ${device?.jenis === 'komputer' ? 'selected' : ''}>💻 Komputer</option>
-              <option value="cctv" ${device?.jenis === 'cctv' ? 'selected' : ''}>📷 CCTV Hikvision</option>
+              <option value="Komputer" ${device?.jenis?.toLowerCase() === 'komputer' ? 'selected' : ''}>💻 Komputer</option>
+              <option value="CCTV Hikvision" ${device?.jenis?.toLowerCase().includes('cctv') ? 'selected' : ''}>📷 CCTV Hikvision</option>
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Metode Pengecekan</label>
             <select id="sf-metode" class="form-control">
-              <option value="ping" ${device?.metode === 'ping' ? 'selected' : ''}>Ping (ICMP)</option>
-              <option value="isapi" ${device?.metode === 'isapi' ? 'selected' : ''}>ISAPI Hikvision</option>
-              <option value="rtsp" ${device?.metode === 'rtsp' ? 'selected' : ''}>RTSP Stream</option>
-              <option value="onvif" ${device?.metode === 'onvif' ? 'selected' : ''}>ONVIF</option>
+              <option value="PING" ${(device?.metode || '').toUpperCase() === 'PING' ? 'selected' : ''}>Ping (ICMP)</option>
+              <option value="ISAPI" ${(device?.metode || '').toUpperCase() === 'ISAPI' ? 'selected' : ''}>ISAPI Hikvision</option>
+              <option value="RTSP" ${(device?.metode || '').toUpperCase() === 'RTSP' ? 'selected' : ''}>RTSP Stream</option>
+              <option value="ONVIF" ${(device?.metode || '').toUpperCase() === 'ONVIF' ? 'selected' : ''}>ONVIF</option>
             </select>
           </div>
           <div class="form-group">
@@ -388,7 +514,7 @@ async function showDeviceForm(id, onSave) {
           </div>
           <div class="form-group">
             <label class="form-label">Interval Polling (detik)</label>
-            <input type="number" id="sf-interval" class="form-control" placeholder="60" value="${device?.interval || 60}" min="30" max="600" />
+            <input type="number" id="sf-interval" class="form-control" placeholder="60" value="${device?.interval || getAppSetting('default_ping_interval', 60)}" min="30" max="600" />
           </div>
           <div class="form-group">
             <label class="form-label">Grup / Lokasi</label>

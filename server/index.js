@@ -83,6 +83,10 @@ async function startServer() {
     // 3. Jalankan Monitoring Worker
     startMonitoringWorker(5000);
 
+    server.on('error', (err) => {
+      console.error('HTTP Server Error:', err);
+    });
+
     // 4. Dengarkan Port
     server.listen(config.port, config.host, () => {
       console.log(`=================================================`);
@@ -97,6 +101,14 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]:', reason);
+});
 
 // Penanganan Graceful Shutdown
 function handleShutdown() {

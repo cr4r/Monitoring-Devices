@@ -4,15 +4,15 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { logStatus, logAktivitas, logKonfigurasi, fmt } from '../data/mock-logs.js';
 import { apiGetLogs } from '../api.js';
+import { formatDateWithTz } from '../settingsManager.js';
 
 let activeTab = 'status';
 let logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
 let logPage = 1;
 let logRowsPerPage = 25;
-let backendLogs = null;
-let backendCounts = { status: logStatus.length, aktivitas: logAktivitas.length, konfigurasi: logKonfigurasi.length };
+let backendLogs = [];
+let backendCounts = { status: 0, aktivitas: 0, konfigurasi: 0 };
 
 export async function fetchLiveLogs() {
   try {
@@ -122,24 +122,24 @@ export function renderLogs() {
         <div class="tabs-nav">
           <button class="tab-btn ${activeTab === 'status' ? 'active' : ''}" data-tab="status">
             🖥️ Log Status Device
-            <span style="
+            <span id="badge-count-status" style="
               background:rgba(239,68,68,0.2); color:var(--color-offline);
               font-size:0.65rem; padding:1px 6px; border-radius:10px; font-weight:700;
-            ">${logStatus.length}</span>
+            ">${backendCounts.status}</span>
           </button>
           <button class="tab-btn ${activeTab === 'aktivitas' ? 'active' : ''}" data-tab="aktivitas">
             👤 Log Aktivitas User
-            <span style="
+            <span id="badge-count-aktivitas" style="
               background:rgba(99,102,241,0.15); color:var(--color-accent);
               font-size:0.65rem; padding:1px 6px; border-radius:10px; font-weight:700;
-            ">${logAktivitas.length}</span>
+            ">${backendCounts.aktivitas}</span>
           </button>
           <button class="tab-btn ${activeTab === 'konfigurasi' ? 'active' : ''}" data-tab="konfigurasi">
             ⚙️ Log Perubahan Konfigurasi
-            <span style="
+            <span id="badge-count-konfigurasi" style="
               background:rgba(234,179,8,0.15); color:var(--color-maintenance);
               font-size:0.65rem; padding:1px 6px; border-radius:10px; font-weight:700;
-            ">${logKonfigurasi.length}</span>
+            ">${backendCounts.konfigurasi}</span>
           </button>
         </div>
         <div style="
@@ -157,30 +157,7 @@ export function renderLogs() {
 }
 
 function getActiveLogData() {
-  if (backendLogs && backendLogs.length > 0) {
-    return backendLogs;
-  }
-  const sources = { status: logStatus, aktivitas: logAktivitas, konfigurasi: logKonfigurasi };
-  let data = [...(sources[activeTab] || [])].sort((a, b) => new Date(b.waktu) - new Date(a.waktu));
-
-  // Apply filters
-  if (logFilters.search) {
-    const q = logFilters.search.toLowerCase();
-    data = data.filter((l) => l.pesan?.toLowerCase().includes(q) || l.device?.toLowerCase().includes(q) || l.user?.toLowerCase().includes(q));
-  }
-  if (logFilters.dateFrom) {
-    const from = new Date(logFilters.dateFrom);
-    data = data.filter((l) => new Date(l.waktu) >= from);
-  }
-  if (logFilters.dateTo) {
-    const to = new Date(logFilters.dateTo + 'T23:59:59');
-    data = data.filter((l) => new Date(l.waktu) <= to);
-  }
-  if (logFilters.tipe !== 'all') {
-    data = data.filter((l) => l.tipe === logFilters.tipe);
-  }
-
-  return data;
+  return backendLogs || [];
 }
 
 function renderLogTable() {
@@ -217,7 +194,7 @@ function renderLogTable() {
           ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
             <tr class="${getRowClass(l)}">
               <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
-                ${fmt(l.waktu)}
+                ${formatDateWithTz(l.waktu)}
               </td>
               <td>
                 <div style="font-weight:600; color:var(--color-text);">${l.device}</div>
@@ -251,7 +228,7 @@ function renderLogTable() {
           ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
             <tr class="${getRowClass(l)}">
               <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
-                ${fmt(l.waktu)}
+                ${formatDateWithTz(l.waktu)}
               </td>
               <td>
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -286,7 +263,7 @@ function renderLogTable() {
           ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
             <tr>
               <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
-                ${fmt(l.waktu)}
+                ${formatDateWithTz(l.waktu)}
               </td>
               <td style="font-size:0.85rem; font-weight:600; color:var(--color-text);">${l.user}</td>
               <td><span class="chip">${l.aksi}</span></td>

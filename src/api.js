@@ -112,6 +112,13 @@ export async function apiDeleteDevice(id) {
   });
 }
 
+export async function apiBulkDeleteDevices(ids) {
+  return request('/devices/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export async function apiPingDevice(id) {
   return request(`/devices/${id}/ping`, {
     method: 'POST',

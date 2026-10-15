@@ -44,7 +44,7 @@ export function renderDashboard() {
         <div class="stat-card total">
           <div class="stat-icon total">📡</div>
           <div class="stat-info">
-            <div class="stat-value">${counts.total}</div>
+            <div class="stat-value" id="stat-total-val">${counts.total}</div>
             <div class="stat-label">Total Device</div>
             <div class="stat-sub">PC + CCTV</div>
           </div>
@@ -52,15 +52,15 @@ export function renderDashboard() {
         <div class="stat-card online-stat">
           <div class="stat-icon online-stat">🟢</div>
           <div class="stat-info">
-            <div class="stat-value text-online">${counts.online}</div>
+            <div class="stat-value text-online" id="stat-online-val">${counts.online}</div>
             <div class="stat-label">Online</div>
-            <div class="stat-sub">${uptimePct}% dari total</div>
+            <div class="stat-sub" id="stat-uptime-sub">${uptimePct}% dari total</div>
           </div>
         </div>
         <div class="stat-card offline-stat">
           <div class="stat-icon offline-stat">🔴</div>
           <div class="stat-info">
-            <div class="stat-value text-offline">${counts.offline}</div>
+            <div class="stat-value text-offline" id="stat-offline-val">${counts.offline}</div>
             <div class="stat-label">Offline</div>
             <div class="stat-sub">Perlu perhatian</div>
           </div>
@@ -68,7 +68,7 @@ export function renderDashboard() {
         <div class="stat-card maintenance-stat">
           <div class="stat-icon maintenance-stat">🟡</div>
           <div class="stat-info">
-            <div class="stat-value text-maintenance">${counts.maintenance}</div>
+            <div class="stat-value text-maintenance" id="stat-maint-val">${counts.maintenance}</div>
             <div class="stat-label">Maintenance</div>
             <div class="stat-sub">Mode terjadwal</div>
           </div>
@@ -173,6 +173,16 @@ export function renderDashboard() {
 }
 
 function renderDeviceCards(filtered = null) {
+  if (mockDevices.length === 0) {
+    return `
+      <div style="grid-column:1/-1; text-align:center; padding:48px 16px; color:var(--color-muted);">
+        <div class="spinner spinner-lg" style="margin:0 auto 16px auto;"></div>
+        <div style="font-weight:600; font-size:0.95rem; color:#cbd5e1;">Memuat data perangkat dari database...</div>
+        <div style="font-size:0.8rem; margin-top:4px;">Menghubungkan ke server SQLite...</div>
+      </div>
+    `;
+  }
+
   const devices = filtered || getFilteredDevices();
   if (devices.length === 0) {
     return `
@@ -330,6 +340,42 @@ export function initDashboardEvents(navigate) {
     applyFilter();
   });
 
+  function updateDashboardStats() {
+    const counts = getStatusCounts();
+    const uptimePct = counts.total > 0 ? Math.round((counts.online / counts.total) * 100) : 0;
+    const elTotal = document.getElementById('stat-total-val');
+    const elOnline = document.getElementById('stat-online-val');
+    const elOffline = document.getElementById('stat-offline-val');
+    const elMaint = document.getElementById('stat-maint-val');
+    const elUptime = document.getElementById('stat-uptime-sub');
+    if (elTotal) elTotal.textContent = counts.total;
+    if (elOnline) elOnline.textContent = counts.online;
+    if (elOffline) elOffline.textContent = counts.offline;
+    if (elMaint) elMaint.textContent = counts.maintenance;
+    if (elUptime) elUptime.textContent = `${uptimePct}% dari total`;
+  }
+
+  function updateGroupFilterOptions() {
+    const sel = document.getElementById('filter-grup');
+    if (sel) {
+      const groups = getGroups();
+      sel.innerHTML = `<option value="all">Semua Grup</option>` + groups.map((g) => `<option value="${g}" ${currentFilter.grup === g ? 'selected' : ''}>${g}</option>`).join('');
+    }
+  }
+
+  // Sinkronkan data riil dari database SQLite seketika saat halaman dibuka
+  syncDevicesFromApi()
+    .then(() => {
+      updateDashboardStats();
+      applyFilter();
+      updateGroupFilterOptions();
+      if (currentTab === 'peta') initNetworkMap();
+      if (currentTab === 'timeline') initTimeline();
+    })
+    .catch((err) => {
+      console.warn('Gagal memuat otomatis perangkat:', err);
+    });
+
   // Refresh button
   document.getElementById('refresh-btn')?.addEventListener('click', async () => {
     Swal.fire({
@@ -343,8 +389,13 @@ export function initDashboardEvents(navigate) {
       color: '#e2e8f0',
     });
     await syncDevicesFromApi();
+    updateDashboardStats();
     applyFilter();
+    updateGroupFilterOptions();
   });
+
+  // Sinkronkan stat awal saat event dipasang
+  updateDashboardStats();
 
   // Countdown timers
   startCountdownTimers();
@@ -374,23 +425,25 @@ export function initDashboardEvents(navigate) {
 
     try {
       const res = await apiPingDevice(id);
-      const isOnline = res.status === 'online';
-      const ms = res.responseTime;
-      updateDeviceStatus(id, res.status);
+      const pingData = res.data || res;
+      const isOnline = Boolean(pingData.alive || pingData.status === 'online');
+      const ms = pingData.responseTime ?? pingData.time;
+      const finalStatus = isOnline ? 'online' : 'offline';
+      updateDeviceStatus(id, finalStatus);
       device.responseTime = ms;
-      device.status = res.status;
+      device.status = finalStatus;
 
       await Swal.fire({
         title: 'Hasil Probe Jaringan',
         html: isOnline
           ? `<div style="text-align:center;">
-              <div style="font-size:2.5rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms !== null ? ms + ' ms' : 'OK'}</div>
-              <div style="color:#94a3b8; font-size:0.85rem;">📡 <b>${device.ip}</b> merespons probe (${res.method || device.metode})</div>
+              <div style="font-size:2.5rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms !== null && ms !== undefined ? ms + ' ms' : 'OK'}</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">📡 <b>${device.ip}</b> merespons probe (${pingData.method || device.metode})</div>
               <div class="badge badge-online" style="margin-top:8px;">✅ Online</div>
             </div>`
           : `<div style="text-align:center;">
               <div style="font-size:2rem; font-weight:800; color:var(--color-offline); margin:8px 0;">Offline / Timeout</div>
-              <div style="color:#94a3b8; font-size:0.85rem;">📡 <b>${device.ip}</b> tidak merespons (${res.error || 'Request Timeout'})</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">📡 <b>${device.ip}</b> tidak merespons (${pingData.statusText || pingData.error || 'Request Timeout'})</div>
               <div class="badge badge-offline" style="margin-top:8px;">❌ Offline</div>
             </div>`,
         background: '#1a1d2e',

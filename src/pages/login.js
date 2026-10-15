@@ -4,14 +4,16 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { getUserByEmail } from '../data/mock-users.js';
 import { setSession } from '../main.js';
 import { apiLogin } from '../api.js';
+
+import { getAppSetting } from '../settingsManager.js';
 
 let failCount = 0;
 let lockoutUntil = null;
 
 export function renderLogin() {
+  const appName = getAppSetting('app_name', 'DevWatch');
   return `
     <div class="login-page" id="login-page">
       <div class="login-bg">
@@ -24,7 +26,7 @@ export function renderLogin() {
         <div class="login-logo">
           <div class="login-logo-icon">📡</div>
           <div class="login-logo-text">
-            <h1 class="gradient-text">DevWatch</h1>
+            <h1 class="gradient-text brand-app-name">${appName}</h1>
             <p>Device Monitoring System</p>
           </div>
         </div>
@@ -76,12 +78,33 @@ export function renderLogin() {
           <button type="submit" class="btn btn-primary btn-lg login-btn w-full" id="login-btn">
             🔐 Masuk
           </button>
+
+          <!-- Quick Login Chips -->
+          <div style="margin-top:16px; padding:12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px;">
+            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--color-muted); margin-bottom:8px; text-align:center; font-weight:600;">
+              ⚡ Login Cepat Default User (1-Click)
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;">
+              <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-email="admin@kantor.com" data-pwd="admin123" style="font-size:0.75rem; padding:6px 4px; display:flex; flex-direction:column; align-items:center; gap:2px;">
+                <span>👑 Admin</span>
+                <span style="font-size:0.65rem; color:var(--color-muted);">Full Akses</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-email="teknisi@kantor.com" data-pwd="teknisi123" style="font-size:0.75rem; padding:6px 4px; display:flex; flex-direction:column; align-items:center; gap:2px;">
+                <span>🔧 Teknisi</span>
+                <span style="font-size:0.65rem; color:var(--color-muted);">Maintenance</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-email="viewer@kantor.com" data-pwd="viewer123" style="font-size:0.75rem; padding:6px 4px; display:flex; flex-direction:column; align-items:center; gap:2px;">
+                <span>👁️ Viewer</span>
+                <span style="font-size:0.65rem; color:var(--color-muted);">Hanya Lihat</span>
+              </button>
+            </div>
+          </div>
         </form>
 
         <div class="login-footer">
           <p>DevWatch v1.0 · Sistem Monitoring Internal</p>
           <p style="margin-top:4px;">
-            Demo: <code>admin@kantor.com</code> / <code>admin123</code>
+            Demo: <code>admin@kantor.com</code> / <code>admin123</code> · <code>teknisi@kantor.com</code> / <code>teknisi123</code>
           </p>
         </div>
       </div>
@@ -95,6 +118,17 @@ export function initLoginEvents(navigate) {
   const passwordInput = document.getElementById('login-password');
   const togglePwd = document.getElementById('toggle-password');
   const loginBtn = document.getElementById('login-btn');
+
+  // Quick login handler
+  document.querySelectorAll('.quick-login-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const em = btn.getAttribute('data-email');
+      const pw = btn.getAttribute('data-pwd');
+      if (emailInput) emailInput.value = em;
+      if (passwordInput) passwordInput.value = pw;
+      loginBtn?.click();
+    });
+  });
 
   // Toggle password visibility
   togglePwd?.addEventListener('click', () => {
@@ -160,12 +194,11 @@ export function initLoginEvents(navigate) {
       navigate('dashboard');
       return;
     } catch (apiErr) {
-      console.warn('API login gagal/offline, mencoba verifikasi mock:', apiErr.message);
+      loginBtn.disabled = false;
+      loginBtn.innerHTML = '🔐 Masuk';
 
       // Tangani jika dikunci oleh backend rate limiter (429)
       if (apiErr.message.includes('dikunci') || apiErr.message.includes('Terlalu banyak')) {
-        loginBtn.disabled = false;
-        loginBtn.innerHTML = '🔐 Masuk';
         Swal.fire({
           icon: 'error',
           title: '⛔ Akun Terkunci',
@@ -177,76 +210,12 @@ export function initLoginEvents(navigate) {
         return;
       }
 
-      // Fallback lokal jika backend tidak terjangkau
-      const user = getUserByEmail(email);
+      showInlineAlert(apiErr.message || 'Email atau kata sandi tidak sesuai.', 'danger');
 
-      if (!user || user.password !== password) {
-        failCount++;
-        loginBtn.disabled = false;
-        loginBtn.innerHTML = '🔐 Masuk';
-
-        if (failCount >= 5) {
-          lockoutUntil = new Date(Date.now() + 15 * 60000);
-          failCount = 0;
-          Swal.fire({
-            icon: 'error',
-            title: '⛔ Akun Terkunci 15 Menit',
-            html: 'Terlalu banyak percobaan login gagal. Sistem mengunci akses selama <b>15 menit</b> untuk keamanan.',
-            background: '#1a1d2e',
-            color: '#e2e8f0',
-            confirmButtonColor: '#6366f1',
-            confirmButtonText: 'Mengerti',
-          });
-          return;
-        }
-
-        const remaining = 5 - failCount;
-        showInlineAlert(
-          apiErr.message || `Email atau password salah. Sisa percobaan: <b>${remaining}x</b> sebelum akun terkunci.`,
-          'danger'
-        );
-
-        const card = document.querySelector('.login-card');
-        card?.classList.add('fade-in-up');
-        setTimeout(() => card?.classList.remove('fade-in-up'), 400);
-        return;
-      }
-
-      if (user.status === 'nonaktif') {
-        loginBtn.disabled = false;
-        loginBtn.innerHTML = '🔐 Masuk';
-        Swal.fire({
-          icon: 'warning',
-          title: 'Akun Nonaktif',
-          text: 'Akun Anda telah dinonaktifkan oleh Admin. Hubungi IT untuk bantuan.',
-          background: '#1a1d2e',
-          color: '#e2e8f0',
-          confirmButtonColor: '#6366f1',
-        });
-        return;
-      }
-
-      // Berhasil via fallback
-      failCount = 0;
-      setSession({
-        id: user.id,
-        nama: user.nama,
-        email: user.email,
-        role: user.role,
-        loginAt: new Date().toISOString(),
-      });
-
-      await Swal.fire({
-        icon: 'success',
-        title: `Selamat Datang, ${user.nama.split(' ')[0]}!`,
-        text: `Login sebagai ${getRoleLabel(user.role)}`,
-        timer: 1500,
-        showConfirmButton: false,
-        background: '#1a1d2e',
-        color: '#e2e8f0',
-      });
-
-      navigate('dashboard');
+      const card = document.querySelector('.login-card');
+      card?.classList.add('fade-in-up');
+      setTimeout(() => card?.classList.remove('fade-in-up'), 400);
+      return;
     }
   });
 }
