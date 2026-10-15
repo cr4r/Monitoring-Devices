@@ -444,115 +444,137 @@ Proyek DevWatch dirancang dengan pola modular berbasis komponen murni tanpa kete
 Monitoring-Devices/
 ├── index.html                   # Shell HTML utama & kontainer aplikasi SPA
 ├── package.json                 # Konfigurasi dependensi dan skrip proyek
-├── vite.config.js               # Konfigurasi bundler Vite
+├── vite.config.js               # Konfigurasi bundler Vite + reverse proxy ke Express
 ├── PRD_Device_Monitoring.md     # Dokumen Persyaratan Produk (PRD) referensi
-├── Prompt.txt                   # Prompt instruksi awal sistem
 ├── README.md                    # Dokumentasi lengkap aplikasi (berkas ini)
 │
-├── images/                      # Berkas gambar tangkapan layar untuk dokumentasi
-│   ├── 01-login-preview.png     # Contoh halaman login & proteksi
-│   ├── 02-dashboard-cards.png   # Contoh dashboard & kartu status
-│   ├── 03-device-management.png # Contoh tabel manajemen perangkat
-│   ├── 04-system-logs.png       # Contoh tampilan 3 tab log sistem
-│   ├── 05-device-detail.png     # Contoh rincian perangkat & grafik 24 jam
-│   ├── 06-sweetalert-ping.png   # Contoh modal hasil ping instan
-│   ├── 07-peta-visual.png       # Contoh peta interaktif topologi canvas
-│   ├── 08-laporan-sla.png       # Contoh laporan mingguan & grafik insiden
-│   └── 09-pengaturan.png        # Contoh pengaturan sistem 6 kategori
+├── data/                        # Penyimpanan Database
+│   └── devwatch.db              # Database SQLite persisten (Node 24 built-in DatabaseSync)
 │
-└── src/
-    ├── main.js                  # Entry point aplikasi: inisialisasi sesi & router
-    ├── router.js                # Hash SPA Router dengan proteksi autentikasi & peran
-    │
-    ├── styles/                  # Modul Tata Gaya (CSS Murni)
-    │   ├── base.css             # Desain token, variabel CSS warna dark mode, reset
-    │   ├── layout.css           # Tata letak sidebar navigasi, header topbar, konten
-    │   ├── components.css       # Style kartu, tabel, lencana status, tombol, input
-    │   └── pages.css            # Gaya khusus per halaman (login, dashboard, settings)
-    │
-    ├── data/                    # Data Dummy & Mock State (Siap Diintegrasikan ke API)
-    │   ├── mock-devices.js      # Daftar 20+ komputer kantor & CCTV HIKVision
-    │   ├── mock-users.js        # Akun pengguna dengan peran Admin, Teknisi, Viewer
-    │   ├── mock-logs.js         # Riwayat 50+ log status, audit, dan konfigurasi
-    │   └── mock-reports.js      # Data kalkulasi SLA, uptime per perangkat, dan insiden
-    │
-    ├── components/              # Komponen Antarmuka Reusable
-    │   ├── sidebar.js           # Navigasi samping adaptif berdasarkan peran pengguna
-    │   ├── topbar.js            # Header atas, profil aktif, notifikasi, tombol keluar
-    │   ├── device-card.js       # Komponen kartu perangkat beranimasi status
-    │   └── charts.js            # Integrasi pustaka Chart.js untuk grafik uptime
-    │
-    └── pages/                   # Kontroler Halaman Aplikasi
-        ├── login.js             # Halaman login dengan validasi & proteksi brute force
-        ├── dashboard.js         # Dashboard utama (Cards, Canvas Network Map, Timeline)
-        ├── devices.js           # Tabel CRUD perangkat + impor/ekspor CSV
-        ├── device-detail.js     # Halaman rincian 1 perangkat & log insiden spesifik
-        ├── logs.js              # Penampil 3 tab log sistem & ekspor dokumen
-        ├── reports.js           # Halaman laporan SLA mingguan & ekspor PDF
-        ├── users.js             # Halaman administrasi akun pengguna (Admin Only)
-        ├── settings.js          # Pengaturan sistem 6 kategori
-        └── about.js             # Informasi sistem, spesifikasi teknologi, lisensi
+├── server/                      # Backend Express & Worker Engine
+│   ├── index.js                 # Entry point Express, WebSocket server, dan static fallback
+│   ├── config.js                # Konfigurasi port, JWT secret, dan toleransi polling
+│   ├── database/
+│   │   ├── schema.sql           # Skema DDL 7 tabel (users, devices, logs, incidents, settings)
+│   │   ├── db.js                # Wrapper koneksi synchronous SQLite Node 24
+│   │   └── seed.js              # Seeder data pengguna demo, 20 perangkat awal, dan log
+│   ├── middleware/
+│   │   ├── auth.js              # JWT authentication & Role-Based Access Control (RBAC)
+│   │   ├── rateLimiter.js       # Proteksi brute-force login (lockout 15 menit jika 5x gagal)
+│   │   └── errorHandler.js      # Penanganan galat global Express
+│   ├── services/
+│   │   ├── pingService.js       # Native ICMP ping runner (Windows ping.exe)
+│   │   ├── hikvisionService.js  # Probe ISAPI HTTP & RTSP probe untuk CCTV Hikvision
+│   │   ├── websocketService.js  # Broadcast real-time status change dan telemetry
+│   │   ├── monitoringWorker.js  # Background loop polling, debounce 3x gagal, insiden tracker
+│   │   └── reportService.js     # Generator laporan mingguan, SLA bulanan, dan audit
+│   ├── routes/
+│   │   ├── auth.js              # Endpoint login, profil /me, logout
+│   │   ├── devices.js           # CRUD perangkat, ping instan, maintenance, impor CSV
+│   │   ├── logs.js              # Query & filter log sistem (3 tab)
+│   │   ├── reports.js           # Laporan mingguan, SLA tracker, insiden
+│   │   ├── users.js             # Administrasi pengguna & reset kata sandi (Admin Only)
+│   │   └── settings.js          # Pengaturan sistem 6 kategori
+│   └── scripts/
+│       ├── install-service.js   # Pemasang Background Windows Service
+│       └── uninstall-service.js # Pencabut Windows Service
+│
+├── src/                         # Frontend Vanilla JS Single Page Application
+│   ├── main.js                  # Entry point SPA, inisialisasi sesi & router
+│   ├── router.js                # Hash SPA Router dengan proteksi autentikasi & peran
+│   ├── api.js                   # Client HTTP terpusat (Bearer JWT) & WebSocket listener
+│   ├── styles/                  # Modul Tata Gaya (CSS Murni Modern Dark Glassmorphism)
+│   ├── components/              # Komponen sidebar, topbar, device-card, grafik Chart.js
+│   ├── data/                    # State perangkat, sinkronisasi otomatis dengan backend
+│   └── pages/                   # Kontroler halaman (login, dashboard, devices, logs, reports, users, settings)
+└── images/                      # Tangkapan layar dokumentasi
 ```
 
 ---
 
-## 🔌 Panduan Integrasi ke Backend Nyata (API)
+## 🖥️ Backend Terpadu & Windows Service (Siap Produksi)
 
-Aplikasi saat ini menggunakan modul data mock di folder `src/data/*.js`. Untuk menyambungkan DevWatch ke server backend nyata (misalnya **Node.js Express**, **Python FastAPI**, **Go**, atau **PHP Laravel**), cukup lakukan langkah adaptasi berikut:
+DevWatch telah dilengkapi dengan **backend mandiri** yang terintegrasi secara penuh dengan antarmuka frontend, mengusung arsitektur ringan tanpa ketergantungan pustaka C++ eksternal:
 
-### 1. Pola Endpoint REST API yang Diharapkan
+### 1. Spesifikasi Teknis Backend
+- **Runtime**: Node.js v24 LTS (menggunakan modul bawaan `node:sqlite` / `DatabaseSync` yang cepat dan stabil tanpa perlu kompilasi `node-gyp`).
+- **Web Framework**: Express.js 5 dengan middleware keamanan (Helmet, CORS, JWT Bearer Token, Rate Limiting).
+- **Komunikasi Real-Time**: WebSocket murni (`ws`) di endpoint `/ws` untuk menyiarkan perubahan status perangkat secara instan ke browser tanpa perlu me-refresh halaman.
+- **Engine Probe Jaringan Nyata**:
+  - **PC / Server**: Menjalankan native ICMP Ping langsung via OS Windows `ping.exe` (mengukur latensi ms sesungguhnya).
+  - **CCTV HIKVision**: Menjalankan probe HTTP ISAPI digest challenge dan RTSP TCP port check dengan fallback ICMP.
+  - **Anti-Flapping (Debounce)**: Status baru dinyatakan **OFFLINE** jika gagal 3 kali berturut-turut untuk menghindari alarm palsu akibat jitter jaringan sesaat.
 
-| Metode | URL Endpoint | Keterangan |
-|---|---|---|
-| `POST` | `/api/auth/login` | Menerima `{ email, password }`, mengembalikan JWT token & profil |
-| `GET` | `/api/devices` | Mengambil daftar seluruh perangkat yang dipantau |
-| `POST` | `/api/devices` | Mendaftarkan perangkat baru |
-| `PUT` | `/api/devices/:id` | Memperbarui data perangkat |
-| `DELETE`| `/api/devices/:id` | Menghapus perangkat dari pantauan |
-| `POST` | `/api/devices/:id/ping` | Menjalankan tes ping instan dari server ke perangkat |
-| `POST` | `/api/devices/:id/maintenance` | Mengaktifkan/menonaktifkan mode pemeliharaan |
-| `GET` | `/api/logs` | Mengambil catatan log dengan query parameter `?type=&page=` |
-| `GET` | `/api/reports/sla` | Menghitung persentase SLA berdasarkan rentang tanggal |
+### 2. Cara Menjalankan Aplikasi
 
-### 2. Contoh Penggantian di `src/data/mock-devices.js`
+#### A. Mode Produksi Mandiri (Standalone Fullstack)
+Cukup jalankan satu perintah berikut:
+```bash
+npm start
+```
+Server backend Express akan aktif di **`http://localhost:3000`** dan secara otomatis menyajikan antarmuka web yang sudah dibundel beserta seluruh API dan WebSocket secara bersamaan.
 
-Ganti pemanggilan array lokal dengan fungsi `fetch`:
+#### B. Mode Pengembangan (Development Live-Reload)
+Jika Anda ingin mengubah kode frontend dengan Vite HMR:
+```bash
+# Terminal 1: Jalankan Backend Express (Port 3000)
+npm run server
 
-```javascript
-// Mengambil data perangkat dari backend nyata
-export async function getDevices() {
-  try {
-    const token = localStorage.getItem('devwatch_token');
-    const response = await fetch('http://localhost:3000/api/devices', {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    if (!response.ok) throw new Error('Gagal mengambil data perangkat');
-    return await response.json();
-  } catch (error) {
-    console.error('API Error:', error);
-    // Kembalikan data cache lokal jika koneksi backend bermasalah
-    return [];
-  }
-}
+# Terminal 2: Jalankan Frontend Vite Dev Server (Port 5173)
+npm run dev
+```
+Vite telah dikonfigurasi dengan reverse proxy otomatis: seluruh panggilan `/api/*` dan `/ws` dari browser di port `5173` akan diteruskan ke backend Express di port `3000`.
+
+#### C. Reset / Seed Ulang Database
+Untuk mengisi kembali 20 perangkat demo, akun pengguna, dan riwayat log bawaan:
+```bash
+npm run seed
 ```
 
-### 3. Pemantauan Real-Time via WebSocket / Server-Sent Events (SSE)
-Untuk menerima pembaruan status tanpa me-refresh halaman:
-```javascript
-// Inisialisasi koneksi WebSocket di src/main.js
-export function connectLiveMonitoring() {
-  const ws = new WebSocket('ws://localhost:3000/ws/status');
-  
-  ws.onmessage = (event) => {
-    const update = JSON.parse(event.data);
-    // update: { deviceId: 1, status: 'offline', timestamp: '...' }
-    window.dispatchEvent(new CustomEvent('device-status-change', { detail: update }));
-  };
-}
-```
+#### D. Memasang sebagai Background Windows Service
+Agar DevWatch berjalan otomatis di latar belakang saat komputer atau server Windows dinyalakan tanpa perlu membuka terminal:
+
+1. Buka **Command Prompt / PowerShell** dengan hak akses **Administrator**.
+2. Jalankan perintah instalasi:
+   ```bash
+   npm run service:install
+   ```
+3. Layanan Windows bernama **"DevWatch Device Monitoring"** akan terdaftar dan berjalan otomatis (*Auto-Start on Boot*).
+4. Untuk menghapus layanan Windows:
+   ```bash
+   npm run service:uninstall
+   ```
+
+---
+
+### 3. Daftar Endpoint REST API
+
+Semua endpoint dilindungi dengan header `Authorization: Bearer <token>` kecuali rute login.
+
+| Metode | Endpoint | Hak Akses | Keterangan |
+|---|---|---|---|
+| `POST` | `/api/auth/login` | Publik | Autentikasi email & password, mengembalikan token JWT |
+| `GET` | `/api/auth/me` | Semua Peran | Memeriksa sesi pengguna aktif |
+| `POST` | `/api/auth/logout` | Semua Peran | Mengakhiri sesi pengguna |
+| `GET` | `/api/devices` | Semua Peran | Daftar seluruh perangkat terdaftar (mendukung filter grup & jenis) |
+| `GET` | `/api/devices/:id` | Semua Peran | Rincian lengkap 1 perangkat beserta riwayat insiden |
+| `POST` | `/api/devices` | Admin / Teknisi | Mendaftarkan perangkat baru ke database |
+| `PUT` | `/api/devices/:id` | Admin / Teknisi | Memperbarui parameter perangkat |
+| `DELETE`| `/api/devices/:id` | Admin | Menghapus perangkat dari database |
+| `POST` | `/api/devices/:id/ping` | Admin / Teknisi | Menjalankan probe ICMP / ISAPI manual saat itu juga |
+| `POST` | `/api/devices/:id/maintenance` | Admin / Teknisi | Mengaktifkan / menyelesaikan mode pemeliharaan |
+| `POST` | `/api/devices/import-csv` | Admin / Teknisi | Impor perangkat massal dari array CSV |
+| `GET` | `/api/logs` | Semua Peran | Riwayat log (Status, Aktivitas, Konfigurasi) dengan paginasi & filter |
+| `GET` | `/api/reports/weekly` | Semua Peran | Laporan ringkasan mingguan otomatis |
+| `GET` | `/api/reports/sla` | Semua Peran | Evaluasi persentase pemenuhan target SLA (24j, 7h, 30h) |
+| `GET` | `/api/reports/incidents`| Semua Peran | Rekapitulasi insiden downtime & durasi perbaikan |
+| `GET` | `/api/users` | Admin Only | Daftar akun pengguna terdaftar |
+| `POST` | `/api/users` | Admin Only | Menambah akun pengguna baru (hash password bcrypt) |
+| `PUT` | `/api/users/:id` | Admin Only | Memperbarui nama, peran, atau status aktif pengguna |
+| `DELETE`| `/api/users/:id` | Admin Only | Menghapus akun pengguna |
+| `POST` | `/api/users/:id/reset-password` | Admin Only | Mengganti kata sandi pengguna |
+| `GET` | `/api/settings` | Admin Only | Mengambil pengaturan umum, monitoring, dan notifikasi |
+| `PUT` | `/api/settings` | Admin Only | Menyimpan perubahan pengaturan sistem |
 
 ---
 

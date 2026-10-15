@@ -5,9 +5,37 @@
 
 import Swal from 'sweetalert2';
 import { mockUsers } from '../data/mock-users.js';
+import { apiGetUsers, apiCreateUser, apiUpdateUser, apiDeleteUser, apiResetPassword } from '../api.js';
 import { getSession } from '../main.js';
 
 let userSearchTerm = '';
+let liveUsers = null;
+
+export async function fetchLiveUsers() {
+  try {
+    const res = await apiGetUsers();
+    if (res && res.data) {
+      liveUsers = res.data.map((u) => ({
+        id: u.id,
+        nama: u.nama,
+        email: u.email,
+        role: u.role,
+        status: u.is_active === 1 ? 'aktif' : 'nonaktif',
+        avatar: (u.nama || 'U').split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase(),
+        lastLogin: u.last_login,
+        ipAkses: '127.0.0.1',
+        createdAt: u.created_at,
+        notifSettings: { devices: [], enabled: false },
+      }));
+    }
+  } catch {
+    liveUsers = null;
+  }
+}
+
+function getUsersList() {
+  return liveUsers || mockUsers;
+}
 
 export function renderUsers() {
   const session = getSession();
@@ -22,6 +50,8 @@ export function renderUsers() {
       </div>
     `;
   }
+
+  const list = getUsersList();
 
   return `
     <div class="page-container fade-in-up">
@@ -40,21 +70,21 @@ export function renderUsers() {
         <div class="stat-card total">
           <div class="stat-icon total">👥</div>
           <div class="stat-info">
-            <div class="stat-value">${mockUsers.length}</div>
+            <div class="stat-value">${list.length}</div>
             <div class="stat-label">Total Pengguna</div>
           </div>
         </div>
         <div class="stat-card online-stat">
           <div class="stat-icon online-stat">✅</div>
           <div class="stat-info">
-            <div class="stat-value text-online">${mockUsers.filter((u) => u.status === 'aktif').length}</div>
+            <div class="stat-value text-online">${list.filter((u) => u.status === 'aktif').length}</div>
             <div class="stat-label">Akun Aktif</div>
           </div>
         </div>
         <div class="stat-card offline-stat">
           <div class="stat-icon offline-stat">⛔</div>
           <div class="stat-info">
-            <div class="stat-value text-offline">${mockUsers.filter((u) => u.status === 'nonaktif').length}</div>
+            <div class="stat-value text-offline">${list.filter((u) => u.status === 'nonaktif').length}</div>
             <div class="stat-label">Akun Nonaktif</div>
           </div>
         </div>
@@ -92,7 +122,7 @@ export function renderUsers() {
 }
 
 function renderUsersTable(search = '', filterRole = 'all', filterStatus = 'all') {
-  let users = [...mockUsers];
+  let users = [...getUsersList()];
   if (search) {
     const q = search.toLowerCase();
     users = users.filter((u) => u.nama.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
@@ -173,34 +203,40 @@ export function initUsersEvents() {
   let roleFilter = 'all';
   let statusFilter = 'all';
 
-  const refresh = () => {
+  const refresh = async () => {
+    await fetchLiveUsers();
     const wrapper = document.getElementById('users-table-wrapper');
     if (wrapper) wrapper.innerHTML = renderUsersTable(userSearchTerm, roleFilter, statusFilter);
   };
 
+  fetchLiveUsers().then(refresh);
+
   document.getElementById('user-search')?.addEventListener('input', (e) => {
     userSearchTerm = e.target.value;
-    refresh();
+    const wrapper = document.getElementById('users-table-wrapper');
+    if (wrapper) wrapper.innerHTML = renderUsersTable(userSearchTerm, roleFilter, statusFilter);
   });
   document.getElementById('user-filter-role')?.addEventListener('change', (e) => {
     roleFilter = e.target.value;
-    refresh();
+    const wrapper = document.getElementById('users-table-wrapper');
+    if (wrapper) wrapper.innerHTML = renderUsersTable(userSearchTerm, roleFilter, statusFilter);
   });
   document.getElementById('user-filter-status')?.addEventListener('change', (e) => {
     statusFilter = e.target.value;
-    refresh();
+    const wrapper = document.getElementById('users-table-wrapper');
+    if (wrapper) wrapper.innerHTML = renderUsersTable(userSearchTerm, roleFilter, statusFilter);
   });
 
   // Add user
   document.getElementById('add-user-btn')?.addEventListener('click', () => showUserForm(null, refresh));
 
   window.editUserBtn = (id) => {
-    const user = mockUsers.find((u) => u.id === id);
+    const user = getUsersList().find((u) => u.id === id);
     if (user) showUserForm(user, refresh);
   };
 
   window.toggleUserBtn = async (id) => {
-    const user = mockUsers.find((u) => u.id === id);
+    const user = getUsersList().find((u) => u.id === id);
     if (!user) return;
     const newStatus = user.status === 'aktif' ? 'nonaktif' : 'aktif';
     const result = await Swal.fire({
@@ -215,14 +251,18 @@ export function initUsersEvents() {
       color: '#e2e8f0',
     });
     if (result.isConfirmed) {
-      user.status = newStatus;
-      Swal.fire({ icon: 'success', title: `Pengguna ${newStatus === 'aktif' ? 'Diaktifkan' : 'Dinonaktifkan'}`, timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-      refresh();
+      try {
+        await apiUpdateUser(id, { isActive: newStatus === 'aktif' ? 1 : 0 });
+        await refresh();
+        Swal.fire({ icon: 'success', title: `Pengguna ${newStatus === 'aktif' ? 'Diaktifkan' : 'Dinonaktifkan'}`, timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Mengubah Status', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
     }
   };
 
   window.resetPasswordBtn = async (id) => {
-    const user = mockUsers.find((u) => u.id === id);
+    const user = getUsersList().find((u) => u.id === id);
     if (!user) return;
     const result = await Swal.fire({
       title: '🔑 Reset Password',
@@ -230,21 +270,25 @@ export function initUsersEvents() {
       inputLabel: `Password baru untuk ${user.nama}`,
       inputPlaceholder: 'Minimal 8 karakter',
       showCancelButton: true,
-      confirmButtonText: '🔑 Reset',
+      confirmButtonText: '🔑 Reset Password',
       cancelButtonText: 'Batal',
       confirmButtonColor: '#6366f1',
       background: '#1a1d2e',
       color: '#e2e8f0',
-      inputValidator: (val) => { if (val.length < 8) return 'Password minimal 8 karakter!'; },
+      inputValidator: (val) => { if (!val || val.length < 8) return 'Password minimal 8 karakter!'; },
     });
-    if (result.isConfirmed) {
-      user.password = result.value;
-      Swal.fire({ icon: 'success', title: 'Password Direset', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+    if (result.isConfirmed && result.value) {
+      try {
+        await apiResetPassword(id, result.value);
+        Swal.fire({ icon: 'success', title: 'Password Berhasil Direset', text: `Password untuk ${user.nama} telah diperbarui.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Reset Password', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
     }
   };
 
   window.deleteUserBtn = async (id) => {
-    const user = mockUsers.find((u) => u.id === id);
+    const user = getUsersList().find((u) => u.id === id);
     if (!user) return;
     const result = await Swal.fire({
       title: '🗑️ Hapus Pengguna?',
@@ -258,10 +302,13 @@ export function initUsersEvents() {
       color: '#e2e8f0',
     });
     if (result.isConfirmed) {
-      const idx = mockUsers.findIndex((u) => u.id === id);
-      if (idx >= 0) mockUsers.splice(idx, 1);
-      Swal.fire({ icon: 'success', title: 'Pengguna Dihapus', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-      refresh();
+      try {
+        await apiDeleteUser(id);
+        await refresh();
+        Swal.fire({ icon: 'success', title: 'Pengguna Dihapus', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Menghapus', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
     }
   };
 }
@@ -317,27 +364,16 @@ async function showUserForm(user, onSave) {
   });
 
   if (isConfirmed && formData) {
-    if (isEdit) {
-      user.nama = formData.nama;
-      user.role = formData.role;
-      user.avatar = formData.nama.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase();
-    } else {
-      const maxId = Math.max(...mockUsers.map((u) => u.id));
-      mockUsers.push({
-        id: maxId + 1,
-        nama: formData.nama,
-        email: formData.email,
-        password: formData.password,
-        role: formData.role,
-        avatar: formData.nama.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase(),
-        status: 'aktif',
-        lastLogin: null,
-        ipAkses: null,
-        createdAt: new Date().toISOString(),
-        notifSettings: { devices: [], enabled: false },
-      });
+    try {
+      if (isEdit) {
+        await apiUpdateUser(user.id, { nama: formData.nama, role: formData.role });
+      } else {
+        await apiCreateUser(formData);
+      }
+      Swal.fire({ icon: 'success', title: isEdit ? 'Pengguna Diperbarui' : 'Pengguna Ditambahkan', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+      onSave?.();
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gagal Menyimpan Pengguna', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
     }
-    Swal.fire({ icon: 'success', title: isEdit ? 'Pengguna Diperbarui' : 'Pengguna Ditambahkan', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-    onSave?.();
   }
 }

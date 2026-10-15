@@ -4,6 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
+import { apiGetSettings, apiUpdateSettings } from '../api.js';
 
 let activeSection = 'umum';
 
@@ -459,18 +460,39 @@ export function initSettingsEvents() {
 function bindSaveButtons() {
   const saveIds = ['save-umum-btn', 'save-monitoring-btn', 'save-notif-btn', 'save-keamanan-btn', 'save-log-btn', 'save-laporan-btn'];
   saveIds.forEach((id) => {
-    document.getElementById(id)?.addEventListener('click', () => {
-      Swal.fire({
-        icon: 'success',
-        title: 'Pengaturan Disimpan',
-        text: 'Perubahan pengaturan berhasil disimpan.',
-        timer: 1800,
-        showConfirmButton: false,
-        toast: true,
-        position: 'top-end',
-        background: '#1a1d2e',
-        color: '#e2e8f0',
-      });
+    document.getElementById(id)?.addEventListener('click', async () => {
+      try {
+        const payload = {};
+        if (document.getElementById('set-app-name')) payload.app_name = document.getElementById('set-app-name').value;
+        if (document.getElementById('set-timezone')) payload.timezone = document.getElementById('set-timezone').value;
+        if (document.getElementById('set-interval')) payload.default_ping_interval = document.getElementById('set-interval').value;
+        if (document.getElementById('set-timeout')) payload.ping_timeout_ms = document.getElementById('set-timeout').value;
+        if (document.getElementById('set-retry')) payload.ping_retry_count = document.getElementById('set-retry').value;
+
+        if (Object.keys(payload).length > 0) {
+          await apiUpdateSettings(payload);
+        }
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Pengaturan Disimpan',
+          text: 'Perubahan pengaturan berhasil disimpan ke database.',
+          timer: 1800,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end',
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      } catch (err) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal Menyimpan',
+          text: err.message,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      }
     });
   });
 

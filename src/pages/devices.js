@@ -4,7 +4,8 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice } from '../data/mock-devices.js';
+import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi } from '../data/mock-devices.js';
+import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiImportCsv } from '../api.js';
 import { getSession } from '../main.js';
 
 let currentPage = 1;
@@ -97,14 +98,16 @@ function renderDevicesTable(canEdit, isAdmin) {
   const paged = filtered.slice(start, start + rowsPerPage);
 
   const methodBadge = (m) => {
-    const cls = { ping: 'method-ping', isapi: 'method-isapi', rtsp: 'method-rtsp', onvif: 'method-onvif' }[m] || 'method-ping';
-    return `<span class="device-method-badge ${cls}">${m.toUpperCase()}</span>`;
+    const safeM = (m || 'ping').toLowerCase();
+    const cls = { ping: 'method-ping', isapi: 'method-isapi', rtsp: 'method-rtsp', onvif: 'method-onvif' }[safeM] || 'method-ping';
+    return `<span class="device-method-badge ${cls}">${safeM.toUpperCase()}</span>`;
   };
 
   const rows = paged.length > 0 ? paged.map((d) => {
-    const statusBadge = `<div class="badge badge-${d.status}" style="white-space:nowrap;">
-      <span class="status-dot ${d.status}"></span>
-      ${d.status.charAt(0).toUpperCase() + d.status.slice(1)}
+    const st = d.status || 'offline';
+    const statusBadge = `<div class="badge badge-${st}" style="white-space:nowrap;">
+      <span class="status-dot ${st}"></span>
+      ${st.charAt(0).toUpperCase() + st.slice(1)}
     </div>`;
 
     return `
@@ -129,6 +132,7 @@ function renderDevicesTable(canEdit, isAdmin) {
         <td>
           <div class="action-group">
             <button class="btn btn-ghost btn-icon btn-sm tooltip" data-tooltip="Detail" onclick="window.devDetailBtn(${d.id})">🔍</button>
+            <button class="btn btn-ghost btn-icon btn-sm tooltip" data-tooltip="Ping Langsung" onclick="window.devPingBtn(${d.id})">📡</button>
             ${canEdit ? `
             <button class="btn btn-ghost btn-icon btn-sm tooltip" data-tooltip="Edit" onclick="window.devEditBtn(${d.id})">✏️</button>
             <button class="btn btn-ghost btn-icon btn-sm tooltip" data-tooltip="Duplikat" onclick="window.devDuplicateBtn(${d.id})">📋</button>
@@ -219,12 +223,54 @@ export function initDevicesEvents(navigate) {
   window.devRowsPerPage = (v) => { rowsPerPage = parseInt(v); currentPage = 1; refreshTable(); };
   window.devDetailBtn = (id) => navigate('device-detail', { id });
 
+  window.devPingBtn = async (id) => {
+    const device = mockDevices.find((d) => d.id === id);
+    if (!device) return;
+
+    Swal.fire({
+      title: `Probe Jaringan ke ${device.nama}`,
+      html: `Mengirim probe langsung ke <code style="color:var(--color-accent);">${device.ip}</code>...`,
+      didOpen: () => Swal.showLoading(),
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+      allowOutsideClick: false,
+      showConfirmButton: false,
+    });
+
+    try {
+      const res = await apiPingDevice(id);
+      const isOnline = res.status === 'online';
+      const ms = res.responseTime;
+      device.status = res.status;
+      device.responseTime = ms;
+      refreshTable();
+
+      Swal.fire({
+        title: 'Hasil Probe',
+        html: isOnline
+          ? `<div style="text-align:center;">
+              <div style="font-size:2.2rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms !== null ? ms + ' ms' : 'OK'}</div>
+              <div style="color:#94a3b8;">${device.ip} merespons probe (${res.method || device.metode}) ✅</div>
+            </div>`
+          : `<div style="text-align:center;">
+              <div style="font-size:2rem; font-weight:800; color:var(--color-offline); margin:8px 0;">Offline / Timeout</div>
+              <div style="color:#94a3b8;">${device.ip} ${res.error || 'Request Timeout'} ❌</div>
+            </div>`,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+        confirmButtonColor: '#6366f1',
+      });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gagal Probe', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+    }
+  };
+
   window.devDeleteBtn = async (id) => {
     const device = mockDevices.find((d) => d.id === id);
     if (!device) return;
     const result = await Swal.fire({
       title: '🗑️ Hapus Device?',
-      html: `Yakin ingin menghapus <b>${device.nama}</b>?<br><span style="font-size:0.82rem; color:#64748b;">Semua riwayat log device ini tetap tersimpan.</span>`,
+      html: `Yakin ingin menghapus <b>${device.nama}</b>?<br><span style="font-size:0.82rem; color:#64748b;">Data akan dihapus permanen dari database.</span>`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Ya, Hapus',
@@ -235,9 +281,14 @@ export function initDevicesEvents(navigate) {
       color: '#e2e8f0',
     });
     if (result.isConfirmed) {
-      deleteDevice(id);
-      Swal.fire({ icon: 'success', title: 'Device Dihapus', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-      refreshTable();
+      try {
+        await apiDeleteDevice(id);
+        await syncDevicesFromApi();
+        Swal.fire({ icon: 'success', title: 'Device Dihapus', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+        refreshTable();
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Menghapus', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
     }
   };
 
@@ -256,12 +307,25 @@ export function initDevicesEvents(navigate) {
       background: '#1a1d2e',
       color: '#e2e8f0',
     });
-    if (result.isConfirmed) {
-      const newDev = duplicateDevice(id);
-      if (newDev) {
-        newDev.nama = result.value;
-        Swal.fire({ icon: 'success', title: 'Device Diduplikat', text: `${result.value} berhasil ditambahkan.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+    if (result.isConfirmed && result.value) {
+      try {
+        await apiCreateDevice({
+          nama: result.value,
+          ip: device.ip,
+          jenis: device.jenis,
+          metode: device.metode,
+          port: device.port,
+          interval: device.interval,
+          grup: device.grup,
+          lokasi: device.lokasi,
+          deskripsi: device.deskripsi,
+          hostname: device.hostname ? `${device.hostname}-COPY` : null,
+        });
+        await syncDevicesFromApi();
+        Swal.fire({ icon: 'success', title: 'Device Diduplikat', text: `${result.value} berhasil ditambahkan ke database.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
         refreshTable();
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Duplikasi', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
       }
     }
   };
@@ -374,14 +438,20 @@ async function showDeviceForm(id, onSave) {
   });
 
   if (isConfirmed && formData) {
-    if (isEdit) {
-      Object.assign(device, formData);
-      Swal.fire({ icon: 'success', title: 'Device Diperbarui', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-    } else {
-      addDevice(formData);
-      Swal.fire({ icon: 'success', title: 'Device Ditambahkan', text: `${formData.nama} berhasil ditambahkan ke sistem.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+    try {
+      if (isEdit) {
+        await apiUpdateDevice(device.id, formData);
+        await syncDevicesFromApi();
+        Swal.fire({ icon: 'success', title: 'Device Diperbarui', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+      } else {
+        await apiCreateDevice(formData);
+        await syncDevicesFromApi();
+        Swal.fire({ icon: 'success', title: 'Device Ditambahkan', text: `${formData.nama} berhasil disimpan ke database.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+      }
+      onSave?.();
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gagal Menyimpan Device', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
     }
-    onSave?.();
   }
 }
 
@@ -414,8 +484,11 @@ function exportCSV() {
   });
 }
 
+let parsedCsvDevices = [];
+
 async function showImportCSV(onSave) {
-  await Swal.fire({
+  parsedCsvDevices = [];
+  const { isConfirmed } = await Swal.fire({
     title: '📂 Import Device dari CSV',
     html: `
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
@@ -447,6 +520,23 @@ async function showImportCSV(onSave) {
       fileInput?.addEventListener('change', (e) => handleCSVPreview(e.target.files[0]));
     },
   });
+
+  if (isConfirmed && parsedCsvDevices.length > 0) {
+    try {
+      const res = await apiImportCsv(parsedCsvDevices);
+      await syncDevicesFromApi();
+      onSave?.();
+      Swal.fire({
+        icon: 'success',
+        title: 'Import CSV Berhasil',
+        text: `${res.imported || parsedCsvDevices.length} device berhasil dimasukkan ke sistem.`,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Import Gagal', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+    }
+  }
 }
 
 function handleCSVPreview(file) {
@@ -454,15 +544,27 @@ function handleCSVPreview(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const lines = e.target.result.split('\n').filter((l) => l.trim());
-    const rows = lines.slice(0, 6).map((l) => l.split(',').map((c) => c.replace(/"/g, '').trim()));
+    if (lines.length <= 1) return;
+    const header = lines[0].split(',').map((h) => h.replace(/"/g, '').trim().toLowerCase());
+    const rawRows = lines.slice(1).map((l) => l.split(',').map((c) => c.replace(/"/g, '').trim()));
+
+    parsedCsvDevices = rawRows.map((r) => ({
+      nama: r[0] || 'Device CSV',
+      ip: r[1] || '127.0.0.1',
+      jenis: (r[2] || 'komputer').toLowerCase(),
+      metode: (r[3] || 'ping').toLowerCase(),
+      interval: parseInt(r[4]) || 60,
+      grup: r[5] || 'Umum',
+    }));
+
     const preview = document.getElementById('csv-preview');
     const table = document.getElementById('csv-preview-table');
     if (preview) preview.style.display = 'block';
     if (table) {
       table.innerHTML = `
         <table class="data-table">
-          <thead><tr>${rows[0]?.map((h) => `<th>${h}</th>`).join('') || ''}</tr></thead>
-          <tbody>${rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+          <thead><tr>${header.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+          <tbody>${rawRows.slice(0, 5).map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
         </table>
       `;
     }

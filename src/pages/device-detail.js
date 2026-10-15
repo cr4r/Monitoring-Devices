@@ -4,7 +4,8 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockDevices, updateDeviceStatus } from '../data/mock-devices.js';
+import { mockDevices, updateDeviceStatus, syncDevicesFromApi } from '../data/mock-devices.js';
+import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance } from '../api.js';
 import { uptimePerDevice, insiden, getTimeline24h } from '../data/mock-reports.js';
 import { renderTimeline24h } from '../components/charts.js';
 import { getSession } from '../main.js';
@@ -67,16 +68,16 @@ export function renderDeviceDetail(params = {}) {
           <div style="flex:1;">
             <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
               <h2 style="font-size:1.3rem; font-weight:800; color:var(--color-heading);">${device.nama}</h2>
-              <div class="badge badge-${device.status}">
-                <span class="status-dot ${device.status}"></span>
-                ${device.status.charAt(0).toUpperCase() + device.status.slice(1)}
+              <div class="badge badge-${device.status || 'offline'}">
+                <span class="status-dot ${device.status || 'offline'}"></span>
+                ${(device.status || 'offline').charAt(0).toUpperCase() + (device.status || 'offline').slice(1)}
               </div>
             </div>
             <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:6px; font-size:0.82rem; color:var(--color-muted);">
               <span>🌐 <span class="ip-text">${device.ip}</span></span>
-              <span>🔌 Metode: <b style="color:var(--color-text-secondary);">${device.metode.toUpperCase()}</b></span>
+              <span>🔌 Metode: <b style="color:var(--color-text-secondary);">${(device.metode || 'ping').toUpperCase()}</b></span>
               ${device.port ? `<span>🔢 Port: <b style="color:var(--color-text-secondary);">${device.port}</b></span>` : ''}
-              <span>⏱️ Interval: <b style="color:var(--color-text-secondary);">${device.interval} detik</b></span>
+              <span>⏱️ Interval: <b style="color:var(--color-text-secondary);">${device.interval || 60} detik</b></span>
             </div>
             ${device.deskripsi ? `<div style="margin-top:6px; font-size:0.82rem; color:var(--color-muted);">${device.deskripsi}</div>` : ''}
           </div>
@@ -244,34 +245,115 @@ export function initDeviceDetailEvents(navigate) {
   const timelineData = getTimeline24h(1);
   setTimeout(() => renderTimeline24h('detail-timeline-chart', timelineData), 100);
 
+  const getDetailId = () => {
+    const hash = window.location.hash || '';
+    const match = hash.match(/id=(\d+)/);
+    return match ? parseInt(match[1]) : 1;
+  };
+
   // Ping
   document.getElementById('detail-ping-btn')?.addEventListener('click', async () => {
-    const id = parseInt(new URLSearchParams(location.hash.split('?')[1]).get('id') || 1);
+    const id = getDetailId();
     const device = mockDevices.find((d) => d.id === id);
     if (!device) return;
 
-    await Swal.fire({
-      title: `Ping ke ${device.nama}`,
-      html: `Mengirim ICMP ping ke <code style="color:var(--color-accent);">${device.ip}</code>...`,
-      didOpen: () => Swal.showLoading(),
-      timer: 1500,
-      showConfirmButton: false,
-      background: '#1a1d2e',
-      color: '#e2e8f0',
-    });
-
-    const isOnline = device.status === 'online';
-    const ms = isOnline ? device.responseTime + Math.floor(Math.random() * 5) : null;
-
     Swal.fire({
-      title: 'Hasil Ping',
-      html: isOnline
-        ? `<div style="text-align:center;"><div style="font-size:2.5rem; font-weight:800; color:var(--color-online);">${ms} ms</div><div style="color:#94a3b8;">Online ✅</div></div>`
-        : `<div style="text-align:center;"><div style="font-size:2.5rem; font-weight:800; color:var(--color-offline);">Timeout</div><div style="color:#94a3b8;">Offline ❌</div></div>`,
+      title: `Probe ke ${device.nama}`,
+      html: `Mengirim probe langsung ke <code style="color:var(--color-accent);">${device.ip}</code>...`,
+      didOpen: () => Swal.showLoading(),
+      showConfirmButton: false,
+      allowOutsideClick: false,
       background: '#1a1d2e',
       color: '#e2e8f0',
-      confirmButtonText: 'Tutup',
-      confirmButtonColor: '#6366f1',
     });
+
+    try {
+      const res = await apiPingDevice(id);
+      const isOnline = res.status === 'online';
+      const ms = res.responseTime;
+      device.status = res.status;
+      device.responseTime = ms;
+
+      Swal.fire({
+        title: 'Hasil Probe Jaringan',
+        html: isOnline
+          ? `<div style="text-align:center;">
+              <div style="font-size:2.5rem; font-weight:800; color:var(--color-online);">${ms !== null ? ms + ' ms' : 'OK'}</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">${device.ip} Online ✅ (${res.method || device.metode})</div>
+            </div>`
+          : `<div style="text-align:center;">
+              <div style="font-size:2.2rem; font-weight:800; color:var(--color-offline);">Offline / Timeout</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">${device.ip} ${res.error || 'Request Timeout'} ❌</div>
+            </div>`,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+        confirmButtonText: 'Tutup',
+        confirmButtonColor: '#6366f1',
+      });
+      navigate('device-detail', { id });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gagal Melakukan Probe', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+    }
+  });
+
+  // Set Maintenance
+  document.getElementById('detail-maintenance-btn')?.addEventListener('click', async () => {
+    const id = getDetailId();
+    const device = mockDevices.find((d) => d.id === id);
+    if (!device) return;
+
+    const { value: reason } = await Swal.fire({
+      title: '🔧 Set Maintenance',
+      input: 'textarea',
+      inputLabel: 'Alasan Maintenance',
+      inputPlaceholder: 'Contoh: Pemeliharaan rutin server...',
+      showCancelButton: true,
+      confirmButtonText: 'Aktifkan',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#eab308',
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+      inputValidator: (v) => !v && 'Alasan maintenance wajib diisi!',
+    });
+
+    if (reason) {
+      try {
+        await apiSetMaintenance(id, reason, 120);
+        await syncDevicesFromApi();
+        Swal.fire({ icon: 'success', title: 'Maintenance Diaktifkan', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+        navigate('device-detail', { id });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Set Maintenance', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
+    }
+  });
+
+  // End Maintenance
+  document.getElementById('detail-end-maintenance-btn')?.addEventListener('click', async () => {
+    const id = getDetailId();
+    const device = mockDevices.find((d) => d.id === id);
+    if (!device) return;
+
+    const res = await Swal.fire({
+      title: '✅ Selesai Maintenance?',
+      text: `Selesaikan mode maintenance untuk ${device.nama}?`,
+      showCancelButton: true,
+      confirmButtonText: 'Ya, Selesai',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#22c55e',
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+    });
+
+    if (res.isConfirmed) {
+      try {
+        await apiFinishMaintenance(id);
+        await syncDevicesFromApi();
+        Swal.fire({ icon: 'success', title: 'Maintenance Selesai', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+        navigate('device-detail', { id });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Selesai Maintenance', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
+    }
   });
 }

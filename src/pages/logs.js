@@ -5,11 +5,73 @@
 
 import Swal from 'sweetalert2';
 import { logStatus, logAktivitas, logKonfigurasi, fmt } from '../data/mock-logs.js';
+import { apiGetLogs } from '../api.js';
 
 let activeTab = 'status';
 let logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
 let logPage = 1;
 let logRowsPerPage = 25;
+let backendLogs = null;
+let backendCounts = { status: logStatus.length, aktivitas: logAktivitas.length, konfigurasi: logKonfigurasi.length };
+
+export async function fetchLiveLogs() {
+  try {
+    const res = await apiGetLogs({
+      type: activeTab,
+      search: logFilters.search,
+      dateFrom: logFilters.dateFrom,
+      dateTo: logFilters.dateTo,
+      page: logPage,
+      limit: logRowsPerPage,
+    });
+    if (res && res.data) {
+      backendLogs = res.data.map((r) => {
+        if (activeTab === 'status') {
+          return {
+            id: r.id,
+            waktu: r.waktu,
+            device: r.device_name || 'Device',
+            ip: r.device_ip || '',
+            deviceId: r.device_id,
+            statusSebelum: r.status_lama || 'online',
+            statusBaru: r.status_baru || 'offline',
+            metode: 'Probe',
+            responseTime: r.status_baru === 'online' ? 'OK' : 'Timeout',
+            pesan: r.pesan_log,
+            tipe: r.tipe_perubahan || r.status_baru,
+          };
+        } else if (activeTab === 'aktivitas') {
+          return {
+            id: r.id,
+            waktu: r.waktu,
+            user: r.user_nama || 'Pengguna',
+            email: r.user_email || '',
+            aksi: r.aksi || 'Aktivitas',
+            detail: r.detail || '',
+            ip: r.ip_address || '127.0.0.1',
+            tipe: r.tipe || 'info',
+            pesan: `${r.user_nama} (${r.user_email}) melakukan ${r.aksi}: ${r.detail || ''}`,
+          };
+        } else {
+          return {
+            id: r.id,
+            waktu: r.waktu,
+            user: r.user_nama || 'Admin',
+            device: r.device_nama || 'Sistem',
+            parameter: r.aksi || 'Konfigurasi',
+            nilaiLama: r.nilai_lama || '-',
+            nilaiBaru: r.nilai_baru || '-',
+            tipe: 'maintenance',
+            pesan: r.detail || `${r.user_nama} mengubah ${r.aksi} pada ${r.device_nama || 'sistem'}`,
+          };
+        }
+      });
+      if (res.counts) backendCounts = res.counts;
+    }
+  } catch {
+    backendLogs = null;
+  }
+}
 
 export function renderLogs() {
   return `
@@ -95,6 +157,9 @@ export function renderLogs() {
 }
 
 function getActiveLogData() {
+  if (backendLogs && backendLogs.length > 0) {
+    return backendLogs;
+  }
   const sources = { status: logStatus, aktivitas: logAktivitas, konfigurasi: logKonfigurasi };
   let data = [...(sources[activeTab] || [])].sort((a, b) => new Date(b.waktu) - new Date(a.waktu));
 
@@ -275,11 +340,18 @@ function emptyLog() {
 }
 
 export function initLogsEvents() {
-  const refresh = () => {
+  const refresh = async () => {
+    await fetchLiveLogs();
     const content = document.getElementById('log-table-content');
     if (content) content.innerHTML = renderLogTable();
     bindLogRowsSelect();
   };
+
+  fetchLiveLogs().then(() => {
+    const content = document.getElementById('log-table-content');
+    if (content) content.innerHTML = renderLogTable();
+    bindLogRowsSelect();
+  });
 
   // Tab switching
   document.querySelectorAll('.tab-btn[data-tab]').forEach((btn) => {

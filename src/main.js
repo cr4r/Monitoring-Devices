@@ -17,6 +17,10 @@ import { renderUsers, initUsersEvents } from './pages/users.js';
 import { renderSettings, initSettingsEvents } from './pages/settings.js';
 import { renderAbout, initAboutEvents } from './pages/about.js';
 import { destroyAllCharts } from './components/charts.js';
+import { connectWebSocket } from './api.js';
+
+// Hubungkan WebSocket real-time
+connectWebSocket();
 
 // ---- SESSION MANAGEMENT ----
 const SESSION_KEY = 'devwatch_session';

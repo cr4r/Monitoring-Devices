@@ -4,7 +4,8 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus } from '../data/mock-devices.js';
+import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi } from '../data/mock-devices.js';
+import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance } from '../api.js';
 import { renderTimeline24h, destroyAllCharts } from '../components/charts.js';
 import { getTimeline24h } from '../data/mock-reports.js';
 import { getSession } from '../main.js';
@@ -216,9 +217,9 @@ function renderDeviceCards(filtered = null) {
             <div class="device-card-name truncate">${d.nama}</div>
             <div class="device-card-ip">${d.ip}</div>
           </div>
-          <div class="badge badge-${d.status}" style="flex-shrink:0;">
-            <span class="status-dot ${d.status}"></span>
-            ${d.status.charAt(0).toUpperCase() + d.status.slice(1)}
+          <div class="badge badge-${d.status || 'offline'}" style="flex-shrink:0;">
+            <span class="status-dot ${d.status || 'offline'}"></span>
+            ${(d.status || 'offline').charAt(0).toUpperCase() + (d.status || 'offline').slice(1)}
           </div>
         </div>
 
@@ -330,18 +331,19 @@ export function initDashboardEvents(navigate) {
   });
 
   // Refresh button
-  document.getElementById('refresh-btn')?.addEventListener('click', () => {
+  document.getElementById('refresh-btn')?.addEventListener('click', async () => {
     Swal.fire({
       toast: true,
       icon: 'info',
-      title: 'Merefresh data monitoring...',
+      title: 'Menyinkronkan data dengan database...',
       position: 'top-end',
       showConfirmButton: false,
-      timer: 1000,
+      timer: 800,
       background: '#1a1d2e',
       color: '#e2e8f0',
     });
-    setTimeout(() => applyFilter(), 1000);
+    await syncDevicesFromApi();
+    applyFilter();
   });
 
   // Countdown timers
@@ -358,40 +360,54 @@ export function initDashboardEvents(navigate) {
     const device = mockDevices.find((d) => d.id === id);
     if (!device) return;
 
-    await Swal.fire({
-      title: `Ping ke ${device.nama}`,
+    Swal.fire({
+      title: `Probe Jaringan ke ${device.nama}`,
       html: `<div style="text-align:center; padding:8px;">
-        <div style="color:var(--color-muted); font-size:0.85rem;">Mengirim ICMP ping ke <code style="color:var(--color-accent);">${device.ip}</code>...</div>
+        <div style="color:var(--color-muted); font-size:0.85rem;">Mengirim probe jaringan langsung ke <code style="color:var(--color-accent);">${device.ip}</code>...</div>
       </div>`,
       didOpen: () => Swal.showLoading(),
       background: '#1a1d2e',
       color: '#e2e8f0',
       allowOutsideClick: false,
-      timer: 1500,
       showConfirmButton: false,
     });
 
-    const isOnline = device.status === 'online';
-    const ms = isOnline ? device.responseTime + Math.floor(Math.random() * 5) : null;
+    try {
+      const res = await apiPingDevice(id);
+      const isOnline = res.status === 'online';
+      const ms = res.responseTime;
+      updateDeviceStatus(id, res.status);
+      device.responseTime = ms;
+      device.status = res.status;
 
-    await Swal.fire({
-      title: 'Hasil Ping',
-      html: isOnline
-        ? `<div style="text-align:center;">
-            <div style="font-size:2.5rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms} ms</div>
-            <div style="color:#94a3b8; font-size:0.85rem;">📡 ${device.ip} merespons ping dengan delay ${ms} ms</div>
-            <div class="badge badge-online" style="margin-top:8px;">✅ Online</div>
-          </div>`
-        : `<div style="text-align:center;">
-            <div style="font-size:2.5rem; font-weight:800; color:var(--color-offline); margin:8px 0;">Timeout</div>
-            <div style="color:#94a3b8; font-size:0.85rem;">📡 ${device.ip} tidak merespons ping (request timeout)</div>
-            <div class="badge badge-offline" style="margin-top:8px;">❌ Offline</div>
-          </div>`,
-      background: '#1a1d2e',
-      color: '#e2e8f0',
-      confirmButtonText: 'Tutup',
-      confirmButtonColor: '#6366f1',
-    });
+      await Swal.fire({
+        title: 'Hasil Probe Jaringan',
+        html: isOnline
+          ? `<div style="text-align:center;">
+              <div style="font-size:2.5rem; font-weight:800; color:var(--color-online); margin:8px 0;">${ms !== null ? ms + ' ms' : 'OK'}</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">📡 <b>${device.ip}</b> merespons probe (${res.method || device.metode})</div>
+              <div class="badge badge-online" style="margin-top:8px;">✅ Online</div>
+            </div>`
+          : `<div style="text-align:center;">
+              <div style="font-size:2rem; font-weight:800; color:var(--color-offline); margin:8px 0;">Offline / Timeout</div>
+              <div style="color:#94a3b8; font-size:0.85rem;">📡 <b>${device.ip}</b> tidak merespons (${res.error || 'Request Timeout'})</div>
+              <div class="badge badge-offline" style="margin-top:8px;">❌ Offline</div>
+            </div>`,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+        confirmButtonText: 'Tutup',
+        confirmButtonColor: '#6366f1',
+      });
+      applyFilter();
+    } catch (err) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Melakukan Probe',
+        text: err.message,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    }
   };
 
   window.dashboardSetMaintenance = async (id) => {
@@ -439,28 +455,24 @@ export function initDashboardEvents(navigate) {
     });
 
     if (isConfirmed && formData) {
-      const session = getSession();
-      updateDeviceStatus(id, 'maintenance', {
-        alasan: formData.alasan,
-        estimasiSelesai: new Date(formData.estimasi).toISOString(),
-        mulaiAt: new Date().toISOString(),
-        oleh: session?.nama || 'Admin',
-      });
+      try {
+        const durationMinutes = Math.max(1, Math.round((new Date(formData.estimasi).getTime() - Date.now()) / 60000));
+        await apiSetMaintenance(id, formData.alasan, durationMinutes);
+        await syncDevicesFromApi();
+        applyFilter();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Mode Maintenance Aktif',
-        text: `${device.nama} kini dalam mode maintenance dan tidak akan memicu alert.`,
-        timer: 2000,
-        showConfirmButton: false,
-        background: '#1a1d2e',
-        color: '#e2e8f0',
-      });
-
-      // Re-render cards
-      const grid = document.getElementById('devices-grid');
-      if (grid) grid.innerHTML = renderDeviceCards(getFilteredDevices());
-      startCountdownTimers();
+        Swal.fire({
+          icon: 'success',
+          title: 'Mode Maintenance Aktif',
+          text: `${device.nama} kini dalam mode maintenance di database dan tidak akan memicu alert.`,
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Set Maintenance', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
     }
   };
 
@@ -482,22 +494,23 @@ export function initDashboardEvents(navigate) {
     });
 
     if (result.isConfirmed) {
-      updateDeviceStatus(id, 'online', null);
-      const dev = mockDevices.find((d) => d.id === id);
-      if (dev) dev.lastOnline = new Date().toISOString();
+      try {
+        await apiFinishMaintenance(id);
+        await syncDevicesFromApi();
+        applyFilter();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Maintenance Selesai',
-        text: `${device.nama} kembali ke monitoring normal.`,
-        timer: 2000,
-        showConfirmButton: false,
-        background: '#1a1d2e',
-        color: '#e2e8f0',
-      });
-
-      const grid = document.getElementById('devices-grid');
-      if (grid) grid.innerHTML = renderDeviceCards(getFilteredDevices());
+        Swal.fire({
+          icon: 'success',
+          title: 'Maintenance Selesai',
+          text: `${device.nama} kembali ke monitoring normal.`,
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Gagal Menyelesaikan Maintenance', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+      }
     }
   };
 }

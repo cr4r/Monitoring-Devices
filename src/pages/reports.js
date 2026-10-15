@@ -5,6 +5,7 @@
 
 import Swal from 'sweetalert2';
 import { uptimePerDevice, insiden, weeklyReport } from '../data/mock-reports.js';
+import { apiGetWeeklyReport, apiGetSlaReport, apiGetIncidentReport } from '../api.js';
 import { renderWeeklyTrend, renderUptimeBar, renderIncidentBar } from '../components/charts.js';
 import { simulatePdfExport } from './logs.js';
 

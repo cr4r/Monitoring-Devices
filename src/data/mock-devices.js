@@ -533,3 +533,93 @@ export function duplicateDevice(id) {
     id: undefined,
   });
 }
+
+/**
+ * Sinkronisasi data perangkat dari backend SQLite jika backend aktif
+ */
+export async function syncDevicesFromApi() {
+  try {
+    const token = localStorage.getItem('devwatch_token') || '';
+    const res = await fetch('/api/devices', {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+        // Gabungkan data backend ke mockDevices
+        json.data.forEach((dbDev) => {
+          const idx = mockDevices.findIndex((d) => d.id === dbDev.id);
+          const mapped = {
+            id: dbDev.id,
+            nama: dbDev.nama,
+            jenis: dbDev.jenis?.toLowerCase()?.includes('cctv') ? 'cctv' : 'komputer',
+            ip: dbDev.ip,
+            hostname: dbDev.hostname,
+            metode: dbDev.metode?.toLowerCase() || 'ping',
+            port: dbDev.port,
+            interval: dbDev.interval_detik || 60,
+            grup: dbDev.grup || 'Umum',
+            lokasi: dbDev.lokasi || 'Kantor',
+            deskripsi: dbDev.deskripsi || '',
+            status: dbDev.status || 'offline',
+            responseTime: dbDev.response_time_ms || 0,
+            lastChecked: dbDev.last_check || new Date().toISOString(),
+            lastOnline: dbDev.last_seen_online || new Date().toISOString(),
+            uptime24h: dbDev.target_sla || 99.0,
+            active: dbDev.is_active === 1,
+            maintenanceInfo: dbDev.maintenance_reason
+              ? { alasan: dbDev.maintenance_reason, selesai: dbDev.maintenance_until }
+              : null,
+            mapPos: mockDevices[idx]?.mapPos || {
+              x: 180 + Math.random() * 450,
+              y: 120 + Math.random() * 320,
+            },
+          };
+
+          if (idx >= 0) {
+            mockDevices[idx] = { ...mockDevices[idx], ...mapped };
+          } else {
+            mockDevices.push(mapped);
+          }
+        });
+
+        // Hapus perangkat yang sudah dihapus di backend
+        const backendIds = new Set(json.data.map((d) => d.id));
+        mockDevices = mockDevices.filter((d) => backendIds.has(d.id));
+      }
+    }
+  } catch {
+    // Mode offline: tetap gunakan data memori
+  }
+}
+
+// Sinkronisasi otomatis saat berkas dimuat
+syncDevicesFromApi();
+
+// Dengar event real-time dari WebSocket
+if (typeof window !== 'undefined') {
+  window.addEventListener('devwatch:status_change', (e) => {
+    if (e.detail && e.detail.id) {
+      updateDeviceStatus(e.detail.id, e.detail.status);
+      window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    }
+  });
+
+  window.addEventListener('devwatch:telemetry', (e) => {
+    if (e.detail && e.detail.id) {
+      const dev = mockDevices.find((d) => d.id === e.detail.id);
+      if (dev) {
+        dev.responseTime = e.detail.responseTime;
+        dev.status = e.detail.status;
+      }
+    }
+  });
+
+  window.addEventListener('devwatch:device_created', () => syncDevicesFromApi());
+  window.addEventListener('devwatch:device_deleted', () => syncDevicesFromApi());
+  window.addEventListener('devwatch:device_updated', () => syncDevicesFromApi());
+}
+
