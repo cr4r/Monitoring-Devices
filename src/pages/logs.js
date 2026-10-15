@@ -1,0 +1,379 @@
+// ================================================================
+// DevWatch — logs.js
+// Log sistem: 3 tab, filter, color coding, pagination, export PDF
+// ================================================================
+
+import Swal from 'sweetalert2';
+import { logStatus, logAktivitas, logKonfigurasi, fmt } from '../data/mock-logs.js';
+
+let activeTab = 'status';
+let logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
+let logPage = 1;
+let logRowsPerPage = 25;
+
+export function renderLogs() {
+  return `
+    <div class="page-container fade-in-up">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">📋 Log Sistem</h1>
+          <p class="page-subtitle">Riwayat status device, aktivitas pengguna, dan perubahan konfigurasi</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary" id="log-export-btn">📄 Export PDF</button>
+          <button class="btn btn-secondary btn-sm" id="log-clear-filter-btn">✕ Reset Filter</button>
+        </div>
+      </div>
+
+      <!-- Filter Panel -->
+      <div class="log-filter-panel">
+        <div class="form-group">
+          <label class="form-label">Kata Kunci</label>
+          <input type="text" class="form-control" id="log-search" placeholder="Cari dalam log..." value="${logFilters.search}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dari Tanggal</label>
+          <input type="date" class="form-control" id="log-date-from" value="${logFilters.dateFrom}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sampai Tanggal</label>
+          <input type="date" class="form-control" id="log-date-to" value="${logFilters.dateTo}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tipe Log</label>
+          <select class="form-control" id="log-filter-tipe">
+            <option value="all">Semua Tipe</option>
+            <option value="online">🟢 Online</option>
+            <option value="offline">🔴 Offline</option>
+            <option value="maintenance">🟡 Maintenance</option>
+            <option value="warning">⚠️ Warning</option>
+            <option value="info">ℹ️ Info</option>
+          </select>
+        </div>
+        <div class="form-group" style="align-self:end;">
+          <button class="btn btn-primary w-full" id="log-apply-filter-btn">🔍 Terapkan Filter</button>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs-container">
+        <div class="tabs-nav">
+          <button class="tab-btn ${activeTab === 'status' ? 'active' : ''}" data-tab="status">
+            🖥️ Log Status Device
+            <span style="
+              background:rgba(239,68,68,0.2); color:var(--color-offline);
+              font-size:0.65rem; padding:1px 6px; border-radius:10px; font-weight:700;
+            ">${logStatus.length}</span>
+          </button>
+          <button class="tab-btn ${activeTab === 'aktivitas' ? 'active' : ''}" data-tab="aktivitas">
+            👤 Log Aktivitas User
+            <span style="
+              background:rgba(99,102,241,0.15); color:var(--color-accent);
+              font-size:0.65rem; padding:1px 6px; border-radius:10px; font-weight:700;
+            ">${logAktivitas.length}</span>
+          </button>
+          <button class="tab-btn ${activeTab === 'konfigurasi' ? 'active' : ''}" data-tab="konfigurasi">
+            ⚙️ Log Perubahan Konfigurasi
+            <span style="
+              background:rgba(234,179,8,0.15); color:var(--color-maintenance);
+              font-size:0.65rem; padding:1px 6px; border-radius:10px; font-weight:700;
+            ">${logKonfigurasi.length}</span>
+          </button>
+        </div>
+        <div style="
+          background:var(--bg-card); border:1px solid var(--border-color);
+          border-radius:0 var(--border-radius-lg) var(--border-radius-lg) var(--border-radius-lg);
+          padding:0; overflow:hidden;
+        ">
+          <div id="log-table-content">
+            ${renderLogTable()}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getActiveLogData() {
+  const sources = { status: logStatus, aktivitas: logAktivitas, konfigurasi: logKonfigurasi };
+  let data = [...(sources[activeTab] || [])].sort((a, b) => new Date(b.waktu) - new Date(a.waktu));
+
+  // Apply filters
+  if (logFilters.search) {
+    const q = logFilters.search.toLowerCase();
+    data = data.filter((l) => l.pesan?.toLowerCase().includes(q) || l.device?.toLowerCase().includes(q) || l.user?.toLowerCase().includes(q));
+  }
+  if (logFilters.dateFrom) {
+    const from = new Date(logFilters.dateFrom);
+    data = data.filter((l) => new Date(l.waktu) >= from);
+  }
+  if (logFilters.dateTo) {
+    const to = new Date(logFilters.dateTo + 'T23:59:59');
+    data = data.filter((l) => new Date(l.waktu) <= to);
+  }
+  if (logFilters.tipe !== 'all') {
+    data = data.filter((l) => l.tipe === logFilters.tipe);
+  }
+
+  return data;
+}
+
+function renderLogTable() {
+  const data = getActiveLogData();
+  const total = data.length;
+  const totalPages = Math.max(1, Math.ceil(total / logRowsPerPage));
+  logPage = Math.min(logPage, totalPages);
+  const start = (logPage - 1) * logRowsPerPage;
+  const paged = data.slice(start, start + logRowsPerPage);
+
+  const getRowClass = (log) => {
+    if (log.tipe === 'offline') return 'log-offline';
+    if (log.tipe === 'online') return 'log-online';
+    if (log.tipe === 'maintenance') return 'log-maintenance';
+    if (log.tipe === 'warning') return 'log-offline';
+    return '';
+  };
+
+  let tableHtml = '';
+
+  if (activeTab === 'status') {
+    tableHtml = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Device</th>
+            <th>Pesan Log</th>
+            <th>Metode</th>
+            <th>Response</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
+            <tr class="${getRowClass(l)}">
+              <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
+                ${fmt(l.waktu)}
+              </td>
+              <td>
+                <div style="font-weight:600; color:var(--color-text);">${l.device}</div>
+                <div class="ip-text" style="margin-top:2px;">${l.ip}</div>
+              </td>
+              <td class="log-entry-msg">${l.pesan}</td>
+              <td><span class="chip">${l.metode}</span></td>
+              <td>
+                <span style="font-family:var(--font-mono); font-size:0.82rem; color:${l.responseTime === 'Timeout' ? 'var(--color-offline)' : 'var(--color-online)'};">
+                  ${l.responseTime}
+                </span>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } else if (activeTab === 'aktivitas') {
+    tableHtml = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Pengguna</th>
+            <th>Aksi</th>
+            <th>Pesan Log</th>
+            <th>IP Akses</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
+            <tr class="${getRowClass(l)}">
+              <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
+                ${fmt(l.waktu)}
+              </td>
+              <td>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div class="user-avatar-sm">${l.user.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()}</div>
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem; color:var(--color-text);">${l.user}</div>
+                    <div style="font-size:0.75rem; color:var(--color-muted);">${l.email}</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="chip">${l.aksi}</span></td>
+              <td class="log-entry-msg">${l.pesan}</td>
+              <td><span class="ip-text">${l.ip}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } else {
+    tableHtml = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Pengguna</th>
+            <th>Aksi</th>
+            <th>Device Terkait</th>
+            <th>Pesan Log</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
+            <tr>
+              <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
+                ${fmt(l.waktu)}
+              </td>
+              <td style="font-size:0.85rem; font-weight:600; color:var(--color-text);">${l.user}</td>
+              <td><span class="chip">${l.aksi}</span></td>
+              <td>${l.device ? `<span class="ip-text">${l.device}</span>` : '<span style="color:var(--color-muted);">Sistem</span>'}</td>
+              <td class="log-entry-msg">${l.pesan}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  return `
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-color); flex-wrap:wrap; gap:8px;">
+      <span class="text-sm text-muted">Menampilkan ${start + 1}–${Math.min(start + logRowsPerPage, total)} dari ${total} entri log</span>
+      <div class="rows-per-page">
+        Baris per halaman:
+        <select id="log-rows-select">
+          <option value="25" ${logRowsPerPage === 25 ? 'selected' : ''}>25</option>
+          <option value="50" ${logRowsPerPage === 50 ? 'selected' : ''}>50</option>
+          <option value="100" ${logRowsPerPage === 100 ? 'selected' : ''}>100</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrapper" style="border:none; border-radius:0;">
+      ${tableHtml}
+    </div>
+    <div style="display:flex; justify-content:center; padding:16px;">
+      ${renderPagination(logPage, totalPages)}
+    </div>
+  `;
+}
+
+function renderPagination(page, total) {
+  if (total <= 1) return '';
+  const pages = [];
+  pages.push(`<button class="pagination-btn" onclick="window.logGoPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>◀</button>`);
+  for (let i = Math.max(1, page - 2); i <= Math.min(total, page + 2); i++) {
+    pages.push(`<button class="pagination-btn ${i === page ? 'active' : ''}" onclick="window.logGoPage(${i})">${i}</button>`);
+  }
+  pages.push(`<button class="pagination-btn" onclick="window.logGoPage(${page + 1})" ${page === total ? 'disabled' : ''}>▶</button>`);
+  return `<div class="pagination">${pages.join('')}</div>`;
+}
+
+function emptyLog() {
+  return `<div class="empty-state" style="padding:24px;">
+    <div class="empty-icon">📋</div>
+    <div class="empty-title">Tidak ada log ditemukan</div>
+    <div class="empty-desc">Coba ubah filter atau tab lain</div>
+  </div>`;
+}
+
+export function initLogsEvents() {
+  const refresh = () => {
+    const content = document.getElementById('log-table-content');
+    if (content) content.innerHTML = renderLogTable();
+    bindLogRowsSelect();
+  };
+
+  // Tab switching
+  document.querySelectorAll('.tab-btn[data-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeTab = btn.getAttribute('data-tab');
+      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      logPage = 1;
+      refresh();
+    });
+  });
+
+  // Apply filter
+  document.getElementById('log-apply-filter-btn')?.addEventListener('click', () => {
+    logFilters.search = document.getElementById('log-search')?.value || '';
+    logFilters.dateFrom = document.getElementById('log-date-from')?.value || '';
+    logFilters.dateTo = document.getElementById('log-date-to')?.value || '';
+    logFilters.tipe = document.getElementById('log-filter-tipe')?.value || 'all';
+    logPage = 1;
+    refresh();
+  });
+
+  // Clear filter
+  document.getElementById('log-clear-filter-btn')?.addEventListener('click', () => {
+    logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
+    document.getElementById('log-search').value = '';
+    document.getElementById('log-date-from').value = '';
+    document.getElementById('log-date-to').value = '';
+    document.getElementById('log-filter-tipe').value = 'all';
+    logPage = 1;
+    refresh();
+  });
+
+  // Export PDF
+  document.getElementById('log-export-btn')?.addEventListener('click', async () => {
+    const data = getActiveLogData();
+    await Swal.fire({
+      title: '📄 Export Log ke PDF',
+      html: `
+        <div style="text-align:left; font-size:0.88rem; color:#94a3b8;">
+          <p>Total entri yang akan diekspor: <b style="color:#f1f5f9;">${data.length} baris</b></p>
+          <p style="margin-top:8px;">Filter aktif akan diterapkan pada PDF.</p>
+          <p style="margin-top:4px; font-size:0.78rem; color:#64748b;">Fitur export PDF memerlukan koneksi ke backend untuk generate PDF server-side. Demo ini akan menampilkan simulasi.</p>
+        </div>
+      `,
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonText: '📥 Download PDF (Demo)',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#6366f1',
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+    }).then((result) => {
+      if (result.isConfirmed) {
+        simulatePdfExport('log-sistem', data.length);
+      }
+    });
+  });
+
+  bindLogRowsSelect();
+
+  window.logGoPage = (p) => { logPage = p; refresh(); };
+}
+
+function bindLogRowsSelect() {
+  document.getElementById('log-rows-select')?.addEventListener('change', (e) => {
+    logRowsPerPage = parseInt(e.target.value);
+    logPage = 1;
+    const content = document.getElementById('log-table-content');
+    if (content) content.innerHTML = renderLogTable();
+    bindLogRowsSelect();
+  });
+}
+
+function simulatePdfExport(type, count) {
+  Swal.fire({
+    title: 'Menggenerate PDF...',
+    html: `<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div></div>`,
+    showConfirmButton: false,
+    allowOutsideClick: false,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+    timer: 2000,
+  }).then(() => {
+    Swal.fire({
+      icon: 'success',
+      title: 'PDF Siap!',
+      html: `<span style="font-size:0.88rem; color:#94a3b8;">File <b>devwatch-${type}-${new Date().toISOString().slice(0, 10)}.pdf</b> berhasil digenerate (${count} entri).</span>`,
+      confirmButtonText: '✅ OK',
+      confirmButtonColor: '#6366f1',
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+    });
+  });
+}
+
+export { simulatePdfExport };

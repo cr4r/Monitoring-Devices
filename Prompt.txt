@@ -1,0 +1,16 @@
+Buatkan prd untuk web yang dijalankan melalui windows. web tersebut untuk mengecek devices yang online atau offline.
+
+Devices tersebut dapat di akses local maupun online
+
+Devices yang ingin di cek:
+- Komputer Kantor lain
+- CCTV dari HIK
+
+Ada fitur:
+- Ada admin CMS untuk services
+- tambahkan pengaturan dan view log yang lengkap namun bisa dimengerti oleh manusia normal serta flexible dalam mengelola log. 
+
+gunakan sweet alert untuk semua notif yang muncul
+
+Berikan juga 5 fitur rekomendasi lainnya dari kamu silahkan jelaskan dan konfirmasi terlebih dahulu.
+Silahkan tanya sedetail mungkin agar kamu mengerti.
