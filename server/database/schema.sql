@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS devices (
   nama TEXT NOT NULL,
   ip TEXT NOT NULL,
   hostname TEXT,
-  jenis TEXT CHECK(jenis IN ('Komputer', 'CCTV Hikvision')) NOT NULL,
+  jenis TEXT CHECK(jenis IN ('Komputer', 'CCTV Hikvision', 'Router', 'Switch', 'Server', 'Access Point')) NOT NULL,
   metode TEXT CHECK(metode IN ('PING', 'ISAPI', 'RTSP', 'ONVIF')) NOT NULL DEFAULT 'PING',
   port INTEGER,
   username TEXT,
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS devices (
   maintenance_until DATETIME,
   is_active INTEGER NOT NULL DEFAULT 1,
   consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  parent_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

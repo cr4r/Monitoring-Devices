@@ -39,12 +39,24 @@ export function renderDeviceDetail(params = {}) {
 
   const uptimeBadgeClass = (u) => u >= 99 ? 'high' : u >= 95 ? 'medium' : 'low';
 
+  const getDeviceDetailIcon = (j) => {
+    const low = (j || '').toLowerCase();
+    if (low.includes('cctv')) return '📷';
+    if (low.includes('router') || low.includes('gateway')) return '🌐';
+    if (low.includes('switch') || low.includes('hub')) return '🔀';
+    if (low.includes('server')) return '🖥️';
+    if (low.includes('access point') || low.includes('ap') || low.includes('wifi')) return '📶';
+    return '💻';
+  };
+
+  const devIcon = getDeviceDetailIcon(device.jenis);
+
   return `
     <div class="page-container fade-in-up">
       <div class="page-header">
         <div class="page-header-left">
           <h1 class="page-title">
-            ${device.jenis === 'cctv' ? '📷' : '💻'}
+            ${devIcon}
             ${device.nama}
           </h1>
           <p class="page-subtitle">${device.lokasi} · ${device.grup}</p>
@@ -63,8 +75,8 @@ export function renderDeviceDetail(params = {}) {
           <div style="
             width:64px; height:64px; border-radius:16px; display:flex; align-items:center;
             justify-content:center; font-size:2rem; flex-shrink:0;
-            background:${device.jenis === 'cctv' ? 'rgba(234,179,8,0.12)' : 'rgba(99,102,241,0.12)'};
-          ">${device.jenis === 'cctv' ? '📷' : '💻'}</div>
+            background:rgba(99,102,241,0.14); border:1px solid rgba(99,102,241,0.25);
+          ">${devIcon}</div>
 
           <div style="flex:1;">
             <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">

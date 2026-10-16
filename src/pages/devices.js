@@ -6,7 +6,7 @@
 import Swal from 'sweetalert2';
 import Papa from 'papaparse';
 import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi } from '../data/mock-devices.js';
-import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiImportCsv, apiBulkDeleteDevices } from '../api.js';
+import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiTestConnection, apiImportCsv, apiBulkDeleteDevices } from '../api.js';
 import { getSession } from '../main.js';
 import { getAppSetting } from '../settingsManager.js';
 
@@ -62,6 +62,10 @@ export function renderDevices() {
           <select class="form-control" id="dev-filter-jenis" style="width:auto;">
             <option value="all">Semua Jenis</option>
             <option value="komputer">💻 Komputer</option>
+            <option value="router">🌐 Router</option>
+            <option value="switch">🔀 Switch</option>
+            <option value="server">🖥️ Server</option>
+            <option value="access point">📶 Access Point</option>
             <option value="cctv">📷 CCTV</option>
           </select>
           <select class="form-control" id="dev-filter-status" style="width:auto;">
@@ -121,6 +125,26 @@ function renderDevicesTable(canEdit, isAdmin) {
     return `<span class="device-method-badge ${cls}">${safeM.toUpperCase()}</span>`;
   };
 
+  const getDeviceIcon = (j) => {
+    const low = (j || '').toLowerCase();
+    if (low.includes('cctv')) return '📷';
+    if (low.includes('router') || low.includes('gateway')) return '🌐';
+    if (low.includes('switch') || low.includes('hub')) return '🔀';
+    if (low.includes('server')) return '🖥️';
+    if (low.includes('access point') || low.includes('ap') || low.includes('wifi')) return '📶';
+    return '💻';
+  };
+
+  const getDeviceTypeBadge = (j) => {
+    const low = (j || '').toLowerCase();
+    if (low.includes('cctv')) return '📷 CCTV';
+    if (low.includes('router') || low.includes('gateway')) return '🌐 Router';
+    if (low.includes('switch') || low.includes('hub')) return '🔀 Switch';
+    if (low.includes('server')) return '🖥️ Server';
+    if (low.includes('access point') || low.includes('ap') || low.includes('wifi')) return '📶 Access Point';
+    return '💻 Komputer';
+  };
+
   const rows = paged.length > 0 ? paged.map((d) => {
     const st = d.status || 'offline';
     const statusBadge = `<div class="badge badge-${st}" style="white-space:nowrap;">
@@ -135,7 +159,7 @@ function renderDevicesTable(canEdit, isAdmin) {
         </td>
         <td>
           <div style="display:flex; align-items:center; gap:8px;">
-            <span>${d.jenis === 'cctv' ? '📷' : '💻'}</span>
+            <span style="font-size:1.15rem;">${getDeviceIcon(d.jenis)}</span>
             <div>
               <div style="font-weight:600; color:var(--color-heading);">${d.nama}</div>
               <div style="font-size:0.75rem; color:var(--color-muted);">${d.hostname || '—'}</div>
@@ -143,7 +167,7 @@ function renderDevicesTable(canEdit, isAdmin) {
           </div>
         </td>
         <td><span class="ip-text">${d.ip}</span></td>
-        <td>${d.jenis === 'cctv' ? '📷 CCTV' : '💻 Komputer'}</td>
+        <td>${getDeviceTypeBadge(d.jenis)}</td>
         <td>${methodBadge(d.metode)}</td>
         <td style="color:var(--color-text-secondary);">${d.interval}d</td>
         <td>
@@ -447,27 +471,62 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
 
   const defaultNama = isDuplicate && device ? `${device.nama} (Salinan)` : (device?.nama || '');
 
+  // Daftar opsi parent uplink (Router, Switch, dsb)
+  const candidateParents = mockDevices.filter((d) => d.id !== id);
+  const parentOptionsHtml = candidateParents.map((p) => {
+    const isSelected = device?.parent_id === p.id;
+    const pIcon = p.jenis === 'router' ? '🌐' : p.jenis === 'switch' ? '🔀' : p.jenis === 'server' ? '🖥️' : '💻';
+    return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>${pIcon} ${p.nama} (${p.ip}) - [${p.jenis?.toUpperCase() || 'DEVICE'}]</option>`;
+  }).join('');
+
+  const currentJenis = (device?.jenis || '').toLowerCase();
+
   const { value: formData, isConfirmed } = await Swal.fire({
     title: isDuplicate ? `📋 Duplikat Device` : isEdit ? `✏️ Edit Device` : '➕ Tambah Device Baru',
-    width: 640,
+    width: 660,
     html: `
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px; padding:4px 0;">
         <div class="form-grid">
-          <div class="form-group">
+          <div class="form-group" style="grid-column: span 2;">
             <label class="form-label">Nama Device <span class="required">*</span></label>
-            <input type="text" id="sf-nama" class="form-control" placeholder="CCTV Lobby Lantai 1" value="${defaultNama}" />
+            <input type="text" id="sf-nama" class="form-control" placeholder="Router Utama Lantai 1 / CCTV Lobby" value="${defaultNama}" />
           </div>
-          <div class="form-group">
+
+          <div class="form-group" style="grid-column: span 2;">
             <label class="form-label">IP Address <span class="required">*</span></label>
-            <input type="text" id="sf-ip" class="form-control" placeholder="192.168.1.100" value="${device?.ip || ''}" />
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="sf-ip" class="form-control" style="flex:1;" placeholder="192.168.1.100" value="${device?.ip || ''}" />
+              <button type="button" id="btn-test-inline" class="btn btn-secondary" style="white-space:nowrap; padding:6px 14px; font-size:0.82rem; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.4); color:#a5b4fc; font-weight:600; cursor:pointer;">
+                📡 Test Koneksi
+              </button>
+            </div>
+            <div id="test-connection-result" style="margin-top:6px; font-size:0.8rem; display:none; padding:6px 10px; border-radius:6px; background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.08);"></div>
           </div>
+
           <div class="form-group">
             <label class="form-label">Jenis Device</label>
             <select id="sf-jenis" class="form-control">
-              <option value="Komputer" ${device?.jenis?.toLowerCase() === 'komputer' ? 'selected' : ''}>💻 Komputer</option>
-              <option value="CCTV Hikvision" ${device?.jenis?.toLowerCase().includes('cctv') ? 'selected' : ''}>📷 CCTV Hikvision</option>
+              <option value="Komputer" ${currentJenis === 'komputer' ? 'selected' : ''}>💻 Komputer</option>
+              <option value="Router" ${currentJenis === 'router' ? 'selected' : ''}>🌐 Router / Gateway</option>
+              <option value="Switch" ${currentJenis === 'switch' ? 'selected' : ''}>🔀 Switch / Hub</option>
+              <option value="Server" ${currentJenis === 'server' ? 'selected' : ''}>🖥️ Server</option>
+              <option value="Access Point" ${['access point', 'ap', 'wifi'].includes(currentJenis) ? 'selected' : ''}>📶 Access Point</option>
+              <option value="CCTV Hikvision" ${currentJenis.includes('cctv') ? 'selected' : ''}>📷 CCTV Hikvision</option>
             </select>
           </div>
+
+          <div class="form-group">
+            <label class="form-label">Terhubung ke (Parent / Uplink)</label>
+            <select id="sf-parent" class="form-control">
+              <option value="">-- Otomatis Berdasarkan Subnet --</option>
+              ${parentOptionsHtml}
+            </select>
+          </div>
+
+          <div class="form-group" style="grid-column: span 2;">
+            <div id="subnet-hint-box" style="display:none; padding:8px 12px; border-radius:6px; font-size:0.8rem; line-height:1.45;"></div>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Metode Pengecekan</label>
             <select id="sf-metode" class="form-control">
@@ -477,51 +536,135 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
               <option value="ONVIF" ${(device?.metode || '').toUpperCase() === 'ONVIF' ? 'selected' : ''}>ONVIF</option>
             </select>
           </div>
+
           <div class="form-group">
             <label class="form-label">Port</label>
             <input type="number" id="sf-port" class="form-control" placeholder="80" value="${device?.port || ''}" />
           </div>
+
           <div class="form-group">
             <label class="form-label">Interval Polling (detik)</label>
             <input type="number" id="sf-interval" class="form-control" placeholder="60" value="${device?.interval || getAppSetting('default_ping_interval', 60)}" min="30" max="600" />
           </div>
+
           <div class="form-group">
             <label class="form-label">Grup / Lokasi</label>
             <input type="text" id="sf-grup" class="form-control" placeholder="Lantai 1" value="${device?.grup || ''}" />
           </div>
-          <div class="form-group">
+
+          <div class="form-group" style="grid-column: span 2;">
             <label class="form-label">Hostname (opsional)</label>
-            <input type="text" id="sf-hostname" class="form-control" placeholder="PC-LOBBY-01" value="${device?.hostname || ''}" />
+            <input type="text" id="sf-hostname" class="form-control" placeholder="ROUTER-MAIN-01" value="${device?.hostname || ''}" />
           </div>
         </div>
+
         <div class="form-group">
           <label class="form-label">Deskripsi</label>
-          <textarea id="sf-deskripsi" class="form-control" placeholder="Catatan tambahan..." style="min-height:60px;">${device?.deskripsi || ''}</textarea>
+          <textarea id="sf-deskripsi" class="form-control" placeholder="Catatan fungsi perangkat..." style="min-height:55px;">${device?.deskripsi || ''}</textarea>
         </div>
       </div>
     `,
     background: '#1a1d2e',
     color: '#e2e8f0',
     showCancelButton: true,
-    showDenyButton: true,
-    confirmButtonText: isEdit ? '💾 Simpan' : '🔌 Test & Simpan',
-    denyButtonText: '📡 Test Koneksi',
+    showDenyButton: false,
+    confirmButtonText: isEdit ? '💾 Simpan Perubahan' : '💾 Simpan Device',
     cancelButtonText: 'Batal',
     confirmButtonColor: '#6366f1',
-    denyButtonColor: '#374151',
     cancelButtonColor: '#374151',
+    didOpen: () => {
+      const btnTest = document.getElementById('btn-test-inline');
+      const resDiv = document.getElementById('test-connection-result');
+      const ipInput = document.getElementById('sf-ip');
+      const metodeSelect = document.getElementById('sf-metode');
+      const portInput = document.getElementById('sf-port');
+      const parentSelect = document.getElementById('sf-parent');
+      const hintBox = document.getElementById('subnet-hint-box');
+
+      const checkSubnet = () => {
+        const currentIp = ipInput.value.trim();
+        const parentId = parseInt(parentSelect.value, 10);
+        if (!currentIp || !parentId) {
+          if (hintBox) hintBox.style.display = 'none';
+          return;
+        }
+        const parentDev = mockDevices.find((d) => d.id === parentId);
+        if (!parentDev || !parentDev.ip) {
+          if (hintBox) hintBox.style.display = 'none';
+          return;
+        }
+        const curParts = currentIp.split('.');
+        const parentParts = parentDev.ip.split('.');
+        if (curParts.length >= 3 && parentParts.length >= 3) {
+          const curSub = curParts.slice(0, 3).join('.');
+          const parSub = parentParts.slice(0, 3).join('.');
+          if (curSub !== parSub) {
+            hintBox.style.display = 'block';
+            hintBox.style.background = 'rgba(249,115,22,0.14)';
+            hintBox.style.border = '1px solid rgba(249,115,22,0.4)';
+            hintBox.style.color = '#fdba74';
+            hintBox.innerHTML = `⚡ <strong>Rekomendasi Rute Inter-VLAN / L3</strong>: Subnet perangkat (<code>${curSub}.x</code>) berbeda dengan parent <strong>${parentDev.nama}</strong> (<code>${parSub}.x</code>). Sistem akan otomatis menghubungkan perangkat melalui jalur routing L3 di Peta Topologi.`;
+          } else {
+            hintBox.style.display = 'block';
+            hintBox.style.background = 'rgba(34,197,94,0.12)';
+            hintBox.style.border = '1px solid rgba(34,197,94,0.35)';
+            hintBox.style.color = '#86efac';
+            hintBox.innerHTML = `🟢 <strong>Satu Jaringan Subnet (<code>${curSub}.x</code>)</strong>: Perangkat dan uplink berada dalam satu segmen broadcast (Layer 2 Switching).`;
+          }
+        }
+      };
+
+      ipInput?.addEventListener('input', checkSubnet);
+      parentSelect?.addEventListener('change', checkSubnet);
+      checkSubnet();
+
+      btnTest?.addEventListener('click', async () => {
+        const ip = ipInput.value.trim();
+        if (!ip) {
+          resDiv.style.display = 'block';
+          resDiv.innerHTML = '<span style="color:#ef4444;">⚠️ Masukkan IP Address terlebih dahulu untuk diuji!</span>';
+          return;
+        }
+
+        btnTest.disabled = true;
+        btnTest.innerHTML = '⏳ Menguji...';
+        resDiv.style.display = 'block';
+        resDiv.innerHTML = `<span style="color:#94a3b8;">Mengirim paket probe ke <strong>${ip}</strong>...</span>`;
+
+        try {
+          const resp = await apiTestConnection({
+            ip,
+            metode: metodeSelect.value,
+            port: portInput.value ? parseInt(portInput.value, 10) : null,
+          });
+
+          if (resp.alive) {
+            resDiv.innerHTML = `<span style="color:#22c55e; font-weight:700;">✅ Berhasil Terhubung!</span> Latensi: <strong>${resp.time || resp.responseTime} ms</strong> (${resp.statusText || 'Online'})`;
+          } else {
+            resDiv.innerHTML = `<span style="color:#ef4444; font-weight:700;">❌ Gagal Terhubung:</span> ${resp.statusText || 'Request Timeout / Host Unreachable'}`;
+          }
+        } catch (err) {
+          resDiv.innerHTML = `<span style="color:#ef4444; font-weight:700;">❌ Galat Pengujian:</span> ${err.message}`;
+        } finally {
+          btnTest.disabled = false;
+          btnTest.innerHTML = '📡 Test Koneksi';
+        }
+      });
+    },
     preConfirm: () => {
       const nama = document.getElementById('sf-nama').value.trim();
       const ip = document.getElementById('sf-ip').value.trim();
       if (!nama) { Swal.showValidationMessage('Nama device wajib diisi!'); return false; }
       if (!ip) { Swal.showValidationMessage('IP Address wajib diisi!'); return false; }
+      const parentVal = document.getElementById('sf-parent').value;
       return {
         nama,
         ip,
         jenis: document.getElementById('sf-jenis').value,
+        parent_id: parentVal ? parseInt(parentVal, 10) : null,
         metode: document.getElementById('sf-metode').value,
-        port: document.getElementById('sf-port').value ? parseInt(document.getElementById('sf-port').value) : null,
-        interval: parseInt(document.getElementById('sf-interval').value) || 60,
+        port: document.getElementById('sf-port').value ? parseInt(document.getElementById('sf-port').value, 10) : null,
+        interval: parseInt(document.getElementById('sf-interval').value, 10) || 60,
         grup: document.getElementById('sf-grup').value.trim() || 'Default',
         hostname: document.getElementById('sf-hostname').value.trim() || null,
         deskripsi: document.getElementById('sf-deskripsi').value.trim(),

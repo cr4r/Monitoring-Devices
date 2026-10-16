@@ -149,9 +149,9 @@ export function renderDashboard() {
                 <button class="btn btn-secondary btn-sm" id="map-auto-layout" title="Tata Ulang Hierarki Otomatis">📐 Auto-Layout</button>
                 <div class="map-legend">
                   <div class="map-legend-item"><div class="map-legend-dot" style="background:#0284c7; border-radius:3px;"></div> Gateway & Switch</div>
-                  <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-online);"></div> Online</div>
+                  <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-online);"></div> L2 (Satu Subnet)</div>
+                  <div class="map-legend-item"><div class="map-legend-dot" style="background:#f97316; border-radius:3px;"></div> ⚡ L3 / Inter-VLAN</div>
                   <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-offline);"></div> Offline</div>
-                  <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-maintenance);"></div> Maintenance</div>
                 </div>
               </div>
               <div style="position:relative; width:100%; overflow:hidden;">
@@ -671,66 +671,110 @@ function startCountdownTimers() {
   });
 }
 
-// ---- NETWORK MAP (Hierarchical Topology Canvas) ----
+// ---- NETWORK MAP HELPERS & TOPOLOGY LAYOUT ----
+function getSubnetPrefix(ip) {
+  if (!ip) return '';
+  const parts = String(ip).trim().split('.');
+  if (parts.length >= 3) {
+    return parts.slice(0, 3).join('.');
+  }
+  return String(ip).trim();
+}
+
+function getNodeIcon(jenis) {
+  const low = String(jenis || '').toLowerCase();
+  if (low.includes('cctv')) return '📷';
+  if (low.includes('router') || low.includes('gateway')) return '🌐';
+  if (low.includes('switch') || low.includes('hub')) return '🔀';
+  if (low.includes('server')) return '🖥️';
+  if (low.includes('access point') || low.includes('ap') || low.includes('wifi')) return '📶';
+  return '💻';
+}
+
 function computeMapLayout(w, h, force = false) {
   const groups = getGroups();
   const effectiveGroups = groups.length > 0 ? groups : ['Umum'];
 
-  // 1. Gateway
+  // 1. Identifikasi router & switch riil di database
+  const realRouters = mockDevices.filter((d) => (d.jenis || '').toLowerCase().includes('router'));
+  const primaryRouter = realRouters[0] || null;
+
+  const realSwitches = mockDevices.filter((d) => (d.jenis || '').toLowerCase().includes('switch'));
+  const primarySwitch = realSwitches[0] || null;
+
+  // 1. Gateway Node (Router Riil atau Virtual Gateway)
   const gwPos = (!force && customNodePositions['__gw__']) || { x: w / 2, y: 55 };
   const gwNode = {
-    id: '__gw__',
+    id: primaryRouter ? `__real_${primaryRouter.id}` : '__gw__',
     type: 'gateway',
-    nama: 'Gateway Router',
-    ip: '192.168.1.1',
-    status: 'online',
+    isReal: !!primaryRouter,
+    realId: primaryRouter ? primaryRouter.id : null,
+    nama: primaryRouter ? primaryRouter.nama : 'Gateway Router (Virtual)',
+    ip: primaryRouter ? primaryRouter.ip : '192.168.1.1',
+    status: primaryRouter ? primaryRouter.status : 'online',
     icon: '🌐',
     x: gwPos.x,
     y: gwPos.y,
-    w: 136,
-    h: 36,
+    w: 156,
+    h: 38,
   };
+  if (primaryRouter) {
+    primaryRouter.mapPos = { x: gwNode.x, y: gwNode.y };
+  }
 
-  // 2. Core Switch
-  const corePos = (!force && customNodePositions['__core__']) || { x: w / 2, y: 140 };
+  // 2. Core Distribution Node (Switch Riil atau Virtual Core)
+  const corePos = (!force && customNodePositions['__core__']) || { x: w / 2, y: 145 };
+  const fallbackCoreIp = primaryRouter ? `${getSubnetPrefix(primaryRouter.ip)}.2` : '192.168.1.2';
   const coreNode = {
-    id: '__core__',
+    id: primarySwitch ? `__real_${primarySwitch.id}` : '__core__',
     type: 'core_switch',
-    nama: 'Core Switch L3',
-    ip: '192.168.1.2',
-    status: 'online',
+    isReal: !!primarySwitch,
+    realId: primarySwitch ? primarySwitch.id : null,
+    nama: primarySwitch ? primarySwitch.nama : 'Core Switch L3',
+    ip: primarySwitch ? primarySwitch.ip : fallbackCoreIp,
+    status: primarySwitch ? primarySwitch.status : 'online',
     icon: '🔀',
     x: corePos.x,
     y: corePos.y,
-    w: 136,
+    w: 146,
     h: 36,
   };
+  if (primarySwitch) {
+    primarySwitch.mapPos = { x: coreNode.x, y: coreNode.y };
+  }
 
-  // 3. Group Switches
+  // 3. Group / Distribution Hubs
+  const remainingSwitches = realSwitches.filter((s) => s.id !== primarySwitch?.id);
   const groupNodes = effectiveGroups.map((grp, idx) => {
     const defaultX = (w / (effectiveGroups.length + 1)) * (idx + 1);
-    const defaultY = 240;
+    const defaultY = 245;
     const pos = (!force && customNodePositions['__grp_' + grp]) || { x: defaultX, y: defaultY };
+    const matchedRealSwitch = remainingSwitches.find((s) => (s.grup || 'Umum') === grp);
     return {
-      id: '__grp_' + grp,
+      id: matchedRealSwitch ? `__real_${matchedRealSwitch.id}` : '__grp_' + grp,
       type: 'group_switch',
-      nama: `Switch ${grp}`,
-      ip: `VLAN ${10 + (idx + 1) * 10}`,
+      isReal: !!matchedRealSwitch,
+      realId: matchedRealSwitch ? matchedRealSwitch.id : null,
+      nama: matchedRealSwitch ? matchedRealSwitch.nama : `Switch ${grp}`,
+      ip: matchedRealSwitch ? matchedRealSwitch.ip : `VLAN ${10 + (idx + 1) * 10}`,
       grup: grp,
-      status: 'online',
-      icon: '📦',
+      status: matchedRealSwitch ? matchedRealSwitch.status : 'online',
+      icon: '🔀',
       x: pos.x,
       y: pos.y,
-      w: 125,
+      w: 130,
       h: 34,
     };
   });
 
   virtualNodes = [gwNode, coreNode, ...groupNodes];
 
-  // 4. Device Nodes per Group
+  // 4. Device Nodes: Endpoint devices (exclude real devices that serve as Gateway / Core backbone)
+  const backboneRealIds = new Set([gwNode.realId, coreNode.realId].filter(Boolean));
+  const endpointDevs = mockDevices.filter((d) => !backboneRealIds.has(d.id));
+
   effectiveGroups.forEach((grp) => {
-    const devs = mockDevices.filter((d) => (d.grup || 'Umum') === grp);
+    const devs = endpointDevs.filter((d) => (d.grup || 'Umum') === grp);
     const grpNode = groupNodes.find((g) => g.grup === grp) || coreNode;
     const cols = Math.min(devs.length, 3);
     const spacingX = 85;
@@ -751,7 +795,7 @@ function computeMapLayout(w, h, force = false) {
   });
 
   // Handle orphan devices
-  const orphanDevs = mockDevices.filter((d) => !effectiveGroups.includes(d.grup || 'Umum'));
+  const orphanDevs = endpointDevs.filter((d) => !effectiveGroups.includes(d.grup || 'Umum'));
   orphanDevs.forEach((d, j) => {
     if (!force && customNodePositions[d.id]) {
       d.mapPos = { ...customNodePositions[d.id] };
@@ -775,10 +819,14 @@ function findNodeAt(vx, vy) {
     }
   }
 
-  // Check virtual nodes
+  // Check virtual / infrastructure nodes
   for (let i = virtualNodes.length - 1; i >= 0; i--) {
     const v = virtualNodes[i];
     if (Math.abs(v.x - vx) <= v.w / 2 && Math.abs(v.y - vy) <= v.h / 2) {
+      if (v.isReal && v.realId) {
+        const realDev = mockDevices.find((d) => d.id === v.realId);
+        if (realDev) return { type: 'device', data: realDev, isVirtualBackbone: true };
+      }
       return { type: 'virtual', data: v };
     }
   }
@@ -789,8 +837,14 @@ function showDeviceMapModal(d) {
   const statusColor = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
   const statusBadge = `<span style="background:${statusColor}22; color:${statusColor}; border:1px solid ${statusColor}66; padding:3px 10px; border-radius:999px; font-weight:700; font-size:0.8rem;">● ${d.status.toUpperCase()}</span>`;
 
+  // Evaluasi subnet dan parent uplink
+  const parentDev = d.parent_id ? mockDevices.find((p) => p.id === d.parent_id) : null;
+  const devSub = getSubnetPrefix(d.ip);
+  const parentSub = parentDev ? getSubnetPrefix(parentDev.ip) : null;
+  const isDiffSubnet = parentDev && parentSub && devSub !== parentSub;
+
   Swal.fire({
-    title: `${d.jenis === 'cctv' ? '📷' : '💻'} ${d.nama}`,
+    title: `${getNodeIcon(d.jenis)} ${d.nama}`,
     html: `
       <div style="text-align:left; font-size:0.86rem; display:flex; flex-direction:column; gap:10px; padding:6px 0;">
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
@@ -798,9 +852,23 @@ function showDeviceMapModal(d) {
           <div>${statusBadge}</div>
         </div>
         <div style="display:flex; justify-content:space-between;">
-          <span style="color:#94a3b8;">Alamat IP</span>
-          <code style="color:var(--color-accent); font-weight:700;">${d.ip}</code>
+          <span style="color:#94a3b8;">Alamat IP & Subnet</span>
+          <div style="text-align:right;">
+            <code style="color:var(--color-accent); font-weight:700;">${d.ip}</code>
+            <div style="font-size:0.75rem; color:#94a3b8;">Subnet: ${devSub}.x</div>
+          </div>
         </div>
+        ${parentDev ? `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="color:#94a3b8;">Terhubung ke (Uplink)</span>
+          <span style="color:#f1f5f9; font-weight:600;">${getNodeIcon(parentDev.jenis)} ${parentDev.nama} (${parentDev.ip})</span>
+        </div>
+        ` : ''}
+        ${isDiffSubnet ? `
+        <div style="padding:6px 10px; border-radius:6px; background:rgba(249,115,22,0.15); border:1px solid rgba(249,115,22,0.4); color:#fdba74; font-size:0.78rem;">
+          ⚡ <strong>Rute Inter-VLAN / L3 Aktif</strong>: Perangkat berbeda subnet dengan parent (${devSub}.x vs ${parentSub}.x).
+        </div>
+        ` : ''}
         <div style="display:flex; justify-content:space-between;">
           <span style="color:#94a3b8;">Grup & Lokasi</span>
           <span style="color:#f1f5f9;">${d.grup} / ${d.lokasi}</span>
@@ -829,7 +897,7 @@ function showDeviceMapModal(d) {
     showCloseButton: true,
     background: '#1a1d2e',
     color: '#e2e8f0',
-    width: 420,
+    width: 440,
     didOpen: () => {
       document.getElementById('modal-ping-btn')?.addEventListener('click', () => {
         Swal.close();
@@ -936,16 +1004,28 @@ function initNetworkMap() {
       if (hit.type === 'device') {
         const d = hit.data;
         const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+        const devSub = getSubnetPrefix(d.ip);
+        const parentDev = d.parent_id ? mockDevices.find((p) => p.id === d.parent_id) : null;
+        const parentSub = parentDev ? getSubnetPrefix(parentDev.ip) : null;
+        const isDiffSub = parentDev && parentSub && devSub !== parentSub;
+
         tooltip.innerHTML = `
           <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
-            <span>${d.jenis === 'cctv' ? '📷' : '💻'}</span>
+            <span>${getNodeIcon(d.jenis)}</span>
             <span>${d.nama}</span>
           </div>
-          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">${d.ip}</div>
+          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">${d.ip} <span style="color:#64748b;">(${devSub}.x)</span></div>
           <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
             <span style="color:${color}; font-weight:700;">● ${d.status.toUpperCase()}</span>
             ${d.responseTime !== null && d.responseTime !== undefined ? `<span style="color:#22c55e;">${d.responseTime}ms</span>` : ''}
           </div>
+          ${isDiffSub ? `
+          <div style="margin-top:4px; font-size:0.72rem; color:#fdba74; background:rgba(249,115,22,0.18); border:1px solid rgba(249,115,22,0.35); border-radius:4px; padding:2px 6px;">
+            ⚡ Rute Inter-VLAN / L3 (${devSub}.x ➔ ${parentSub}.x)
+          </div>
+          ` : `
+          <div style="margin-top:4px; font-size:0.72rem; color:#86efac;">🟢 Subnet: ${devSub}.x (L2 Switch)</div>
+          `}
           <div style="font-size:0.7rem; color:#64748b; margin-top:4px;">Klik untuk tindakan</div>
         `;
       } else {
@@ -1051,8 +1131,8 @@ function drawMap(ctx, w, h) {
     return;
   }
 
-  const gw = virtualNodes.find((v) => v.id === '__gw__');
-  const core = virtualNodes.find((v) => v.id === '__core__');
+  const gw = virtualNodes.find((v) => v.type === 'gateway');
+  const core = virtualNodes.find((v) => v.type === 'core_switch');
   const groupHubs = virtualNodes.filter((v) => v.type === 'group_switch');
 
   const now = Date.now();
@@ -1097,47 +1177,91 @@ function drawMap(ctx, w, h) {
     });
   }
 
-  // 3. Connection: Group Switch -> Devices
-  mockDevices.forEach((d) => {
+  // 3. Connection: Uplink Hub -> Devices (Subnet-Aware)
+  const backboneRealIds = new Set([gw?.realId, core?.realId].filter(Boolean));
+  const endpointDevs = mockDevices.filter((d) => !backboneRealIds.has(d.id));
+
+  endpointDevs.forEach((d) => {
     if (!d.mapPos) return;
-    const grp = groupHubs.find((g) => g.grup === (d.grup || 'Umum')) || core;
-    if (!grp) return;
+
+    // Tentukan simpul uplink (parent eksplisit atau grup switch / core)
+    let uplink = null;
+    if (d.parent_id) {
+      uplink = mockDevices.find((p) => p.id === d.parent_id) || virtualNodes.find((v) => v.realId === d.parent_id);
+    }
+    if (!uplink) {
+      uplink = groupHubs.find((g) => g.grup === (d.grup || 'Umum')) || core || gw;
+    }
+    if (!uplink) return;
+
+    const ux = uplink.mapPos ? uplink.mapPos.x : uplink.x;
+    const uy = uplink.mapPos ? uplink.mapPos.y + (uplink.h ? uplink.h / 2 : 14) : uplink.y + (uplink.h ? uplink.h / 2 : 14);
+
+    const devSubnet = getSubnetPrefix(d.ip);
+    const uplinkSubnet = getSubnetPrefix(uplink.ip);
+    const isL3 = devSubnet && uplinkSubnet && devSubnet !== uplinkSubnet;
 
     ctx.beginPath();
-    ctx.moveTo(grp.x, grp.y + grp.h / 2);
+    ctx.moveTo(ux, uy);
     ctx.lineTo(d.mapPos.x, d.mapPos.y);
 
-    if (d.status === 'online') {
-      ctx.strokeStyle = 'rgba(34,197,94,0.4)';
-      ctx.lineWidth = 1.6;
-      ctx.setLineDash([]);
-      ctx.stroke();
+    if (isL3) {
+      // Jalur Inter-VLAN / L3 Route (Beda Subnet)
+      if (d.status === 'online') {
+        ctx.strokeStyle = 'rgba(249, 115, 22, 0.75)';
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-      // Flowing packet bead
-      const tDev = ((now / 2200) + (d.id * 0.17)) % 1;
-      const startY = grp.y + grp.h / 2;
-      const px = grp.x + (d.mapPos.x - grp.x) * tDev;
-      const py = startY + (d.mapPos.y - startY) * tDev;
-      ctx.fillStyle = '#4ade80';
-      ctx.beginPath();
-      ctx.arc(px, py, 2.8, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (d.status === 'offline') {
-      ctx.strokeStyle = 'rgba(239,68,68,0.45)';
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+        // Flowing orange pulse packet
+        const tDev = ((now / 2000) + (d.id * 0.19)) % 1;
+        const px = ux + (d.mapPos.x - ux) * tDev;
+        const py = uy + (d.mapPos.y - uy) * tDev;
+        ctx.fillStyle = '#fb923c';
+        ctx.beginPath();
+        ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     } else {
-      ctx.strokeStyle = 'rgba(234,179,8,0.45)';
-      ctx.lineWidth = 1.4;
-      ctx.setLineDash([6, 3]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      // Jalur Layer 2 Lokal (Satu Subnet)
+      if (d.status === 'online') {
+        ctx.strokeStyle = 'rgba(34,197,94,0.45)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        // Flowing packet bead
+        const tDev = ((now / 2200) + (d.id * 0.17)) % 1;
+        const px = ux + (d.mapPos.x - ux) * tDev;
+        const py = uy + (d.mapPos.y - uy) * tDev;
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath();
+        ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (d.status === 'offline') {
+        ctx.strokeStyle = 'rgba(239,68,68,0.45)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = 'rgba(234,179,8,0.45)';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([6, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
   });
 
-  // 4. Draw Virtual Nodes
+  // 4. Draw Virtual / Backbone Nodes
   virtualNodes.forEach((node) => {
     const rx = node.x - node.w / 2;
     const ry = node.y - node.h / 2;
@@ -1169,8 +1293,8 @@ function drawMap(ctx, w, h) {
     ctx.roundRect(rx, ry, node.w, node.h, 8);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = node.isReal ? '#38bdf8' : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = node.isReal ? 1.8 : 1;
     ctx.stroke();
     ctx.restore();
 
@@ -1178,39 +1302,46 @@ function drawMap(ctx, w, h) {
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`${node.icon} ${node.nama}`, node.x, node.y - 1);
+    const labelTitle = node.nama;
+    ctx.fillText(`${node.icon} ${labelTitle}`, node.x, node.y - 1);
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '9px monospace';
     ctx.fillText(node.ip, node.x, node.y + 12);
   });
 
-  // 5. Draw Device Nodes
-  mockDevices.forEach((d) => {
+  // 5. Draw Endpoint Device Nodes
+  endpointDevs.forEach((d) => {
     if (!d.mapPos) return;
     const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+
+    // Tentukan apakah node ini dalam rute L3
+    const devSubnet = getSubnetPrefix(d.ip);
+    let uplinkDev = d.parent_id ? mockDevices.find((p) => p.id === d.parent_id) : (gw?.realId ? mockDevices.find((p) => p.id === gw.realId) : null);
+    const uplinkSubnet = uplinkDev ? getSubnetPrefix(uplinkDev.ip) : (gw ? getSubnetPrefix(gw.ip) : null);
+    const isL3 = devSubnet && uplinkSubnet && devSubnet !== uplinkSubnet;
 
     // Pulsing aura on online devices
     if (d.status === 'online') {
       const pulsePhase = ((now / 1500) + d.id * 0.2) % 1;
       ctx.beginPath();
       ctx.arc(d.mapPos.x, d.mapPos.y, 14 + pulsePhase * 10, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(34,197,94,${0.5 * (1 - pulsePhase)})`;
+      ctx.strokeStyle = isL3 ? `rgba(249,115,22,${0.6 * (1 - pulsePhase)})` : `rgba(34,197,94,${0.5 * (1 - pulsePhase)})`;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
 
     // Node body
     ctx.save();
-    ctx.shadowColor = d.status === 'online' ? 'rgba(34,197,94,0.5)' : (d.status === 'offline' ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)');
+    ctx.shadowColor = d.status === 'online' ? (isL3 ? 'rgba(249,115,22,0.6)' : 'rgba(34,197,94,0.5)') : (d.status === 'offline' ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)');
     ctx.shadowBlur = 10;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(d.mapPos.x, d.mapPos.y, 14, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = isL3 ? '#f97316' : '#ffffff';
+    ctx.lineWidth = isL3 ? 2 : 1.5;
     ctx.stroke();
     ctx.restore();
 
@@ -1218,7 +1349,14 @@ function drawMap(ctx, w, h) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(d.jenis === 'cctv' ? '📷' : '💻', d.mapPos.x, d.mapPos.y + 4);
+    ctx.fillText(getNodeIcon(d.jenis), d.mapPos.x, d.mapPos.y + 4);
+
+    // L3 Badge if different subnet
+    if (isL3) {
+      ctx.fillStyle = '#f97316';
+      ctx.font = 'bold 8.5px Inter, sans-serif';
+      ctx.fillText('⚡ L3', d.mapPos.x, d.mapPos.y - 18);
+    }
 
     // Name label
     ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
@@ -1236,7 +1374,7 @@ function drawMap(ctx, w, h) {
     if (d.status === 'online' && d.responseTime !== null && d.responseTime !== undefined) {
       ctx.fillStyle = '#4ade80';
       ctx.font = 'bold 8px Inter, sans-serif';
-      ctx.fillText(`${d.responseTime}ms`, d.mapPos.x, d.mapPos.y - 18);
+      ctx.fillText(`${d.responseTime}ms`, d.mapPos.x, isL3 ? d.mapPos.y - 28 : d.mapPos.y - 18);
     }
   });
 

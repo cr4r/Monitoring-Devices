@@ -100,10 +100,20 @@ export async function syncDevicesFromApi() {
         mockDevices = json.data.map((dbDev, i) => {
           const old = oldMap.get(dbDev.id);
           const rawStatus = (dbDev.status || 'offline').toLowerCase();
+          const rawJenis = (dbDev.jenis || 'Komputer').toLowerCase();
+          let jenis = 'komputer';
+          if (rawJenis.includes('cctv')) jenis = 'cctv';
+          else if (rawJenis.includes('router') || rawJenis.includes('gateway')) jenis = 'router';
+          else if (rawJenis.includes('switch') || rawJenis.includes('hub')) jenis = 'switch';
+          else if (rawJenis.includes('server')) jenis = 'server';
+          else if (rawJenis.includes('access point') || rawJenis.includes('ap') || rawJenis.includes('wifi')) jenis = 'access point';
+
           return {
             id: dbDev.id,
             nama: dbDev.nama,
-            jenis: dbDev.jenis?.toLowerCase()?.includes('cctv') ? 'cctv' : 'komputer',
+            jenis,
+            jenisRaw: dbDev.jenis || 'Komputer',
+            parent_id: dbDev.parent_id || null,
             ip: dbDev.ip,
             hostname: dbDev.hostname,
             metode: dbDev.metode?.toLowerCase() || 'ping',

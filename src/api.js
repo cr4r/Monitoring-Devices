@@ -125,6 +125,13 @@ export async function apiPingDevice(id) {
   });
 }
 
+export async function apiTestConnection(payload) {
+  return request('/devices/test-connection', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function apiSetMaintenance(id, reason, durationMinutes = 120) {
   return request(`/devices/${id}/maintenance`, {
     method: 'POST',

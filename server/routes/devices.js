@@ -13,8 +13,13 @@ const router = express.Router();
 
 function normalizeJenis(val) {
   if (!val) return 'Komputer';
-  const low = String(val).toLowerCase();
-  return low.includes('cctv') ? 'CCTV Hikvision' : 'Komputer';
+  const low = String(val).trim().toLowerCase();
+  if (low.includes('cctv')) return 'CCTV Hikvision';
+  if (low.includes('router') || low.includes('gateway')) return 'Router';
+  if (low.includes('switch') || low.includes('hub')) return 'Switch';
+  if (low.includes('server')) return 'Server';
+  if (low.includes('access point') || low.includes('ap') || low.includes('wifi') || low.includes('wi-fi')) return 'Access Point';
+  return 'Komputer';
 }
 
 function normalizeMetode(val) {
@@ -23,6 +28,46 @@ function normalizeMetode(val) {
   const valid = ['PING', 'ISAPI', 'RTSP', 'ONVIF'];
   return valid.includes(up) ? up : 'PING';
 }
+
+// POST /api/devices/test-connection — Uji koneksi IP langsung tanpa perlu simpan ke DB
+router.post('/test-connection', authenticateToken, async (req, res) => {
+  const { ip, metode = 'PING', port } = req.body;
+
+  if (!ip || !ip.trim()) {
+    return res.status(400).json({ success: false, message: 'Alamat IP wajib diisi untuk pengujian.' });
+  }
+
+  const cleanMetode = normalizeMetode(metode);
+  const tempDevice = {
+    ip: ip.trim(),
+    metode: cleanMetode,
+    port: port ? parseInt(port, 10) : null,
+  };
+
+  try {
+    const result = await probeDevice(tempDevice, 2500);
+    return res.json({
+      success: true,
+      alive: result.alive,
+      time: result.time,
+      responseTime: result.time,
+      status: result.alive ? 'online' : 'offline',
+      statusText: result.statusText || (result.alive ? 'Online' : 'Request Timeout'),
+      message: result.alive
+        ? `Koneksi berhasil (${result.time} ms)`
+        : `Tidak dapat terhubung (${result.statusText || 'Request Timeout'})`,
+    });
+  } catch (err) {
+    return res.json({
+      success: true,
+      alive: false,
+      time: 0,
+      status: 'offline',
+      statusText: err.message,
+      message: `Gagal menguji koneksi: ${err.message}`,
+    });
+  }
+});
 
 // GET /api/devices — Daftar perangkat dengan filter & statistik
 router.get('/', authenticateToken, (req, res) => {
@@ -188,6 +233,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
     lokasi,
     deskripsi,
     target_sla = 99.0,
+    parent_id,
   } = req.body;
 
   if (!nama || !ip || !jenis || !grup || !lokasi) {
@@ -199,10 +245,11 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
 
   const cleanJenis = normalizeJenis(jenis);
   const cleanMetode = normalizeMetode(metode);
+  const cleanParentId = parent_id !== undefined && parent_id !== null && parent_id !== '' ? parseInt(parent_id, 10) : null;
 
   const result = run(
-    `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, target_sla, status, last_check, last_seen_online)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline', datetime('now'), datetime('now'))`,
+    `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, target_sla, parent_id, status, last_check, last_seen_online)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline', datetime('now'), datetime('now'))`,
     [
       nama.trim(),
       ip.trim(),
@@ -215,6 +262,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
       lokasi.trim(),
       deskripsi || null,
       parseFloat(target_sla) || 99.0,
+      cleanParentId,
     ]
   );
 
@@ -262,10 +310,12 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
     lokasi,
     deskripsi,
     target_sla,
+    parent_id,
   } = req.body;
 
   const cleanJenis = jenis ? normalizeJenis(jenis) : null;
   const cleanMetode = metode ? normalizeMetode(metode) : null;
+  const cleanParentId = parent_id !== undefined ? (parent_id ? parseInt(parent_id, 10) : null) : undefined;
 
   run(
     `UPDATE devices
@@ -280,6 +330,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
          lokasi = coalesce(?, lokasi),
          deskripsi = coalesce(?, deskripsi),
          target_sla = coalesce(?, target_sla),
+         parent_id = CASE WHEN ? IS NOT NULL THEN ? ELSE parent_id END,
          updated_at = datetime('now')
      WHERE id = ?`,
     [
@@ -294,6 +345,8 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
       lokasi?.trim() ?? null,
       deskripsi ?? null,
       target_sla !== undefined && target_sla !== '' ? parseFloat(target_sla) : null,
+      cleanParentId !== undefined ? 1 : null,
+      cleanParentId ?? null,
       dev.id,
     ]
   );
