@@ -95,16 +95,60 @@ router.get('/:id', authenticateToken, (req, res) => {
     [device.id]
   );
 
-  // Buat data titik status 24 jam sintetis/riil untuk chart
+  // Buat data titik status 24 jam riil berdasarkan waktu pembuatan dan log
+  const now = new Date();
+  let createdAt = new Date(0);
+  if (device.created_at) {
+    const raw = String(device.created_at).trim();
+    createdAt = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
+    if (isNaN(createdAt.getTime())) {
+      createdAt = new Date(raw);
+    }
+  }
+
+  // Ambil log status historis dalam 24 jam terakhir
+  const past24hLogs = query(
+    `SELECT * FROM device_status_logs WHERE device_id = ? AND waktu >= datetime('now', '-24 hours') ORDER BY waktu ASC`,
+    [device.id]
+  );
+
   const timeline24h = Array.from({ length: 24 }, (_, i) => {
-    const hour = (new Date().getHours() - (23 - i) + 24) % 24;
-    const hourLabel = `${hour.toString().padStart(2, '0')}:00`;
-    const isOnline = device.status === 'online';
-    const latency = isOnline ? Math.max(1, device.response_time_ms + ((i % 5) - 2)) : 0;
+    const hTime = new Date(now.getTime() - (23 - i) * 3600000);
+    const hourLabel = `${hTime.getHours().toString().padStart(2, '0')}:00`;
+
+    // Jika jam ini berakhir sebelum perangkat didaftarkan, tandai 'nodata'
+    if (hTime.getTime() + 3600000 < createdAt.getTime()) {
+      return {
+        hour: hourLabel,
+        status: 'nodata',
+        latency: null,
+      };
+    }
+
+    // Perangkat sudah terdaftar pada jam ini: evaluasi status dari log atau status saat ini
+    let statusAtHour = (device.status || 'offline').toLowerCase();
+    let latencyAtHour = statusAtHour === 'online' ? (device.response_time_ms || 1) : null;
+
+    if (past24hLogs.length > 0) {
+      const logsUpToHour = past24hLogs.filter((l) => {
+        const lw = new Date(l.waktu?.includes('T') ? l.waktu : String(l.waktu).replace(' ', 'T') + 'Z');
+        return !isNaN(lw.getTime()) && lw.getTime() <= hTime.getTime() + 3600000;
+      });
+      if (logsUpToHour.length > 0) {
+        const lastLog = logsUpToHour[logsUpToHour.length - 1];
+        statusAtHour = (lastLog.status_baru || device.status).toLowerCase();
+        if (statusAtHour !== 'online') {
+          latencyAtHour = null;
+        } else if (lastLog.response_time && !isNaN(parseInt(lastLog.response_time))) {
+          latencyAtHour = parseInt(lastLog.response_time);
+        }
+      }
+    }
+
     return {
       hour: hourLabel,
-      status: isOnline ? (i === 14 && device.id === 4 ? 'offline' : 'online') : 'offline',
-      latency: isOnline ? latency : null,
+      status: statusAtHour,
+      latency: latencyAtHour,
     };
   });
 

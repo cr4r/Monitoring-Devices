@@ -6,26 +6,31 @@
 import { getSession, logout } from '../main.js';
 import { getAppSetting } from '../settingsManager.js';
 import { t } from '../i18n.js';
+import { toggleTheme, getEffectiveTheme } from '../themeManager.js';
 import Swal from 'sweetalert2';
 
 const NOTIF_STORAGE_KEY = 'devwatch_notifications';
 
 function getStoredNotifications() {
+  const session = getSession();
   try {
     const raw = localStorage.getItem(NOTIF_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
-  return [
-    { id: 1, icon: '🔴', text: 'PC Marketing 01 OFFLINE sejak 06:50', time: '47 menit lalu', read: false },
-    { id: 2, icon: '🔴', text: 'PC Keuangan 01 OFFLINE sejak 06:32', time: '1 jam lalu', read: false },
-    { id: 3, icon: '🟡', text: 'CCTV Gudang Barang OFFLINE sejak 07:32', time: '1 jam lalu', read: false },
-  ];
+  } catch { }
+  if (session?.is_preview) {
+    return [
+      { id: 1, icon: '🔴', text: 'PC Marketing 01 OFFLINE sejak 06:50', time: '47 menit lalu', read: false },
+      { id: 2, icon: '🔴', text: 'PC Keuangan 01 OFFLINE sejak 06:32', time: '1 jam lalu', read: false },
+      { id: 3, icon: '🟡', text: 'CCTV Gudang Barang OFFLINE sejak 07:32', time: '1 jam lalu', read: false },
+    ];
+  }
+  return [];
 }
 
 function saveNotifications(notifs) {
   try {
     localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
-  } catch {}
+  } catch { }
   updateNotificationBadge();
 }
 
@@ -51,20 +56,21 @@ const pageTitles = {
   reports: { titleKey: 'nav_reports', fallback: 'Laporan', subtitle: 'Uptime, SLA, dan laporan insiden' },
   users: { titleKey: 'nav_users', fallback: 'Manajemen Pengguna', subtitle: 'Kelola akun dan hak akses pengguna' },
   settings: { titleKey: 'nav_settings', fallback: 'Pengaturan Sistem', subtitle: 'Konfigurasi monitoring, notifikasi, dan keamanan' },
-  about: { titleKey: 'nav_about', fallback: 'Tentang Aplikasi', subtitle: 'Informasi versi dan lisensi DevWatch' },
+  about: { titleKey: 'nav_about', fallback: 'Tentang Aplikasi', subtitle: 'Informasi versi dan lisensi MonDev' },
 };
 
 export function renderTopbar(currentRoute = 'dashboard') {
   const session = getSession();
   const page = pageTitles[currentRoute] || pageTitles.dashboard;
   const title = t(page.titleKey, page.fallback);
-  const appName = getAppSetting('app_name', 'DevWatch');
+  const appName = getAppSetting('app_name', 'MonDev');
   const initials = session?.nama
     ? session.nama.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
     : 'U';
 
   const notifs = getStoredNotifications();
   const unreadCount = notifs.filter((n) => !n.read).length;
+  const isLight = getEffectiveTheme() === 'light';
 
   return `
     <header class="topbar" id="topbar">
@@ -81,29 +87,45 @@ export function renderTopbar(currentRoute = 'dashboard') {
       </div>
 
       <div class="topbar-right">
+        ${session?.is_preview ? `
+          <div style="display:flex; align-items:center; gap:6px; padding:4px 10px; background:linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(236, 72, 153, 0.2)); border:1px solid rgba(168, 85, 247, 0.5); border-radius:20px; font-size:0.75rem; font-weight:700; color:#c084fc;">
+            <span class="live-dot" style="background:#a855f7; box-shadow:0 0 8px #a855f7;"></span>
+            <span>⚡ MODE PREVIEW</span>
+            <button type="button" id="exit-preview-btn" style="background:none; border:none; color:#f43f5e; cursor:pointer; font-size:0.75rem; font-weight:700; padding:0 2px; margin-left:4px;" title="Keluar dari Mode Preview">✕ Keluar</button>
+          </div>
+        ` : ''}
+
         <div class="live-indicator" title="Monitoring aktif">
           <span class="live-dot"></span>
           <span class="topbar-time" id="topbar-clock">--:--:--</span>
         </div>
+
+        <button class="btn btn-ghost btn-icon" id="theme-toggle-btn" aria-label="Ganti Tema" title="${isLight ? 'Beralih ke Mode Gelap' : 'Beralih ke Mode Terang Lembut'}" data-tooltip="${isLight ? 'Mode Gelap' : 'Mode Terang'}" style="font-size:1.15rem; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border-color); background:rgba(255,255,255,0.03);">
+          ${isLight ? '🌙' : '☀️'}
+        </button>
 
         <div class="dropdown" id="notif-dropdown">
           <button class="btn btn-ghost btn-icon" id="notif-btn" aria-label="Notifikasi" style="position:relative;">
             🔔
             <span class="notif-badge" id="notif-count" style="${unreadCount > 0 ? 'display:flex;' : 'display:none;'}">${unreadCount}</span>
           </button>
-          <div class="dropdown-menu" id="notif-menu" style="display:none; width:340px; padding:0; overflow:hidden;">
-            <div style="padding:10px 14px; font-weight:700; font-size:0.85rem; border-bottom:1px solid var(--border-color); color:var(--color-heading); display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02);">
-              <span style="display:flex; align-items:center; gap:6px;">🔔 ${t('topbar_notifications', 'Notifikasi')}</span>
-              <div style="display:flex; align-items:center; gap:4px;">
-                <button type="button" class="btn btn-ghost btn-xs" id="notif-mark-read-btn" title="Tandai Telah Dibaca" style="padding:3px 7px; font-size:0.75rem; color:var(--color-online); border:1px solid rgba(34,197,94,0.2);">
-                  ✓ ${t('notif_mark_read', 'Telah Dibaca')}
+          <div class="dropdown-menu" id="notif-menu" style="display:none; width:360px; max-width:calc(100vw - 24px); padding:0; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.4);">
+            <div style="padding:10px 14px; font-weight:700; font-size:0.85rem; border-bottom:1px solid var(--border-color); color:var(--color-heading); display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); gap:8px;">
+              <span style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                🔔 ${t('topbar_notifications', 'Notifikasi')}
+                <span id="notif-header-count" style="font-size:0.7rem; background:rgba(99,102,241,0.2); color:var(--color-primary); padding:1px 6px; border-radius:10px; font-weight:700;">${notifs.length}</span>
+              </span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button type="button" class="btn btn-ghost btn-xs" id="notif-mark-read-btn" title="Tandai semua telah dibaca" style="padding:3px 8px; font-size:0.75rem; color:var(--color-online); border:1px solid rgba(34,197,94,0.3); border-radius:6px; white-space:nowrap;">
+                  ✓ Baca
                 </button>
-                <button type="button" class="btn btn-ghost btn-xs" id="notif-clear-btn" title="Bersihkan Semua" style="padding:3px 7px; font-size:0.75rem; color:var(--color-danger); border:1px solid rgba(239,68,68,0.2);">
-                  🗑️ ${t('notif_clear_all', 'Bersihkan')}
+                <button type="button" class="btn btn-ghost btn-xs" id="notif-clear-btn" title="Bersihkan semua notifikasi" style="padding:3px 8px; font-size:0.75rem; color:var(--color-danger); border:1px solid rgba(239,68,68,0.3); border-radius:6px; white-space:nowrap;">
+                  🗑️ Hapus
                 </button>
               </div>
             </div>
-            <div id="notif-list" style="max-height:300px; overflow-y:auto;"></div>
+            <div id="notif-list" style="max-height:340px; overflow-y:auto;"></div>
+            <div id="notif-collapse-bar"></div>
             <div style="padding:8px 14px; border-top:1px solid var(--border-color); text-align:center; background:rgba(255,255,255,0.01);">
               <button class="btn btn-ghost btn-sm" id="close-notif-menu-btn" style="font-size:0.8rem;">
                 ${t('notif_close', 'Tutup')}
@@ -135,10 +157,28 @@ export function renderTopbar(currentRoute = 'dashboard') {
 }
 
 export function initTopbarEvents(navigate) {
+  // Exit Preview Mode button
+  const exitPreviewBtn = document.getElementById('exit-preview-btn');
+  exitPreviewBtn?.addEventListener('click', () => {
+    logout();
+    navigate('login');
+  });
+
   // Clock dengan timezone & language dinamis
   updateClock();
   const clockInterval = setInterval(updateClock, 1000);
   window._clockInterval = clockInterval;
+
+  // Theme toggle button
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  themeBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    themeBtn.style.transform = 'scale(0.82) rotate(18deg)';
+    setTimeout(() => {
+      themeBtn.style.transform = '';
+    }, 200);
+    toggleTheme();
+  });
 
   // Notif dropdown toggle
   const notifBtn = document.getElementById('notif-btn');
@@ -244,12 +284,21 @@ function updateClock() {
   }
 }
 
+let isNotifExpanded = false;
+const NOTIF_COLLAPSE_LIMIT = 4;
+
 function renderNotifications(navigate) {
   const list = document.getElementById('notif-list');
   if (!list) return;
 
   const notifs = getStoredNotifications();
   updateNotificationBadge();
+
+  // Update counter di header notifikasi
+  const headerCount = document.getElementById('notif-header-count');
+  if (headerCount) {
+    headerCount.textContent = notifs.length;
+  }
 
   // Pasang event tombol 'Tandai Telah Dibaca'
   const markReadBtn = document.getElementById('notif-mark-read-btn');
@@ -278,6 +327,7 @@ function renderNotifications(navigate) {
     clearBtn.onclick = (e) => {
       e.stopPropagation();
       saveNotifications([]);
+      isNotifExpanded = false;
       renderNotifications(navigate);
       Swal.fire({
         toast: true,
@@ -292,6 +342,8 @@ function renderNotifications(navigate) {
     };
   }
 
+  const collapseBar = document.getElementById('notif-collapse-bar');
+
   if (notifs.length === 0) {
     list.innerHTML = `
       <div style="text-align:center; padding:28px 16px; color:var(--color-muted);">
@@ -300,10 +352,19 @@ function renderNotifications(navigate) {
         <div style="font-size:0.75rem; margin-top:2px;">Sistem jaringan beroperasi normal</div>
       </div>
     `;
+    if (collapseBar) {
+      collapseBar.style.display = 'none';
+      collapseBar.innerHTML = '';
+    }
     return;
   }
 
-  list.innerHTML = notifs.map((n, i) => `
+  // Filter notifikasi sesuai mode collapse/expand
+  const displayNotifs = (!isNotifExpanded && notifs.length > NOTIF_COLLAPSE_LIMIT)
+    ? notifs.slice(0, NOTIF_COLLAPSE_LIMIT)
+    : notifs;
+
+  list.innerHTML = displayNotifs.map((n, i) => `
     <div
       class="notif-item-row"
       data-index="${i}"
@@ -328,6 +389,38 @@ function renderNotifications(navigate) {
       ` : ''}
     </div>
   `).join('');
+
+  // Tampilkan bar collapse jika notifikasi melebihi batas
+  if (collapseBar) {
+    if (notifs.length > NOTIF_COLLAPSE_LIMIT) {
+      collapseBar.style.display = 'block';
+      if (!isNotifExpanded) {
+        collapseBar.innerHTML = `
+          <div style="padding:8px 14px; text-align:center; background:rgba(255,255,255,0.02); border-top:1px dashed var(--border-color);">
+            <button type="button" class="btn btn-ghost btn-xs w-full" id="notif-toggle-collapse-btn" style="color:var(--color-primary); font-weight:600; font-size:0.78rem; display:flex; align-items:center; justify-content:center; gap:6px; padding:6px 10px; border-radius:6px; background:rgba(99,102,241,0.08);">
+              <span>⬇️ Tampilkan Semua (${notifs.length} Notifikasi)</span>
+            </button>
+          </div>
+        `;
+      } else {
+        collapseBar.innerHTML = `
+          <div style="padding:8px 14px; text-align:center; background:rgba(255,255,255,0.02); border-top:1px dashed var(--border-color);">
+            <button type="button" class="btn btn-ghost btn-xs w-full" id="notif-toggle-collapse-btn" style="color:var(--color-muted); font-weight:600; font-size:0.78rem; display:flex; align-items:center; justify-content:center; gap:6px; padding:6px 10px; border-radius:6px;">
+              <span>⬆️ Ciutkan (Tampilkan ${NOTIF_COLLAPSE_LIMIT} Terbaru)</span>
+            </button>
+          </div>
+        `;
+      }
+      document.getElementById('notif-toggle-collapse-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isNotifExpanded = !isNotifExpanded;
+        renderNotifications(navigate);
+      });
+    } else {
+      collapseBar.style.display = 'none';
+      collapseBar.innerHTML = '';
+    }
+  }
 
   // Handle click pada tiap item
   list.querySelectorAll('.notif-item-row').forEach((el) => {

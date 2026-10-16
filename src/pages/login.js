@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — login.js
+// MonDev — login.js
 // Halaman login dengan mock auth, rate limiting, SweetAlert2
 // ================================================================
 
@@ -8,14 +8,32 @@ import { setSession } from '../main.js';
 import { apiLogin } from '../api.js';
 import { getAppSetting } from '../settingsManager.js';
 import { requestBrowserPushPermission } from '../services/browserNotification.js';
+import { toggleTheme, getEffectiveTheme } from '../themeManager.js';
 
 let failCount = 0;
 let lockoutUntil = null;
 
 export function renderLogin() {
-  const appName = getAppSetting('app_name', 'DevWatch');
+  const appName = getAppSetting('app_name', 'MonDev');
+  const currentEffective = getEffectiveTheme();
+  const isLight = currentEffective === 'light';
+
   return `
     <div class="login-page" id="login-page">
+      <!-- Floating Theme Toggle -->
+      <div style="position:fixed; top:20px; right:20px; z-index:99;">
+        <button
+          type="button"
+          id="login-theme-toggle"
+          class="btn btn-secondary btn-sm"
+          style="display:inline-flex; align-items:center; gap:8px; border-radius:24px; padding:8px 16px; font-size:0.82rem; font-weight:600; background:var(--color-surface, #1e2238); border:1px solid var(--border-color, rgba(255,255,255,0.12)); color:var(--color-text, #f1f5f9); box-shadow:0 4px 14px rgba(0,0,0,0.25); cursor:pointer;"
+          title="${isLight ? 'Beralih ke Mode Gelap' : 'Beralih ke Mode Terang Lembut'}"
+        >
+          <span id="login-theme-icon" style="font-size:1.05rem;">${isLight ? '🌙' : '☀️'}</span>
+          <span id="login-theme-text">${isLight ? 'Mode Gelap' : 'Mode Terang'}</span>
+        </button>
+      </div>
+
       <div class="login-bg">
         <div class="login-bg-orb orb-1"></div>
         <div class="login-bg-orb orb-2"></div>
@@ -79,33 +97,35 @@ export function renderLogin() {
             🔐 Masuk
           </button>
 
-          <!-- Quick Login Chips -->
-          <div style="margin-top:16px; padding:12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px;">
-            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--color-muted); margin-bottom:8px; text-align:center; font-weight:600;">
-              ⚡ Login Cepat Default User (1-Click)
+          <!-- Divider -->
+          <div style="display:flex; align-items:center; margin:16px 0; color:var(--color-muted); font-size:0.75rem;">
+            <div style="flex:1; height:1px; background:var(--border-color);"></div>
+            <span style="padding:0 8px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">ATAU</span>
+            <div style="flex:1; height:1px; background:var(--border-color);"></div>
+          </div>
+
+          <!-- Preview Mode CTA -->
+          <div style="padding:14px; background:linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12)); border:1px solid rgba(139, 92, 246, 0.35); border-radius:10px; text-align:center;">
+            <div style="font-size:0.8rem; font-weight:700; color:#a78bfa; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:6px;">
+              <span>🎮 Pratinjau Sistem Tanpa Login</span>
             </div>
-            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;">
-              <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-email="admin@kantor.com" data-pwd="admin123" style="font-size:0.75rem; padding:6px 4px; display:flex; flex-direction:column; align-items:center; gap:2px;">
-                <span>👑 Admin</span>
-                <span style="font-size:0.65rem; color:var(--color-muted);">Full Akses</span>
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-email="teknisi@kantor.com" data-pwd="teknisi123" style="font-size:0.75rem; padding:6px 4px; display:flex; flex-direction:column; align-items:center; gap:2px;">
-                <span>🔧 Teknisi</span>
-                <span style="font-size:0.65rem; color:var(--color-muted);">Maintenance</span>
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-email="viewer@kantor.com" data-pwd="viewer123" style="font-size:0.75rem; padding:6px 4px; display:flex; flex-direction:column; align-items:center; gap:2px;">
-                <span>👁️ Viewer</span>
-                <span style="font-size:0.65rem; color:var(--color-muted);">Hanya Lihat</span>
-              </button>
-            </div>
+            <p style="font-size:0.75rem; color:var(--color-muted); margin:0 0 10px 0; line-height:1.4;">
+              Jelajahi 20 perangkat demo, topologi kanvas, telemetri, dan simulasi insiden.
+            </p>
+            <button
+              type="button"
+              id="preview-mode-btn"
+              class="btn btn-secondary w-full"
+              style="background:rgba(139, 92, 246, 0.15); border:1px solid #8b5cf6; color:#c084fc; font-weight:600; font-size:0.85rem; padding:8px 12px; display:flex; align-items:center; justify-content:center; gap:8px;"
+            >
+              <span>🚀 Masuk Mode Preview (Data Demo)</span>
+            </button>
           </div>
         </form>
 
         <div class="login-footer">
-          <p>DevWatch v1.0 · Sistem Monitoring Internal</p>
-          <p style="margin-top:4px;">
-            Demo: <code>admin@kantor.com</code> / <code>admin123</code> · <code>teknisi@kantor.com</code> / <code>teknisi123</code>
-          </p>
+          <p>MonDev v1.0 · Dibuat oleh Fatur</p>
+          <p style="margin-top:4px; font-size:0.75rem; color:var(--color-muted);">Sistem Monitoring Perangkat Jaringan Internal</p>
         </div>
       </div>
     </div>
@@ -118,16 +138,51 @@ export function initLoginEvents(navigate) {
   const passwordInput = document.getElementById('login-password');
   const togglePwd = document.getElementById('toggle-password');
   const loginBtn = document.getElementById('login-btn');
+  const previewBtn = document.getElementById('preview-mode-btn');
 
-  // Quick login handler
-  document.querySelectorAll('.quick-login-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const em = btn.getAttribute('data-email');
-      const pw = btn.getAttribute('data-pwd');
-      if (emailInput) emailInput.value = em;
-      if (passwordInput) passwordInput.value = pw;
-      loginBtn?.click();
+  // Theme Toggle handler
+  const loginThemeBtn = document.getElementById('login-theme-toggle');
+  loginThemeBtn?.addEventListener('click', () => {
+    const nextTheme = toggleTheme();
+    const isNowLight = nextTheme === 'light';
+    const icon = document.getElementById('login-theme-icon');
+    const text = document.getElementById('login-theme-text');
+    if (icon) icon.textContent = isNowLight ? '🌙' : '☀️';
+    if (text) text.textContent = isNowLight ? 'Mode Gelap' : 'Mode Terang';
+    if (loginThemeBtn) {
+      loginThemeBtn.title = isNowLight ? 'Beralih ke Mode Gelap' : 'Beralih ke Mode Terang Lembut';
+    }
+  });
+
+  // Sinkronkan jika ada event perubahan tema global
+  window.addEventListener('devwatch:theme_changed', (e) => {
+    const isNowLight = e.detail?.isLight;
+    const icon = document.getElementById('login-theme-icon');
+    const text = document.getElementById('login-theme-text');
+    if (icon) icon.textContent = isNowLight ? '🌙' : '☀️';
+    if (text) text.textContent = isNowLight ? 'Mode Gelap' : 'Mode Terang';
+  });
+
+  // Preview Mode handler
+  previewBtn?.addEventListener('click', () => {
+    setSession({
+      email: 'preview@devwatch.demo',
+      nama: 'Guest Preview',
+      role: 'admin',
+      avatar: 'GP',
+      is_preview: true,
     });
+    localStorage.removeItem('devwatch_token');
+    Swal.fire({
+      icon: 'info',
+      title: 'Mode Preview Aktif',
+      text: 'Anda memasuki sistem dengan 20 perangkat demo. Data database riil tetap bersih.',
+      timer: 1500,
+      showConfirmButton: false,
+      background: 'var(--color-surface, #1a1d2e)',
+      color: 'var(--color-text, #e2e8f0)',
+    });
+    navigate('dashboard');
   });
 
   // Toggle password visibility

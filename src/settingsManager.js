@@ -5,10 +5,12 @@
 
 import { apiGetSettings } from './api.js';
 import { setLanguage } from './i18n.js';
+import { applyTheme, getSavedTheme } from './themeManager.js';
 
 let cachedSettings = {
-  app_name: 'DevWatch',
+  app_name: 'MonDev',
   app_logo: '',
+  theme: 'dark',
   timezone: 'Asia/Jakarta',
   language: 'id',
   default_ping_interval: '60',
@@ -27,7 +29,7 @@ let cachedSettings = {
   retention_days: '90',
   auto_backup_enabled: 'true',
   backup_schedule: 'daily',
-  backup_target_path: 'D:\\Backup\\DevWatch',
+  backup_target_path: 'D:\\Backup\\MonDev',
   auto_weekly_report: 'true',
   report_time: '07:00',
   report_recipients: 'admin@kantor.com',
@@ -46,14 +48,18 @@ export function applySystemSettings(newSettings = {}) {
   // Gabungkan pengaturan baru ke cache
   Object.assign(cachedSettings, newSettings);
 
-  const appName = cachedSettings.app_name || 'DevWatch';
+  const appName = cachedSettings.app_name || 'MonDev';
   const appLogo = cachedSettings.app_logo;
   const lang = cachedSettings.language || 'id';
+  const theme = cachedSettings.theme || 'dark';
 
   // 1. Terapkan bahasa ke i18n
   setLanguage(lang);
 
-  // 2. Ubah document.title browser
+  // 2. Terapkan tema sistem
+  applyTheme(theme, true);
+
+  // 3. Ubah document.title browser
   if (typeof document !== 'undefined') {
     document.title = `${appName} — Device Monitoring System`;
 
@@ -130,10 +136,12 @@ export async function initSettingsManager() {
     const savedTz = localStorage.getItem('devwatch_timezone');
     const savedLang = localStorage.getItem('devwatch_language');
     const savedLogo = localStorage.getItem('devwatch_app_logo');
+    const savedTheme = getSavedTheme();
     if (savedName) cachedSettings.app_name = savedName;
     if (savedTz) cachedSettings.timezone = savedTz;
     if (savedLang) cachedSettings.language = savedLang;
     if (savedLogo) cachedSettings.app_logo = savedLogo;
+    if (savedTheme) cachedSettings.theme = savedTheme;
     applySystemSettings({});
   } catch {
     // Abaikan

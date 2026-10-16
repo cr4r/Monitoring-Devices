@@ -224,6 +224,8 @@
   height: var(--topbar-height);
   background: var(--bg-topbar);
   border-bottom: 1px solid var(--border-color);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -233,7 +235,7 @@
   left: var(--sidebar-width);
   right: 0;
   z-index: 100;
-  transition: left var(--transition);
+  transition: left var(--transition), background-color var(--transition), border-color var(--transition);
 }
 
 .topbar-left {
@@ -396,7 +398,8 @@
   display: block;
   cursor: grab;
   border-radius: var(--border-radius);
-  background: radial-gradient(ellipse at center, #1a1d2e 0%, #0f1117 100%);
+  background: radial-gradient(ellipse at center, var(--bg-card) 0%, var(--bg-primary) 100%);
+  border: 1px solid var(--border-color);
 }
 
 #networkCanvas:active {

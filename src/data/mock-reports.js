@@ -3,6 +3,8 @@
 // Data uptime, SLA, insiden, laporan mingguan
 // ================================================================
 
+import { mockDevices } from './mock-devices.js';
+
 export const uptimePerDevice = [
   { deviceId: 1, nama: 'PC Akuntansi 01', uptime24h: 99.3, uptime7d: 98.8, uptime30d: 97.5, slaTarget: 99, grup: 'Lantai 1' },
   { deviceId: 2, nama: 'PC HRD Manager', uptime24h: 98.6, uptime7d: 97.9, uptime30d: 96.8, slaTarget: 99, grup: 'Lantai 1' },
@@ -150,16 +152,35 @@ export const weeklyReport = {
 
 // Generate timeline data 24 jam untuk 1 device
 export function getTimeline24h(deviceId) {
+  const dev = mockDevices.find((d) => d.id === deviceId);
+  const now = new Date();
+  let createdAt = new Date(0);
+  if (dev && dev.created_at) {
+    const raw = String(dev.created_at).trim();
+    createdAt = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
+    if (isNaN(createdAt.getTime())) createdAt = new Date(raw);
+  } else if (!dev) {
+    createdAt = now;
+  }
+
   const hours = [];
   for (let i = 23; i >= 0; i--) {
-    const jam = new Date(new Date('2026-10-15T08:00:00+07:00').getTime() - i * 3600000);
-    const label = jam.getHours().toString().padStart(2, '0') + ':00';
-    const isOffline = Math.random() < 0.08;
-    hours.push({
-      jam: label,
-      status: isOffline ? 'offline' : 'online',
-      responseTime: isOffline ? null : Math.floor(Math.random() * 30 + 1),
-    });
+    const hTime = new Date(now.getTime() - i * 3600000);
+    const label = `${hTime.getHours().toString().padStart(2, '0')}:00`;
+    if (hTime.getTime() + 3600000 < createdAt.getTime()) {
+      hours.push({
+        jam: label,
+        status: 'nodata',
+        responseTime: null,
+      });
+    } else {
+      const isOnline = dev ? dev.status === 'online' : true;
+      hours.push({
+        jam: label,
+        status: dev ? dev.status : 'online',
+        responseTime: isOnline ? (dev?.responseTime || 4) : null,
+      });
+    }
   }
   return hours;
 }

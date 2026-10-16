@@ -19,6 +19,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 // Route modules
 import authRoutes from './routes/auth.js';
+import setupRoutes from './routes/setup.js';
 import devicesRoutes from './routes/devices.js';
 import logsRoutes from './routes/logs.js';
 import reportsRoutes from './routes/reports.js';
@@ -54,7 +55,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    app: 'DevWatch Device Monitoring System',
+    app: 'MonDev Device Monitoring System',
     version: '1.0.0',
     uptime: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
@@ -63,6 +64,7 @@ app.get('/api/health', (req, res) => {
 
 // Registrasi API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/setup', setupRoutes);
 app.use('/api/devices', devicesRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/reports', reportsRoutes);

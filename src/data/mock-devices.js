@@ -1,9 +1,13 @@
-// ================================================================
-// DevWatch — mock-devices.js
-// Store data perangkat real-time, sinkron 100% dengan database SQLite
-// ================================================================
+import { getSession } from '../main.js';
+import { getDemoDevices } from './demoDevices.js';
 
 export let mockDevices = [];
+
+// Inisialisasi awal berdasarkan status sesi
+const initialSession = getSession();
+if (initialSession?.is_preview) {
+  mockDevices = getDemoDevices();
+}
 
 // Helpers
 export function getDeviceById(id) {
@@ -66,9 +70,21 @@ export function duplicateDevice(id) {
 }
 
 /**
- * Sinkronisasi data perangkat dari backend SQLite
+ * Sinkronisasi data perangkat:
+ * - Mode Preview: Gunakan data demo lokal (tanpa kontak ke database)
+ * - Mode Login Biasa: Sinkronisasi 100% dengan database SQLite melalui /api/devices
  */
 export async function syncDevicesFromApi() {
+  const session = getSession();
+
+  // Mode Preview: Pertahankan atau muat data demo in-memory
+  if (session?.is_preview) {
+    if (mockDevices.length === 0) {
+      mockDevices = getDemoDevices();
+    }
+    return;
+  }
+
   try {
     const token = localStorage.getItem('devwatch_token') || '';
     const res = await fetch('/api/devices', {
@@ -102,6 +118,7 @@ export async function syncDevicesFromApi() {
             lastOnline: dbDev.last_seen_online || new Date().toISOString(),
             uptime24h: dbDev.target_sla || 99.0,
             active: dbDev.is_active === 1,
+            created_at: dbDev.created_at || new Date().toISOString(),
             maintenanceInfo: dbDev.maintenance_reason
               ? { alasan: dbDev.maintenance_reason, selesai: dbDev.maintenance_until }
               : null,
@@ -111,18 +128,33 @@ export async function syncDevicesFromApi() {
             },
           };
         });
+      } else {
+        mockDevices = [];
       }
     }
   } catch {
-    // Mode offline: pertahankan state memori
+    // Mode offline / server tidak merespons
   }
 }
 
-// Sinkronisasi otomatis saat berkas dimuat
-syncDevicesFromApi();
+// Sinkronisasi otomatis saat berkas dimuat jika bukan mode preview
+if (!initialSession?.is_preview) {
+  syncDevicesFromApi();
+}
 
-// Dengar event real-time dari WebSocket
+// Dengar event real-time dari WebSocket & perubahan sesi
 if (typeof window !== 'undefined') {
+  window.addEventListener('devwatch:session_change', (e) => {
+    const sess = e.detail || getSession();
+    if (sess?.is_preview) {
+      mockDevices = getDemoDevices();
+    } else {
+      mockDevices = [];
+      syncDevicesFromApi();
+    }
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+  });
+
   window.addEventListener('devwatch:status_change', (e) => {
     if (e.detail && e.detail.id) {
       updateDeviceStatus(e.detail.id, e.detail.status);

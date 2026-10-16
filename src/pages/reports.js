@@ -15,6 +15,8 @@ import {
 import { renderWeeklyTrend, renderUptimeBar, renderIncidentBar } from '../components/charts.js';
 import { exportReportPdf } from '../services/pdfService.js';
 import { formatDateWithTz } from '../settingsManager.js';
+import { getSession } from '../main.js';
+import { getDemoDevices } from '../data/demoDevices.js';
 
 let activeTab = 'mingguan';
 let liveWeekly = null;
@@ -24,6 +26,75 @@ let liveIncidents = [];
 let selectedArchiveId = 'current';
 
 export async function fetchLiveReports(archiveId = null) {
+  const session = getSession();
+  if (session?.is_preview) {
+    const demos = getDemoDevices();
+    liveSla = demos.map((d) => ({
+      id: d.id,
+      nama: d.nama,
+      ip: d.ip,
+      grup: d.grup,
+      status: d.status,
+      targetSla: d.uptime24h || 99.0,
+      uptime24h: d.uptime24h || 99.0,
+      uptime7d: Math.max(90, (d.uptime24h || 99) - 0.5),
+      uptime30d: Math.max(90, (d.uptime24h || 99) - 0.8),
+    }));
+    liveIncidents = [
+      {
+        id: 1,
+        nama: 'PC Marketing 01',
+        ip: '192.168.1.30',
+        waktu_mulai: new Date(Date.now() - 3600000).toISOString(),
+        waktu_selesai: null,
+        durasi_menit: 60,
+        penyebab: 'RTO (Request Timeout) Ping gagal',
+        status: 'terbuka',
+      },
+      {
+        id: 2,
+        nama: 'CCTV Gudang Barang',
+        ip: '192.168.2.103',
+        waktu_mulai: new Date(Date.now() - 5400000).toISOString(),
+        waktu_selesai: null,
+        durasi_menit: 90,
+        penyebab: 'Port 80 HTTP ISAPI tidak merespons',
+        status: 'terbuka',
+      },
+      {
+        id: 3,
+        nama: 'PC Akuntansi 01',
+        ip: '192.168.1.20',
+        waktu_mulai: new Date(Date.now() - 28800000).toISOString(),
+        waktu_selesai: new Date(Date.now() - 25200000).toISOString(),
+        durasi_menit: 60,
+        penyebab: 'Kabel LAN terlepas',
+        status: 'selesai',
+      },
+    ];
+    liveWeekly = {
+      periode: 'Pekan Berjalan (Simulasi Preview)',
+      totalDevices: 20,
+      onlineDevices: 16,
+      averageUptime: 99.1,
+      targetSla: 99.0,
+      totalIncidents: 3,
+      totalDowntimeHours: 3.5,
+      topDevices: liveSla.slice(0, 5),
+      dailyTrends: [
+        { hari: 'Senin', uptime: 99.8 },
+        { hari: 'Selasa', uptime: 99.5 },
+        { hari: 'Rabu', uptime: 99.1 },
+        { hari: 'Kamis', uptime: 98.9 },
+        { hari: 'Jumat', uptime: 99.4 },
+        { hari: 'Sabtu', uptime: 99.7 },
+        { hari: 'Minggu', uptime: 99.6 },
+      ],
+    };
+    liveArchives = [];
+    return;
+  }
+
   try {
     const [wRes, archRes, sRes, iRes] = await Promise.all([
       apiGetWeeklyReport(archiveId).catch(() => null),

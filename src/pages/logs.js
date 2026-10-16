@@ -7,6 +7,8 @@ import Swal from 'sweetalert2';
 import { apiGetLogs } from '../api.js';
 import { formatDateWithTz } from '../settingsManager.js';
 import { exportLogsPdf } from '../services/pdfService.js';
+import { getSession } from '../main.js';
+import { getDemoLogs } from '../data/demoDevices.js';
 
 let activeTab = 'status';
 let logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
@@ -16,6 +18,79 @@ let backendLogs = [];
 let backendCounts = { status: 0, aktivitas: 0, konfigurasi: 0 };
 
 export async function fetchLiveLogs() {
+  const session = getSession();
+  if (session?.is_preview) {
+    if (activeTab === 'status') {
+      backendLogs = getDemoLogs().map((r) => ({
+        id: r.id,
+        waktu: r.created_at,
+        device: r.device_name || 'Device',
+        ip: r.device_ip || '',
+        deviceId: r.device_id,
+        statusSebelum: r.status_sebelumnya?.toLowerCase() || 'online',
+        statusBaru: r.status_baru?.toLowerCase() || 'offline',
+        metode: r.metode || 'Probe',
+        responseTime: r.response_time || 'OK',
+        pesan: r.pesan_log,
+        tipe: r.status_baru?.toLowerCase() || 'offline',
+      }));
+      backendCounts = { status: backendLogs.length, aktivitas: 2, konfigurasi: 2 };
+    } else if (activeTab === 'aktivitas') {
+      backendLogs = [
+        {
+          id: 1,
+          waktu: new Date(Date.now() - 1800000).toISOString(),
+          user: 'Guest Preview',
+          email: 'preview@devwatch.demo',
+          aksi: 'Mode Preview Masuk',
+          detail: 'Eksplorasi antarmuka pemantauan demo',
+          ip: '127.0.0.1',
+          tipe: 'info',
+          pesan: 'Guest Preview masuk ke sistem mode demo preview',
+        },
+        {
+          id: 2,
+          waktu: new Date(Date.now() - 3600000).toISOString(),
+          user: 'Sistem Simulasi',
+          email: 'system@devwatch.demo',
+          aksi: 'Health Check Otomatis',
+          detail: '20 perangkat sampel berhasil dimuat',
+          ip: '127.0.0.1',
+          tipe: 'info',
+          pesan: 'Simulasi mendeteksi 16 Online, 2 Offline, 2 Maintenance',
+        },
+      ];
+      backendCounts = { status: 5, aktivitas: 2, konfigurasi: 2 };
+    } else {
+      backendLogs = [
+        {
+          id: 1,
+          waktu: new Date(Date.now() - 7200000).toISOString(),
+          user: 'Budi Santoso',
+          device: 'PC Gudang',
+          parameter: 'Status Perangkat',
+          nilaiLama: 'Online',
+          nilaiBaru: 'Maintenance',
+          tipe: 'maintenance',
+          pesan: 'Budi Santoso mengubah status PC Gudang ke Maintenance (Penggantian RAM dan SSD)',
+        },
+        {
+          id: 2,
+          waktu: new Date(Date.now() - 10800000).toISOString(),
+          user: 'Ahmad Rizky',
+          device: 'CCTV Parkiran Belakang',
+          parameter: 'Status Perangkat',
+          nilaiLama: 'Online',
+          nilaiBaru: 'Maintenance',
+          tipe: 'maintenance',
+          pesan: 'Ahmad Rizky mengatur CCTV Parkiran Belakang ke Maintenance (Pembersihan lensa)',
+        },
+      ];
+      backendCounts = { status: 5, aktivitas: 2, konfigurasi: 2 };
+    }
+    return;
+  }
+
   try {
     const res = await apiGetLogs({
       type: activeTab,

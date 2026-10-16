@@ -24,6 +24,16 @@ router.post('/login', loginRateLimiter, async (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
+
+  const userCountRow = queryOne('SELECT COUNT(*) as count FROM users');
+  if (!userCountRow || userCountRow.count === 0) {
+    return res.status(400).json({
+      success: false,
+      needsSetup: true,
+      message: 'Sistem belum dikonfigurasi. Silakan lakukan setup awal untuk membuat akun Administrator.',
+    });
+  }
+
   const user = queryOne('SELECT * FROM users WHERE email = ?', [cleanEmail]);
 
   if (!user) {

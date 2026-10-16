@@ -1,4 +1,4 @@
-# 📡 DevWatch — Sistem Monitoring Device & Jaringan
+# 📡 MonDev — Sistem Monitoring Device & Jaringan
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com)
 [![Milestones](https://img.shields.io/badge/PRD_Milestones-Fase_1--5_Complete_100%25-brightgreen.svg)](#-status-pencapaian-milestone-prd)
@@ -8,7 +8,7 @@
 [![SweetAlert2](https://img.shields.io/badge/Alerts-SweetAlert2-orange.svg)](https://sweetalert2.github.io/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**DevWatch** adalah aplikasi web monitoring jaringan yang dirancang khusus untuk memantau status operasional perangkat kantor (seperti **Komputer/Server Kerja** dan **Kamera CCTV HIKVision**) secara langsung (*real-time*), baik di jaringan lokal (LAN) maupun jarak jauh (WAN/Internet).
+**MonDev** adalah aplikasi web monitoring jaringan yang dirancang khusus untuk memantau status operasional perangkat kantor (seperti **Komputer/Server Kerja** dan **Kamera CCTV HIKVision**) secara langsung (*real-time*), baik di jaringan lokal (LAN) maupun jarak jauh (WAN/Internet).
 
 Aplikasi ini mengusung antarmuka modern bertema gelap (*Dark Glassmorphism*) yang nyaman di mata, responsif di berbagai ukuran layar, serta menyajikan informasi teknis dalam bahasa Indonesia yang manusiawi dan mudah dipahami oleh siapa saja — mulai dari tim IT, teknisi lapangan, hingga staf non-teknis.
 
@@ -760,10 +760,10 @@ Seluruh variabel warna didefinisikan secara rapi di file [src/styles/base.css](f
 
 ## 📄 Lisensi & Kontributor
 
-- **Pengembang**: Tim Rekayasa Web & Jaringan Internal
+- **Pengembang / Pembuat Projek**: **Fatur**
 - **Lisensi**: Bebas digunakan dan dimodifikasi untuk keperluan internal instansi/kantor di bawah lisensi [MIT License](LICENSE).
 - **Versi Rilis**: v1.0.0 (Tahun 2026)
 
 ---
 
-*DevWatch — Memastikan seluruh infrastruktur teknologi informasi kantor Anda tetap terhubung dan terpantau dengan tenang.* 🚀
+*MonDev — Memastikan seluruh infrastruktur teknologi informasi kantor Anda tetap terhubung dan terpantau dengan tenang.* 🚀

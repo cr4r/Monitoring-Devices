@@ -6,6 +6,7 @@
 import { getSession } from './main.js';
 
 const routes = {
+  setup: { page: 'setup', auth: false },
   login: { page: 'login', auth: false },
   dashboard: { page: 'dashboard', auth: true, roles: ['admin', 'teknisi', 'viewer'] },
   devices: { page: 'devices', auth: true, roles: ['admin', 'teknisi'] },

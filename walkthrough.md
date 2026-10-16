@@ -147,4 +147,45 @@ Semua 5 Fase dalam dokumen [PRD_Device_Monitoring.md](file:///d:/Projek/WEB/Moni
 - Sintaks server: `node -c server/index.js` (Kode 0 / Lolos).
 - Kompilasi produksi: `npm run build` (Kode 0 / Lolos).
 
+---
+
+## 6. Penambahan Fitur Tema Terang Lembut (Soft Light Mode)
+
+### A. Komponen & Modul Baru
+1. **[src/themeManager.js](file:///d:/Projek/WEB/Monitoring-Devices/src/themeManager.js)**:
+   - Pengelola tema terpusat (`dark`, `light`, `auto`).
+   - Menyimpan preferensi ke `localStorage` (`devwatch_theme`), sinkronisasi dengan preferensi sistem OS `prefers-color-scheme`, dan memancarkan event `devwatch:theme_changed`.
+2. **Design Tokens ([src/styles/base.css](file:///d:/Projek/WEB/Monitoring-Devices/src/styles/base.css))**:
+   - Menambahkan palet Soft Pearl Slate pada `[data-theme="light"]`:
+     - Latar belakang: `--bg-primary: #f6f8fb`, `--bg-secondary: #ffffff`, `--bg-card: #ffffff`.
+     - Teks: `--color-heading: #0f172a`, `--color-text: #334155`, `--color-muted: #94a3b8` (WCAG AAA).
+     - Indikator status: `--color-online: #16a34a`, `--color-offline: #dc2626`, `--color-maintenance: #d97706`.
+     - Efek transisi halus antar-mode (`0.25s ease`).
+3. **Komponen & SweetAlert2 Overrides ([src/styles/components.css](file:///d:/Projek/WEB/Monitoring-Devices/src/styles/components.css))**:
+   - Penyesuaian tombol `.btn-secondary`, `.btn-ghost`, form input, dropdown menu, dan tabel.
+   - Override otomatis popup SweetAlert2 di mode terang (latar putih bersih dengan teks kontras tinggi).
+4. **Topbar Quick-Toggle ([src/components/topbar.js](file:///d:/Projek/WEB/Monitoring-Devices/src/components/topbar.js))**:
+   - Tombol saklar instan `#theme-toggle-btn` dengan ikon dinamis 🌙 / ☀️ dan animasi mikro rotasi saat diklik.
+5. **Pengaturan Sistem ([src/pages/settings.js](file:///d:/Projek/WEB/Monitoring-Devices/src/pages/settings.js))**:
+   - Pilihan "Tema Tampilan" pada tab Umum (`dark`, `light`, `auto`) dengan pratinjau instan dan penyimpanan ke SQLite `system_settings`.
+6. **Chart.js & Topologi Jaringan**:
+   - [src/components/charts.js](file:///d:/Projek/WEB/Monitoring-Devices/src/components/charts.js) peka tema, memperbarui gridlines dan tooltip secara real-time.
+   - [src/pages/dashboard.js](file:///d:/Projek/WEB/Monitoring-Devices/src/pages/dashboard.js) kanvas topologi menyesuaikan grid dots dan label teks perangkat.
+
+### B. Hasil Verifikasi Browser Subagent
+- **Rekaman Sesi Pengujian**: [light_theme_verification_1792116069703.webp](file:///C:/Users/ahmad/.gemini/antigravity-ide/brain/a985ecd2-880c-42a8-935f-75476a8b29da/light_theme_verification_1792116069703.webp)
+
+````carousel
+![Dashboard Mode Terang](C:/Users/ahmad/.gemini/antigravity-ide/brain/a985ecd2-880c-42a8-935f-75476a8b29da/dashboard_light_1792116102677.png)
+<!-- slide -->
+![Topologi Jaringan Mode Terang](C:/Users/ahmad/.gemini/antigravity-ide/brain/a985ecd2-880c-42a8-935f-75476a8b29da/peta_visual_light_1792116115632.png)
+<!-- slide -->
+![Grafik Timeline Mode Terang](C:/Users/ahmad/.gemini/antigravity-ide/brain/a985ecd2-880c-42a8-935f-75476a8b29da/timeline_light_1792116165469.png)
+<!-- slide -->
+![Tabel Perangkat Mode Terang](C:/Users/ahmad/.gemini/antigravity-ide/brain/a985ecd2-880c-42a8-935f-75476a8b29da/devices_table_light_1792116214619.png)
+<!-- slide -->
+![Pengaturan Umum Mode Terang](C:/Users/ahmad/.gemini/antigravity-ide/brain/a985ecd2-880c-42a8-935f-75476a8b29da/settings_general_light_1792116269807.png)
+````
+
+
 

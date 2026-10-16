@@ -84,6 +84,59 @@
   --topbar-height: 64px;
 }
 
+/* --- Soft Light Mode Theme Tokens --- */
+:root[data-theme="light"],
+[data-theme="light"] {
+  /* Background — Soft Pearl Slate (Teduh di mata, tidak menyilaukan) */
+  --bg-primary: #f6f8fb;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8faff;
+  --bg-sidebar: #ffffff;
+  --bg-topbar: rgba(255, 255, 255, 0.88);
+  --bg-input: #f8fafc;
+  --bg-modal: #ffffff;
+  --bg-overlay: rgba(15, 23, 42, 0.4);
+  --bg-table-row: rgba(15, 23, 42, 0.015);
+  --bg-table-row-hover: rgba(99, 102, 241, 0.05);
+
+  /* Status Colors — Kontras tinggi & lembut di latar terang */
+  --color-online: #16a34a;
+  --color-online-dim: rgba(22, 163, 74, 0.1);
+  --color-online-glow: rgba(22, 163, 74, 0.25);
+  --color-offline: #dc2626;
+  --color-offline-dim: rgba(220, 38, 38, 0.1);
+  --color-offline-glow: rgba(220, 38, 38, 0.25);
+  --color-maintenance: #d97706;
+  --color-maintenance-dim: rgba(217, 119, 6, 0.1);
+  --color-maintenance-glow: rgba(217, 119, 6, 0.25);
+
+  /* Accent */
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-dim: rgba(79, 70, 229, 0.08);
+  --color-accent-glow: rgba(79, 70, 229, 0.22);
+  --color-accent-2: #7c3aed;
+
+  /* Typography / Text — Skala Slate (WCAG AAA) */
+  --color-text: #334155;
+  --color-text-secondary: #64748b;
+  --color-muted: #94a3b8;
+  --color-heading: #0f172a;
+
+  /* Border */
+  --border-color: rgba(15, 23, 42, 0.08);
+  --border-color-hover: rgba(79, 70, 229, 0.35);
+
+  /* Soft Elevation Shadow */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 36px rgba(15, 23, 42, 0.09), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-glow-accent: 0 0 18px rgba(79, 70, 229, 0.2);
+  --shadow-glow-online: 0 0 12px rgba(22, 163, 74, 0.2);
+  --shadow-glow-offline: 0 0 12px rgba(220, 38, 38, 0.2);
+}
+
 /* --- Reset --- */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -105,6 +158,7 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color var(--transition), color var(--transition);
 }
 
 #app {

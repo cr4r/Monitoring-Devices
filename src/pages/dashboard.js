@@ -185,8 +185,12 @@ export function renderDashboard() {
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
                   <label class="form-label" style="margin:0; font-size:0.8rem;">Pilih Perangkat:</label>
-                  <select class="form-control timeline-device-select" id="timeline-device-select" style="width:auto; min-width:220px; font-size:0.82rem; padding:4px 10px;">
-                    ${mockDevices.map((d) => `<option value="${d.id}">${d.nama} (${d.ip})</option>`).join('')}
+                  <select class="form-control timeline-device-select" id="timeline-device-select" style="width:auto; min-width:240px; font-size:0.82rem; padding:4px 10px;">
+                    ${mockDevices.length > 0 ? mockDevices.map((d) => {
+                      const icon = d.status === 'online' ? '🟢' : d.status === 'maintenance' ? '🟡' : '🔴';
+                      const statusText = d.status === 'online' ? 'Online' : d.status === 'maintenance' ? 'Maintenance' : 'Offline';
+                      return `<option value="${d.id}">${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+                    }).join('') : '<option value="">(Belum ada perangkat terdaftar)</option>'}
                   </select>
                 </div>
               </div>
@@ -204,10 +208,20 @@ export function renderDashboard() {
 function renderDeviceCards(filtered = null) {
   if (mockDevices.length === 0) {
     return `
-      <div style="grid-column:1/-1; text-align:center; padding:48px 16px; color:var(--color-muted);">
-        <div class="spinner spinner-lg" style="margin:0 auto 16px auto;"></div>
-        <div style="font-weight:600; font-size:0.95rem; color:#cbd5e1;">Memuat data perangkat dari database...</div>
-        <div style="font-size:0.8rem; margin-top:4px;">Menghubungkan ke server SQLite...</div>
+      <div class="empty-state" style="grid-column:1/-1; padding:48px 20px; text-align:center; background:var(--color-surface); border:1px dashed var(--border-color); border-radius:12px;">
+        <div style="font-size:3rem; margin-bottom:12px;">📡</div>
+        <div style="font-size:1.15rem; font-weight:700; color:var(--color-heading); margin-bottom:6px;">Belum Ada Perangkat yang Dipantau</div>
+        <p style="font-size:0.85rem; color:var(--color-muted); max-width:480px; margin:0 auto 20px auto; line-height:1.5;">
+          Basis data perangkat saat ini bersih tanpa data dummy. Silakan tambahkan komputer kantor atau CCTV Hikvision untuk memulai pemantauan real-time.
+        </p>
+        <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap;">
+          <a href="#/devices" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:8px;">
+            <span>➕ Tambah Perangkat</span>
+          </a>
+          <a href="#/devices" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
+            <span>📥 Impor CSV</span>
+          </a>
+        </div>
       </div>
     `;
   }
@@ -397,12 +411,42 @@ export function initDashboardEvents(navigate) {
     }
   }
 
+  function updateTimelineSelectOptions(preferredDeviceId = null) {
+    const select = document.getElementById('timeline-device-select');
+    if (!select) return;
+
+    const currentVal = preferredDeviceId !== null && preferredDeviceId !== undefined
+      ? String(preferredDeviceId)
+      : select.value;
+
+    if (mockDevices.length === 0) {
+      select.innerHTML = '<option value="">(Belum ada perangkat terdaftar)</option>';
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = mockDevices.map((d) => {
+      const isOnline = d.status === 'online';
+      const isMaint = d.status === 'maintenance';
+      const icon = isOnline ? '🟢' : isMaint ? '🟡' : '🔴';
+      const statusText = isOnline ? 'Online' : isMaint ? 'Maintenance' : 'Offline';
+      const isSelected = String(d.id) === currentVal;
+      return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+    }).join('');
+
+    if (!select.value && mockDevices.length > 0) {
+      select.value = String(mockDevices[0].id);
+    }
+  }
+
   // Sinkronkan data riil dari database SQLite seketika saat halaman dibuka
   syncDevicesFromApi()
     .then(() => {
       updateDashboardStats();
       applyFilter();
       updateGroupFilterOptions();
+      updateTimelineSelectOptions();
       if (currentTab === 'peta') initNetworkMap();
       if (currentTab === 'timeline') initTimeline();
     })
@@ -426,6 +470,8 @@ export function initDashboardEvents(navigate) {
     updateDashboardStats();
     applyFilter();
     updateGroupFilterOptions();
+    updateTimelineSelectOptions();
+    if (currentTab === 'timeline') initTimeline();
   });
 
   // Sinkronkan stat awal saat event dipasang
@@ -970,13 +1016,14 @@ function initNetworkMap() {
 }
 
 function drawMap(ctx, w, h) {
+  const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
   ctx.clearRect(0, 0, w, h);
   ctx.save();
   ctx.translate(mapTransform.x, mapTransform.y);
   ctx.scale(mapTransform.scale, mapTransform.scale);
 
   // Background grid dots
-  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  ctx.fillStyle = isLight ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.04)';
   const step = 28;
   const boundX = (w * 1.5) / mapTransform.scale;
   const boundY = (h * 1.5) / mapTransform.scale;
@@ -986,6 +1033,22 @@ function drawMap(ctx, w, h) {
       ctx.arc(x, y, 1, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  // Jika tidak ada perangkat di database
+  if (mockDevices.length === 0) {
+    ctx.restore();
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isLight ? '#64748b' : '#94a3b8';
+    ctx.font = 'bold 15px Inter, sans-serif';
+    ctx.fillText('📡 Belum ada perangkat untuk dipetakan di topologi jaringan', w / 2, h / 2 - 12);
+    ctx.font = '13px Inter, sans-serif';
+    ctx.fillStyle = isLight ? '#94a3b8' : '#64748b';
+    ctx.fillText('Tambahkan perangkat baru atau login mode preview untuk simulasi visual', w / 2, h / 2 + 14);
+    ctx.restore();
+    return;
   }
 
   const gw = virtualNodes.find((v) => v.id === '__gw__');
@@ -1158,14 +1221,14 @@ function drawMap(ctx, w, h) {
     ctx.fillText(d.jenis === 'cctv' ? '📷' : '💻', d.mapPos.x, d.mapPos.y + 4);
 
     // Name label
-    ctx.fillStyle = '#f1f5f9';
+    ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
     ctx.font = '600 9.5px Inter, sans-serif';
     ctx.textAlign = 'center';
     const shortName = d.nama.length > 13 ? d.nama.substring(0, 13) + '…' : d.nama;
     ctx.fillText(shortName, d.mapPos.x, d.mapPos.y + 26);
 
     // IP label
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = isLight ? '#475569' : '#94a3b8';
     ctx.font = '8.5px monospace';
     ctx.fillText(d.ip, d.mapPos.x, d.mapPos.y + 36);
 
@@ -1180,34 +1243,198 @@ function drawMap(ctx, w, h) {
   ctx.restore();
 }
 
+// ---- DETAIL MODAL DRILL-DOWN GLOBAL STATUS ----
+function showHourDetailModal(hourData) {
+  if (!hourData) return;
+  const online = hourData.online || 0;
+  const offline = hourData.offline || 0;
+  const maintenance = hourData.maintenance || 0;
+  const nodata = hourData.nodata || 0;
+  const devices = hourData.devices || [];
+
+  const deviceRows = devices.map((d) => {
+    let badgeHtml = '';
+    let latencyText = '-';
+
+    if (d.statusAtHour === 'online') {
+      badgeHtml = '<span class="chip chip-online">🟢 Online</span>';
+      latencyText = `${d.latencyAtHour || d.responseTime || 1} ms`;
+    } else if (d.statusAtHour === 'offline') {
+      badgeHtml = '<span class="chip chip-offline">🔴 Offline</span>';
+      latencyText = 'Timeout';
+    } else if (d.statusAtHour === 'maintenance') {
+      badgeHtml = '<span class="chip chip-maintenance">🟡 Maintenance</span>';
+      latencyText = 'Maint.';
+    } else {
+      badgeHtml = '<span class="chip" style="background:rgba(148,163,184,0.15); color:var(--color-muted);">⚪ Belum Ada</span>';
+      latencyText = '-';
+    }
+
+    return `
+      <tr style="border-bottom:1px solid var(--border-color);">
+        <td style="padding:8px 10px; font-weight:600; color:var(--color-text); text-align:left;">
+          ${d.jenis === 'cctv' ? '📷' : '💻'} ${d.nama}
+        </td>
+        <td style="padding:8px 10px; font-family:var(--font-mono); font-size:0.8rem; color:var(--color-muted);">${d.ip}</td>
+        <td style="padding:8px 10px; font-size:0.8rem; color:var(--color-muted);">${d.grup || 'Umum'}</td>
+        <td style="padding:8px 10px;">${badgeHtml}</td>
+        <td style="padding:8px 10px; font-family:var(--font-mono); font-size:0.8rem; color:${d.statusAtHour === 'online' ? 'var(--color-online)' : 'var(--color-muted)'};">${latencyText}</td>
+      </tr>
+    `;
+  }).join('');
+
+  Swal.fire({
+    title: `<div style="font-size:1.15rem; font-weight:700; color:var(--color-heading); display:flex; align-items:center; justify-content:center; gap:8px;">
+      <span>🕒 Status Perangkat — Pukul ${hourData.hour}</span>
+    </div>`,
+    html: `
+      <div style="margin-bottom:14px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap; font-size:0.8rem;">
+        <span class="chip chip-online">🟢 Online: <b>${online}</b></span>
+        <span class="chip chip-offline">🔴 Offline: <b>${offline}</b></span>
+        ${maintenance > 0 ? `<span class="chip chip-maintenance">🟡 Maintenance: <b>${maintenance}</b></span>` : ''}
+        ${nodata > 0 ? `<span class="chip" style="background:rgba(148,163,184,0.15); color:var(--color-muted);">⚪ Belum Didaftarkan: <b>${nodata}</b></span>` : ''}
+      </div>
+      <div style="max-height:360px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; margin-top:10px;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.82rem; text-align:left;">
+          <thead style="background:rgba(255,255,255,0.03); border-bottom:1px solid var(--border-color); color:var(--color-muted); position:sticky; top:0; z-index:1;">
+            <tr>
+              <th style="padding:8px 10px;">Perangkat</th>
+              <th style="padding:8px 10px;">IP Address</th>
+              <th style="padding:8px 10px;">Grup</th>
+              <th style="padding:8px 10px;">Status</th>
+              <th style="padding:8px 10px;">Latency</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${devices.length > 0 ? deviceRows : '<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--color-muted);">Tidak ada perangkat terdaftar pada jam ini</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `,
+    width: 660,
+    showCloseButton: true,
+    showConfirmButton: false,
+    background: 'var(--color-surface, #1a1d2e)',
+    color: 'var(--color-text, #e2e8f0)',
+  });
+}
+
 // ---- TIMELINE ----
 function initTimeline() {
-  const currentTotal = mockDevices.length || 1;
-  const currentOnline = mockDevices.filter((d) => d.status === 'online').length;
-  const currentOffline = Math.max(0, currentTotal - currentOnline);
+  const now = new Date();
 
-  // Bangun data agregat global 24 jam terakhir
+  // Selalu sinkronkan opsi dropdown perangkat terlebih dahulu
+  const select = document.getElementById('timeline-device-select');
+  if (select) {
+    if (mockDevices.length === 0) {
+      select.innerHTML = '<option value="">(Belum ada perangkat terdaftar)</option>';
+      select.disabled = true;
+    } else {
+      select.disabled = false;
+      const currentVal = select.value;
+      select.innerHTML = mockDevices.map((d) => {
+        const isOnline = d.status === 'online';
+        const isMaint = d.status === 'maintenance';
+        const icon = isOnline ? '🟢' : isMaint ? '🟡' : '🔴';
+        const statusText = isOnline ? 'Online' : isMaint ? 'Maintenance' : 'Offline';
+        const isSelected = String(d.id) === currentVal;
+        return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+      }).join('');
+
+      if (!select.value && mockDevices.length > 0) {
+        select.value = String(mockDevices[0].id);
+      }
+    }
+  }
+
+  if (mockDevices.length === 0) {
+    const aggData = Array.from({ length: 24 }, (_, i) => {
+      const hTime = new Date(now.getTime() - (23 - i) * 3600000);
+      const hourLabel = `${hTime.getHours().toString().padStart(2, '0')}:00`;
+      return {
+        hour: hourLabel,
+        online: 0,
+        offline: 0,
+        maintenance: 0,
+        nodata: 0,
+        devices: [],
+      };
+    });
+    renderAggregateTimeline('aggregate-timeline-chart', aggData, showHourDetailModal);
+    renderTimeline24h('timeline-chart', []);
+    return;
+  }
+
+  // Bangun data agregat global 24 jam terakhir riil berdasarkan created_at & status aktual
   const aggData = Array.from({ length: 24 }, (_, i) => {
-    const hour = (new Date().getHours() - (23 - i) + 24) % 24;
+    const hTime = new Date(now.getTime() - (23 - i) * 3600000);
+    const hourLabel = `${hTime.getHours().toString().padStart(2, '0')}:00`;
+
+    let onlineCount = 0;
+    let offlineCount = 0;
+    let maintenanceCount = 0;
+    let nodataCount = 0;
+    const devicesAtHour = [];
+
+    mockDevices.forEach((d) => {
+      let createdAt = new Date(0);
+      if (d.created_at) {
+        const raw = String(d.created_at).trim();
+        createdAt = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
+        if (isNaN(createdAt.getTime())) createdAt = new Date(raw);
+      }
+
+      // Jika jam berakhir sebelum perangkat dibuat: nodata
+      if (hTime.getTime() + 3600000 < createdAt.getTime()) {
+        nodataCount++;
+        devicesAtHour.push({
+          ...d,
+          statusAtHour: 'nodata',
+          latencyAtHour: null,
+        });
+      } else {
+        const st = (d.status || 'offline').toLowerCase();
+        if (st === 'online') {
+          onlineCount++;
+        } else if (st === 'maintenance') {
+          maintenanceCount++;
+        } else {
+          offlineCount++;
+        }
+        devicesAtHour.push({
+          ...d,
+          statusAtHour: st,
+          latencyAtHour: st === 'online' ? (d.responseTime || 1) : null,
+        });
+      }
+    });
+
     return {
-      hour: `${hour.toString().padStart(2, '0')}:00`,
-      online: Math.max(0, currentOnline - (i % 6 === 2 ? 1 : 0)),
-      offline: Math.max(0, currentOffline + (i % 6 === 2 ? 1 : 0)),
+      hour: hourLabel,
+      online: onlineCount,
+      offline: offlineCount,
+      maintenance: maintenanceCount,
+      nodata: nodataCount,
+      devices: devicesAtHour,
     };
   });
-  renderAggregateTimeline('aggregate-timeline-chart', aggData);
 
-  const select = document.getElementById('timeline-device-select');
+  renderAggregateTimeline('aggregate-timeline-chart', aggData, showHourDetailModal);
+
   if (!select) return;
 
   const renderChart = async (deviceId) => {
+    if (!deviceId) {
+      renderTimeline24h('timeline-chart', []);
+      return;
+    }
     try {
       const res = await apiGetDevice(deviceId).catch(() => null);
       if (res && res.data && res.data.timeline24h) {
         const mapped = res.data.timeline24h.map((t) => ({
           jam: t.hour,
           status: t.status,
-          responseTime: t.latency || 1,
+          responseTime: t.latency !== null && t.latency !== undefined ? t.latency : (t.status === 'online' ? 5 : 0),
         }));
         renderTimeline24h('timeline-chart', mapped);
         return;
@@ -1218,8 +1445,12 @@ function initTimeline() {
     renderTimeline24h('timeline-chart', data);
   };
 
-  select.addEventListener('change', (e) => renderChart(e.target.value));
-  renderChart(select.value);
+  select.onchange = (e) => renderChart(e.target.value);
+  if (select.value) {
+    renderChart(select.value);
+  } else {
+    renderTimeline24h('timeline-chart', []);
+  }
 }
 
 // Format relative time

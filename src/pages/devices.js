@@ -168,10 +168,12 @@ function renderDevicesTable(canEdit, isAdmin) {
   }).join('') : `
     <tr>
       <td colspan="9">
-        <div class="empty-state">
-          <div class="empty-icon">🖥️</div>
-          <div class="empty-title">Tidak ada device ditemukan</div>
-          <div class="empty-desc">Coba ubah filter atau tambah device baru</div>
+        <div class="empty-state" style="padding:48px 16px;">
+          <div class="empty-icon" style="font-size:3rem; margin-bottom:12px;">🖥️</div>
+          <div class="empty-title" style="font-size:1.1rem; font-weight:700; color:var(--color-heading);">Belum Ada Perangkat di Database</div>
+          <div class="empty-desc" style="color:var(--color-muted); max-width:420px; margin:0 auto 16px auto; font-size:0.85rem; line-height:1.5;">
+            Database SQLite Anda saat ini bersih tanpa data dummy. Klik tombol <b>+ Tambah Device</b> di atas atau impor berkas CSV untuk mendaftarkan unit pertama Anda.
+          </div>
         </div>
       </td>
     </tr>
@@ -181,7 +183,7 @@ function renderDevicesTable(canEdit, isAdmin) {
 
   return `
     <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-color); flex-wrap:wrap; gap:8px;">
-      <span class="text-sm text-muted">Menampilkan ${start + 1}–${Math.min(start + rowsPerPage, total)} dari ${total} device</span>
+      <span class="text-sm text-muted">${total > 0 ? `Menampilkan ${start + 1}–${Math.min(start + rowsPerPage, total)} dari ${total} device` : 'Menampilkan 0 device'}</span>
       <div class="rows-per-page">
         Baris per halaman:
         <select id="rows-per-page-select" onchange="window.devRowsPerPage(this.value)">

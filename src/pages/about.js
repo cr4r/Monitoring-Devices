@@ -9,7 +9,7 @@ export function renderAbout() {
       <div class="page-header">
         <div class="page-header-left">
           <h1 class="page-title">ℹ️ Tentang Aplikasi</h1>
-          <p class="page-subtitle">Informasi versi, teknologi, dan lisensi DevWatch</p>
+          <p class="page-subtitle">Informasi versi, teknologi, dan lisensi MonDev</p>
         </div>
       </div>
 
@@ -17,10 +17,13 @@ export function renderAbout() {
         <!-- Main about card -->
         <div class="card about-card">
           <div class="about-logo">📡</div>
-          <h2 class="gradient-text" style="font-size:2rem; font-weight:800;">DevWatch</h2>
+          <h2 class="gradient-text" style="font-size:2rem; font-weight:800;">MonDev</h2>
           <p style="font-size:1rem; color:var(--color-text-secondary);">Device Network Monitoring System</p>
           <div class="about-version">v1.0.0</div>
           <div class="about-version" style="margin-top:4px;">Build: Oktober 2026</div>
+          <div style="margin-top:10px; display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:20px; font-size:0.82rem; font-weight:700; background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3);">
+            ✨ Pembuat Projek: Fatur
+          </div>
           <p style="margin-top:16px; font-size:0.88rem; color:var(--color-muted); max-width:380px;">
             Sistem monitoring device jaringan kantor secara real-time. 
             Pantau status online/offline komputer dan CCTV Hikvision dari satu dashboard terpusat.
@@ -57,6 +60,7 @@ export function renderAbout() {
             <div class="section-title" style="margin-bottom:12px;">👨‍💻 Informasi Teknis</div>
             <div style="display:flex; flex-direction:column; gap:8px; font-size:0.85rem;">
               ${[
+                ['Pembuat Projek', 'Fatur'],
                 ['Runtime', 'Node.js v24 + Windows Service'],
                 ['Database', 'SQLite (file-based)'],
                 ['Protokol', 'HTTPS wajib untuk akses publik'],
@@ -85,11 +89,11 @@ export function renderAbout() {
           <div class="card">
             <div class="section-title" style="margin-bottom:8px;">📜 Lisensi</div>
             <p style="font-size:0.82rem; color:var(--color-muted);">
-              DevWatch adalah perangkat lunak internal untuk penggunaan kantor. 
+              MonDev adalah perangkat lunak internal untuk penggunaan kantor. 
               Seluruh hak cipta dilindungi. Redistribusi tanpa izin dilarang.
             </p>
             <p style="font-size:0.78rem; color:var(--color-muted); margin-top:8px;">
-              © 2026 DevWatch Internal System
+              © 2026 MonDev Internal System
             </p>
           </div>
         </div>
@@ -101,7 +105,7 @@ export function renderAbout() {
 export function initAboutEvents() {
   document.getElementById('about-docs-btn')?.addEventListener('click', () => {
     Swal.fire({
-      title: '📖 Buku Panduan Penggunaan DevWatch',
+      title: '📖 Buku Panduan Penggunaan MonDev',
       html: `
         <div style="text-align:left; font-size:0.84rem; display:flex; flex-direction:column; gap:10px; max-height:360px; overflow-y:auto; padding-right:6px;">
           <div style="padding:8px; background:rgba(99,102,241,0.1); border-left:3px solid #6366f1; border-radius:4px;">

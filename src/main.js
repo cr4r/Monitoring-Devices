@@ -8,6 +8,7 @@ import { parseHash, navigate, canAccess } from './router.js';
 import { renderSidebar, initSidebarEvents, setActiveNav } from './components/sidebar.js';
 import { renderTopbar, initTopbarEvents } from './components/topbar.js';
 import { renderLogin, initLoginEvents } from './pages/login.js';
+import { renderSetup, initSetupEvents } from './pages/setup.js';
 import { renderDashboard, initDashboardEvents } from './pages/dashboard.js';
 import { renderDevices, initDevicesEvents } from './pages/devices.js';
 import { renderDeviceDetail, initDeviceDetailEvents } from './pages/device-detail.js';
@@ -20,11 +21,37 @@ import { destroyAllCharts } from './components/charts.js';
 import { connectWebSocket } from './api.js';
 import { initSettingsManager } from './settingsManager.js';
 import { initBrowserNotificationService } from './services/browserNotification.js';
+import { initThemeManager } from './themeManager.js';
 
-// Inisialisasi pengaturan dinamis, WebSocket, dan Push Notifications
+// Inisialisasi tema, pengaturan dinamis, WebSocket, dan Push Notifications
+initThemeManager();
 initSettingsManager();
 connectWebSocket();
 initBrowserNotificationService();
+
+// ---- SETUP STATUS CACHE & CHECKER ----
+let setupStatusCache = null;
+
+export async function checkSetupStatus(forceRefresh = false) {
+  if (setupStatusCache !== null && !forceRefresh) {
+    return setupStatusCache;
+  }
+  try {
+    const res = await fetch('/api/setup/status');
+    if (res.ok) {
+      const data = await res.json();
+      setupStatusCache = data.needsSetup === true;
+      return setupStatusCache;
+    }
+  } catch (err) {
+    console.warn('[Setup Guard]: Gagal cek status setup:', err);
+  }
+  return false;
+}
+
+export function invalidateSetupStatus() {
+  setupStatusCache = null;
+}
 
 // ---- SESSION MANAGEMENT ----
 const SESSION_KEY = 'devwatch_session';
@@ -40,14 +67,19 @@ export function getSession() {
 
 export function setSession(data) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  invalidateSetupStatus();
+  window.dispatchEvent(new CustomEvent('devwatch:session_change', { detail: data }));
 }
 
 export function logout() {
   localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem('devwatch_token');
+  window.dispatchEvent(new CustomEvent('devwatch:session_change', { detail: null }));
 }
 
 // ---- PAGE REGISTRY ----
 const pages = {
+  setup: { render: renderSetup, init: initSetupEvents },
   login: { render: renderLogin, init: initLoginEvents },
   dashboard: { render: renderDashboard, init: initDashboardEvents },
   devices: { render: renderDevices, init: initDevicesEvents },
@@ -78,6 +110,25 @@ async function handleRoute() {
   // Destroy chart instances on navigation
   destroyAllCharts();
 
+  // Setup security guards
+  const needsSetup = await checkSetupStatus();
+  if (needsSetup) {
+    // Database has 0 users -> force redirect to setup
+    if (route !== 'setup') {
+      navigate('setup');
+      return;
+    }
+    renderPage('setup', params);
+    return;
+  }
+
+  // Setup already completed -> prevent replay/accessing setup page
+  if (!needsSetup && route === 'setup') {
+    const currentSession = getSession();
+    navigate(currentSession ? 'dashboard' : 'login');
+    return;
+  }
+
   const session = getSession();
   const isLoggedIn = !!session;
 
@@ -106,8 +157,8 @@ function renderPage(route, params) {
   const pageDef = pages[route];
   if (!pageDef) return;
 
-  if (!isLoggedIn || route === 'login') {
-    // Login page: no shell
+  if (!isLoggedIn || route === 'login' || route === 'setup') {
+    // Login or Setup page: no shell
     app.innerHTML = pageDef.render(params);
     pageDef.init?.(navigateWrapper);
     return;

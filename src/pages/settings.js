@@ -6,12 +6,14 @@
 import Swal from 'sweetalert2';
 import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiCleanLogs } from '../api.js';
 import { applySystemSettings } from '../settingsManager.js';
+import { applyTheme, getSavedTheme } from '../themeManager.js';
 
 let activeSection = 'umum';
 let stagedLogo = undefined;
 let currentSettings = {
-  app_name: 'DevWatch',
+  app_name: 'MonDev',
   app_logo: '',
+  theme: 'dark',
   timezone: 'Asia/Jakarta',
   language: 'id',
   default_ping_interval: '60',
@@ -30,7 +32,7 @@ let currentSettings = {
   retention_days: '90',
   auto_backup_enabled: 'true',
   backup_schedule: 'daily',
-  backup_target_path: 'D:\\Backup\\DevWatch',
+  backup_target_path: 'D:\\Backup\\MonDev',
   auto_weekly_report: 'true',
   report_time: '07:00',
   report_recipients: 'admin@kantor.com',
@@ -100,6 +102,7 @@ function renderSettingsSection(section) {
 function renderUmum() {
   const tz = getVal('timezone', 'Asia/Jakarta');
   const lang = getVal('language', 'id');
+  const currentThemeVal = getSavedTheme();
   const activeLogo = stagedLogo !== undefined ? stagedLogo : getVal('app_logo', '');
 
   return `
@@ -112,7 +115,21 @@ function renderUmum() {
           <div class="settings-item-desc">Nama yang ditampilkan di header, sidebar, dan laporan</div>
         </div>
         <div class="settings-item-control">
-          <input type="text" class="form-control" id="set-app-name" value="${getVal('app_name', 'DevWatch')}" />
+          <input type="text" class="form-control" id="set-app-name" value="${getVal('app_name', 'MonDev')}" />
+        </div>
+      </div>
+
+      <div class="settings-item">
+        <div class="settings-item-info">
+          <div class="settings-item-label">Tema Tampilan</div>
+          <div class="settings-item-desc">Mode tampilan visual antarmuka aplikasi</div>
+        </div>
+        <div class="settings-item-control">
+          <select class="form-control" id="set-theme">
+            <option value="dark" ${currentThemeVal === 'dark' ? 'selected' : ''}>🌙 Mode Gelap (Dark Mode)</option>
+            <option value="light" ${currentThemeVal === 'light' ? 'selected' : ''}>☀️ Mode Terang Lembut (Soft Light Mode)</option>
+            <option value="auto" ${currentThemeVal === 'auto' ? 'selected' : ''}>💻 Mengikuti Sistem OS (Auto)</option>
+          </select>
         </div>
       </div>
 
@@ -445,7 +462,7 @@ function renderLog() {
           <div class="settings-item-desc">Folder tujuan backup database (path lokal server)</div>
         </div>
         <div class="settings-item-control">
-          <input type="text" class="form-control" id="set-backup-path" value="${getVal('backup_target_path', 'D:\\Backup\\DevWatch')}" />
+          <input type="text" class="form-control" id="set-backup-path" value="${getVal('backup_target_path', 'D:\\Backup\\MonDev')}" />
         </div>
       </div>
 
@@ -604,12 +621,20 @@ function bindSaveButtons() {
     };
   }
 
+  const setThemeSelect = document.getElementById('set-theme');
+  if (setThemeSelect) {
+    setThemeSelect.onchange = (e) => {
+      applyTheme(e.target.value, false);
+    };
+  }
+
   const sectionExtractors = {
     'save-umum-btn': () => {
       const payload = {
         app_name: document.getElementById('set-app-name')?.value,
         timezone: document.getElementById('set-timezone')?.value,
         language: document.getElementById('set-lang')?.value,
+        theme: document.getElementById('set-theme')?.value,
       };
       if (stagedLogo !== undefined) {
         payload.app_logo = stagedLogo;
