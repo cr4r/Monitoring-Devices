@@ -1,3 +1,54 @@
-node_modules
+# ================================================================
+# DevWatch — .gitignore
+# ================================================================
+
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Environment Variables
 .env
-dist
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Production Build & Bundles
+dist/
+dist-ssr/
+*.local
+
+# Database & SQLite Storage
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/backups/
+*.sqlite
+
+# SSL / TLS Private Keys & Certificates (pertahankan .gitkeep)
+ssl/*.key
+ssl/*.crt
+ssl/*.pem
+ssl/*.pfx
+!ssl/.gitkeep
+
+# Logs & Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

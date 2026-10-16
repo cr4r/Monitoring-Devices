@@ -296,4 +296,12 @@ npm run test:load
 2. Jalankan kembali `npm run server`.
 
 ---
+
+## 13. Panduan Instalasi & Deploy Server Produksi
+
+Bagi Administrator IT atau DevOps yang ingin memasang dan mengompilasi sistem DevWatch pada server produksi permanen (Windows Server sebagai Windows Service, Linux VM dengan PM2 / systemd, konfigurasi reverse proxy HTTPS Caddy/Nginx, dan strategi pencadangan basis data), silakan merujuk ke buku panduan teknis khusus:
+
+👉 **[PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md](PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md)**
+
+---
 *DevWatch — Solusi Pemantauan Perangkat Jaringan Andal & Tangguh.*

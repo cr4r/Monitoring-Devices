@@ -1,6 +1,7 @@
 # 📡 DevWatch — Sistem Monitoring Device & Jaringan
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com)
+[![Milestones](https://img.shields.io/badge/PRD_Milestones-Fase_1--5_Complete_100%25-brightgreen.svg)](#-status-pencapaian-milestone-prd)
 [![Vite](https://img.shields.io/badge/Vite-5.4-purple.svg)](https://vitejs.dev/)
 [![JavaScript](https://img.shields.io/badge/Vanilla_JS-ES6+-yellow.svg)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 [![CSS3](https://img.shields.io/badge/CSS3-Modern_Dark_Mode-blue.svg)](https://developer.mozilla.org/en-US/docs/Web/CSS)
@@ -18,21 +19,38 @@ Aplikasi ini mengusung antarmuka modern bertema gelap (*Dark Glassmorphism*) yan
 | Halaman Login & Proteksi Keamanan | Dashboard Utama & Status Kartu |
 |:---:|:---:|
 | ![Halaman Login](images/01-login-preview.png) | ![Dashboard Kartu](images/02-dashboard-cards.png) |
-| **Peta Topologi Jaringan Interaktif (Canvas)** | **Manajemen Perangkat & Impor/Ekspor CSV** |
-| ![Peta Visual Topologi](images/07-peta-visual.png) | ![Manajemen Device](images/03-device-management.png) |
-| **Detail Perangkat & Grafik Kecepatan Respons** | **Dialog Interaktif SweetAlert2 (Hasil Ping)** |
-| ![Detail Perangkat](images/05-device-detail.png) | ![SweetAlert Ping](images/06-sweetalert-ping.png) |
-| **Log Sistem Bahasa Manusia (3 Tab)** | **Laporan Otomatis & Analisis SLA** |
-| ![Log Sistem](images/04-system-logs.png) | ![Laporan Mingguan](images/08-laporan-sla.png) |
-| **Pengaturan Sistem (6 Kategori)** | *(Antarmuka responsif ramah layar tablet & desktop)* |
-| ![Pengaturan Sistem](images/09-pengaturan.png) | *Semua aksi dilengkapi feedback audio-visual & dialog modern.* |
+| **Peta Topologi Hierarki Baru (Gateway ➔ Switch ➔ Device)** | **Grafik Timeline Global & Latensi 24 Jam** |
+| ![Peta Topologi Visual](images/10-topology-map.png) | ![Grafik Timeline 24 Jam](images/11-timeline-chart.png) |
+| **Manajemen Perangkat & Impor/Ekspor CSV** | **Detail Perangkat & Grafik Kecepatan Respons** |
+| ![Manajemen Device](images/03-device-management.png) | ![Detail Perangkat](images/05-device-detail.png) |
+| **Log Sistem Bahasa Manusia (3 Tab & Ekspor PDF)** | **Laporan Otomatis, SLA Tracker & Cetak PDF** |
+| ![Log Sistem](images/04-system-logs.png) | ![Laporan SLA](images/13-laporan-sla-export.png) |
+| **Cadangan Basis Data SQLite & Retensi Log** | **Dialog Interaktif SweetAlert2 (Hasil Ping)** |
+| ![Pengaturan Backup](images/12-backup-system.png) | ![SweetAlert Ping](images/06-sweetalert-ping.png) |
+
+---
+
+## 🏆 Status Pencapaian Milestone PRD (100% Complete)
+
+Seluruh 5 fase pengembangan sesuai dokumen [PRD_Device_Monitoring.md](PRD_Device_Monitoring.md) telah selesai dan lulus verifikasi pengujian:
+
+| Fase Milestone | Status | Fitur & Implementasi Utama |
+|---|:---:|---|
+| **Fase 1 — Core Foundation** | `[x]` Selesai | Node.js, Express 5, SQLite (`node:sqlite`), Worker Ping ICMP native, Autentikasi JWT, Windows Service. |
+| **Fase 2 — Fitur Utama** | `[x]` Selesai | CRUD Device, 3 Jenis Log (Status, Aktivitas, Konfigurasi), Push Notification, Mode Maintenance, Multiple Delete. |
+| **Fase 3 — Protokol Lanjutan** | `[x]` Selesai | ISAPI Hikvision Digest Auth, RTSP Stream Port 554, ONVIF Probe, Import Massal CSV & Download Template. |
+| **Fase 4 — Laporan & Analytics** | `[x]` Selesai | Evaluasi Uptime/SLA Tracker riil, Snapshot Mingguan Otomatis, Ekspor Laporan Resmi PDF, Timeline 24 Jam. |
+| **Fase 5 — Polish & Pengujian** | `[x]` Selesai | Peta Topologi Hierarki Canvas, Backup Database WAL & Download `.sqlite`, Vacuum Log, Uji Beban 250 Perangkat, Dual-Mode HTTPS (Native + Caddy/Nginx). |
+
+> 📘 **Buku Panduan Operasional Lengkap:** Silakan pelajari [DOKUMENTASI_PENGGUNAAN.md](DOKUMENTASI_PENGGUNAAN.md) untuk panduan operasional IT harian, SOP perbaikan, dan pemeliharaan server.
 
 ---
 
 ## 📑 Daftar Isi
 
-1. [✨ Sekilas Tentang DevWatch](#-sekilas-tentang-devwatch)
-2. [🔄 Alur Kerja Sistem (System Workflows)](#-alur-kerja-sistem-system-workflows)
+1. [🏆 Status Pencapaian Milestone PRD](#-status-pencapaian-milestone-prd-100-complete)
+2. [✨ Sekilas Tentang DevWatch](#-sekilas-tentang-devwatch)
+3. [🔄 Alur Kerja Sistem (System Workflows)](#-alur-kerja-sistem-system-workflows)
    - [Alur Deteksi & Siklus Pemantauan Status](#1-alur-deteksi--siklus-pemantauan-status)
    - [Alur Siklus Hidup Mode Pemeliharaan (Maintenance Lifecycle)](#2-alur-siklus-hidup-mode-pemeliharaan-maintenance-lifecycle)
    - [Alur Manajemen & Penambahan Perangkat Baru](#3-alur-manajemen--penambahan-perangkat-baru)
@@ -249,65 +267,89 @@ Sebelum menjalankan DevWatch, pastikan komputer Anda memenuhi prasyarat berikut:
 
 ## 🛠️ Panduan Instalasi & Menjalankan
 
-Ikuti 3 langkah mudah berikut untuk menjalankan DevWatch di komputer lokal Anda:
+Ikuti langkah mudah berikut untuk menjalankan DevWatch di komputer Anda:
 
 ### Langkah 1: Masuk ke Folder Proyek
-Buka terminal (PowerShell atau Command Prompt di Windows, atau Terminal di Mac/Linux) dan arahkan ke lokasi folder:
+Buka terminal (PowerShell di Windows, atau Terminal di Linux/macOS) dan arahkan ke lokasi folder:
 ```bash
 cd d:\Projek\WEB\Monitoring-Devices
 ```
 
-### Langkah 2: Pasang Ketergantungan (Dependencies)
-Jalankan perintah ini untuk mengunduh modul pustaka yang dibutuhkan (`vite`, `chart.js`, `sweetalert2`, `jspdf`, `papaparse`):
+### Langkah 2: Siapkan File Konfigurasi Lingkungan (`.env`)
+Salin berkas template `.env-example` menjadi `.env`:
+```bash
+# Windows PowerShell:
+Copy-Item .env-example .env
+
+# Linux / macOS:
+cp .env-example .env
+```
+*Anda dapat menyesuaikan port, JWT secret, dan parameter timeout di dalam file `.env` jika diperlukan.*
+
+### Langkah 3: Pasang Dependensi
+Jalankan perintah ini untuk mengunduh modul pustaka yang dibutuhkan:
 ```bash
 npm install
 ```
-*Proses ini biasanya memakan waktu 15–45 detik tergantung kecepatan koneksi internet Anda.*
 
-### Langkah 3: Jalankan Server Pengembangan
-Setelah instalasi selesai, jalankan server DevWatch:
+### Langkah 4: Inisialisasi Basis Data & Data Awal
+Jalankan seeder untuk mengisi 20 perangkat awal, akun pengguna, dan riwayat log:
 ```bash
+npm run seed
+```
+
+### Langkah 5: Jalankan Aplikasi
+Pilih mode eksekusi yang diinginkan:
+
+#### Opsi A: Mode Produksi Mandiri (Fullstack Terintegrasi)
+```bash
+npm run build
+npm start
+```
+Aplikasi langsung aktif dan siap diakses di: **`http://localhost:3000`**
+
+#### Opsi B: Mode Pengembangan (Vite HMR Live-Reload)
+```bash
+# Terminal 1: Backend Server (Port 3000)
+npm run server
+
+# Terminal 2: Frontend Vite Dev Server (Port 5173)
 npm run dev
 ```
-
-Output di terminal akan menampilkan:
-```text
-  VITE v5.4.10  ready in 419 ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-  ➜  press h + enter to show help
-```
-
-Buka peramban (browser) favorit Anda dan kunjungi tautan:  
-👉 **[http://localhost:5173](http://localhost:5173)**
+Akses di: **`http://localhost:5173`** (panggilan API & WebSocket otomatis diteruskan ke backend).
 
 ---
 
-### Perintah Penting Lainnya
+### Daftar Perintah NPM Lengkap
 
 | Perintah | Fungsi | Keterangan |
 |---|---|---|
-| `npm run dev` | Menjalankan server dev | Dengan fitur hot-reload otomatis saat kode diubah |
-| `npm run build` | Membuat berkas produksi | Mengompilasi kode ke folder `dist/` siap deploy |
-| `npm run preview`| Menguji hasil produksi | Menjalankan build `dist/` di server lokal |
+| `npm start` | Menjalankan server produksi | Menyajikan frontend statis & backend terintegrasi di port 3000 |
+| `npm run dev` | Menjalankan Vite dev server | Hot Module Replacement (HMR) untuk pengembangan antarmuka |
+| `npm run build` | Membuat bundel produksi | Mengompilasi kode frontend ke folder `dist/` |
+| `npm run server` | Menjalankan backend saja | Express server + WebSocket worker di port 3000 |
+| `npm run seed` | Reset basis data SQLite | Mengisi ulang 20 perangkat demo dan akun bawaan |
+| `npm run test:load` | **Uji Beban (Load Test)** | Menguji performa konkurensi 250 perangkat & latensi SQLite |
+| `npm run cert:generate` | **Generator Sertifikat TLS** | Membuat sertifikat self-signed lokal (`ssl/server.key` & `ssl/server.crt`) |
+| `npm run service:install` | **Pasang Windows Service** | Mendaftarkan DevWatch sebagai background service otomatis di Windows |
+| `npm run service:uninstall` | **Hapus Windows Service** | Menghapus background service dari Windows Services |
 
 ---
 
-## 🔐 Akun Demo & Hak Akses (RBAC)
+## 🔐 Akun Pengguna & Hak Akses (RBAC)
 
-Sistem telah dilengkapi dengan 3 akun simulasi yang dapat langsung digunakan untuk menguji fungsionalitas dan perbedaan hak akses:
+Sistem telah dilengkapi dengan 3 akun bawaan yang siap digunakan untuk menguji fungsionalitas dan perbedaan hak akses:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       DAFTAR AKUN DEMO DEVWATCH                             │
-├───────────────────┬──────────────────────┬─────────────┬────────────────────┤
-│ PERAN (ROLE)      │ EMAIL                │ PASSWORD    │ HAK AKSES          │
-├───────────────────┼──────────────────────┼─────────────┼────────────────────┤
-│ 👑 Administrator  │ admin@kantor.com     │ admin123    │ Penuh (Semua Fitur)│
-│ 🔧 Teknisi        │ teknisi@kantor.com   │ teknisi123  │ Kelola Perangkat   │
-│ 👁️ Viewer         │ viewer@kantor.com    │ viewer123   │ Hanya Baca (View)  │
-└───────────────────┴──────────────────────┴─────────────┴────────────────────┘
+│                       DAFTAR AKUN PENGGUNA DEVWATCH                         │
+├───────────────────┬──────────────────────────┬─────────────┬────────────────┤
+│ PERAN (ROLE)      │ EMAIL                    │ PASSWORD    │ HAK AKSES      │
+├───────────────────┼──────────────────────────┼─────────────┼────────────────┤
+│ 👑 Administrator  │ admin@devwatch.local     │ admin123    │ Penuh (Semua)  │
+│ 🔧 Teknisi        │ teknisi@devwatch.local   │ teknisi123  │ Kelola Perangkat│
+│ 👁️ Viewer         │ viewer@devwatch.local    │ viewer123   │ Hanya Baca     │
+└───────────────────┴──────────────────────────┴─────────────┴────────────────┘
 ```
 
 ---
@@ -344,18 +386,20 @@ Berikut rincian lengkap setiap halaman aplikasi disertai tangkapan layar asli sa
 ---
 
 ### 3. Peta Topologi Jaringan (Visual Canvas Map)
-![Peta Topologi Jaringan](images/07-peta-visual.png)
+![Peta Topologi Jaringan](images/10-topology-map.png)
 
-- **Fungsi Utama**: Visualisasi tata letak arsitektur koneksi jaringan dari Switch/Router pusat ke seluruh komputer kerja dan kamera CCTV.
+- **Fungsi Utama**: Visualisasi tata letak arsitektur koneksi jaringan dari Gateway dan Core Switch ke seluruh switch grup dan komputer kerja/kamera CCTV.
 - **Fitur Interaktif Canvas**:
-  - **Drag & Pan**: Klik dan tahan mouse untuk menggeser kanvas ke seluruh area.
-  - **Zoom In / Out**: Putar roda scroll mouse atau tekan tombol pembesar `+` dan `-` di pojok kiri atas.
-  - **Status Node Warna-Warni**:
-    - 🟢 Node Hijau: Komputer / CCTV online dengan jalur koneksi solid.
-    - 🔴 Node Merah: Perangkat terputus dengan garis putus-putus merah berkedip.
-    - 🟡 Node Kuning: Perangkat dalam mode perawatan.
-    - 🟣 Node Ungu Pusat: Core Switch / Router utama kantor.
-  - **Hover Tooltip**: Arahkan kursor ke node manapun untuk melihat alamat IP dan nama perangkat seketika.
+  - **Hierarki Jaringan Jelas**:
+    - 🌐 **Gateway Router (`192.168.1.1`)**: Gerbang utama koneksi WAN.
+    - 🔀 **Core Switch L3 (`192.168.1.2`)**: Switch tulang punggung utama kantor.
+    - 📦 **Switch Distribusi Grup**: Switch per lokasi/divisi (Server, CCTV, Office).
+    - 💻 / 📷 **End Devices**: Komputer staf dan kamera pengawas.
+  - **Animasi Partikel Paket Data**: Jalur kabel online memancarkan animasi partikel data bergerak (*flowing packet beads*), serta cincin aura berdenyut (*pulsing aura*) pada perangkat yang aktif.
+  - **Drag & Drop Bebas**: Geser sembarang node perangkat di kanvas untuk menyesuaikan posisi dengan denah ruangan nyata. Posisi tersimpan otomatis.
+  - **Tombol 📐 Auto-Layout**: Menyusun kembali seluruh struktur jaringan ke hierarki yang rapi hanya dengan satu klik.
+  - **Zoom & Pan**: Kendali kanvas halus via scroll mouse atau tombol zoom toolbar.
+  - **Hover Tooltip & Quick Action Modal**: Arahkan kursor untuk melihat HUD ringkasan (IP, latency ms, status) dan klik node untuk memicu aksi cepat: **📡 Probe**, **🔧 Maintenance**, atau **🔍 Detail Perangkat**.
 
 ---
 
@@ -366,12 +410,13 @@ Berikut rincian lengkap setiap halaman aplikasi disertai tangkapan layar asli sa
 - **Fitur Utama**:
   - **Tabel Responsif**: Menampilkan Nama, IP Address, Jenis, Protokol Metode, Interval Cek, Grup Lokasi, dan Status.
   - **Tombol Tambah Device**: Membuka modal formulir pendaftaran perangkat baru lengkap dengan opsi tes ping sebelum disimpan.
+  - **Multiple Select & Hapus Massal**: Tandai beberapa perangkat via checkbox untuk dihapus secara massal dalam satu konfirmasi.
   - **Aksi Cepat di Baris**:
     - 🔍 *Lihat Rincian*: Masuk ke halaman spesifikasi perangkat.
     - ✏️ *Edit*: Mengubah nama, IP, atau interval pengecekan.
     - 📋 *Duplikat*: Menyalin data perangkat untuk registrasi cepat komputer kembar di ruangan yang sama.
     - 🗑️ *Hapus*: Menghapus perangkat dengan konfirmasi dialog SweetAlert2 merah.
-  - **Impor & Ekspor CSV**: Memudahkan migrasi basis data dan pencadangan massal.
+  - **Impor & Ekspor CSV**: Memudahkan migrasi basis data dan pencadangan massal dilengkapi tombol **Unduh Template CSV**.
 
 ---
 
@@ -392,47 +437,55 @@ Berikut rincian lengkap setiap halaman aplikasi disertai tangkapan layar asli sa
 
 - **Fungsi Utama**: Menghubungi perangkat secara on-demand tanpa perlu menunggu jadwal polling otomatis.
 - **Pengalaman Pengguna**:
-  - Saat tombol 📡 **Ping** diklik, modal SweetAlert menampilkan animasi loading pemindaian.
-  - Jika perangkat merespons, dialog memunculkan waktu latensi (contoh: **5 ms — Online ✅**).
-  - Jika gagal, dialog menampilkan peringatan merah jelas dengan saran pengecekan kabel fisik atau adaptor daya.
+  - Saat tombol 📡 **Ping** diklik, spinner animasi mikro berputar menandakan request sedang dikirim ke backend ICMP / ISAPI.
+  - Hasil respons ditampilkan secara elegan via dialog modal **SweetAlert2**:
+    - **Berhasil (Hijau)**: Menampilkan latensi aktual (ms) dan detail byte respons.
+    - **Gagal (Merah)**: Menampilkan keterangan galat (Timeout / Destination Host Unreachable / Device Offline).
+    - **Dialog Konfirmasi Hapus**: Perlindungan ekstra bertingkat untuk mencegah penghapusan perangkat secara tidak sengaja.
 
 ---
 
-### 7. Log Sistem Berbahasa Manusia
-![Log Sistem](images/04-system-logs.png)
+### 7. Log Sistem & Audit Trail
+![Log Sistem](images/07-system-logs.png)
 
-- **Fungsi Utama**: Merekam jejak audit dan peristiwa jaringan dalam susunan kata yang mudah dipahami manusia biasa.
-- **3 Tab Kategori Khusus**:
-  1. **Log Status Device**: Catatan otomatis saat perangkat mati atau pulih kembali.
-  2. **Log Aktivitas User**: Catatan tindakan staf, waktu login, penambahan perangkat, atau pengaturan maintenance.
-  3. **Log Perubahan Konfigurasi**: Rekam jejak perubahan IP, interval polling, dan batas toleransi sistem.
-- **Pewarnaan Baris Cerdas**: Latar belakang merah muda lembut untuk insiden offline, hijau muda untuk pemulihan online, dan kuning untuk mode pemeliharaan.
-- **Filter Canggih & Ekspor**: Filter berdasarkan tanggal mulai-selesai, jenis log, atau pencarian teks bebas. Tombol **Export PDF** siap mencetak ringkasan audit.
-
----
-
-### 8. Laporan Uptime & Evaluasi SLA
-![Laporan SLA Mingguan](images/08-laporan-sla.png)
-
-- **Fungsi Utama**: Evaluasi berkala untuk pimpinan dan pemenuhan standar layanan teknologi informasi.
-- **Isi Laporan**:
-  - Kartu Ringkasan: Rata-rata uptime keseluruhan (misal: 97.8%), jumlah insiden, dan total waktu henti.
-  - **Grafik Tren Uptime Harian**: Garis tren keaktifan sistem dari Senin hingga Minggu.
-  - **Grafik Batang Jumlah Insiden**: Memetakan hari mana yang paling sering mengalami gangguan listrik/jaringan.
-  - **Daftar Device Terbaik & Device yang Perlu Perhatian**: Membantu tim teknisi memprioritaskan penggantian kabel atau perangkat keras yang sering rusak.
+- **Fungsi Utama**: Rekaman kronologis seluruh kejadian jaringan dan aktivitas staf IT.
+- **Fitur 3 Tab Log**:
+  1. **Log Status**: Perubahan kondisi perangkat (Online / Offline / Maintenance) lengkap dengan durasi latency ms dan penyebab.
+  2. **Log Aktivitas**: Riwayat tindakan staf (Login, Ping manual, Ekspor data, Ekspor PDF).
+  3. **Log Konfigurasi**: Pencatatan audit saat ada penambahan, pengubahan, atau penghapusan perangkat.
+- **Alat Pencarian**:
+  - Filter berdasarkan rentang tanggal kalender.
+  - Dropdown filter jenis log & tingkat severitas (INFO, WARNING, ERROR).
+  - Kolom pencarian teks instan untuk memfilter hostname atau IP tertentu.
 
 ---
 
-### 9. Pengaturan Sistem Terpadu (6 Kategori)
-![Pengaturan Sistem](images/09-pengaturan.png)
+### 8. Laporan Uptime, Evaluasi SLA & Ekspor PDF
+![Laporan SLA & Ekspor PDF](images/13-laporan-sla-export.png)
 
-- **Fungsi Utama**: Pusat konfigurasi parameter aplikasi yang terbagi menjadi 6 tab navigasi:
-  1. **Umum**: Nama instansi, zona waktu nasional (WIB/WITA/WIT), interval refresh otomatis layar dashboard.
-  2. **Monitoring**: Batas toleransi Ping Timeout (ms), batas kegagalan sebelum dinyatakan offline (default: 3 kali berturut-turut), port standar CCTV RTSP (default: 554).
-  3. **Notifikasi**: Integrasi Bot Telegram, WhatsApp Gateway, dan Email SMTP untuk pengiriman sinyal darurat saat server mati di luar jam kerja.
-  4. **Keamanan**: Durasi kedaluwarsa sesi (menit), batas percobaan login gagal, dan pembatasan IP lokal.
-  5. **Log & Backup**: Waktu retensi log (otomatis hapus log setelah 30/60/90 hari) dan tombol cadangkan (*backup*) basis data.
-  6. **Laporan Terjadwal**: Pengaturan pengiriman ringkasan email otomatis setiap hari Senin pagi.
+- **Fungsi Utama**: Evaluasi kepatuhan tingkat layanan (Service Level Agreement) dan penyusunan laporan operasional manajemen IT.
+- **Metrik SLA Eksekutif**:
+  - Kartu indikator pemenuhan SLA 24 jam, 7 hari, dan 30 hari dengan target standar 99.5%.
+  - **Grafik Tren Uptime & Downtime**: Visualisasi rasio ketersediaan sistem sepanjang waktu.
+  - **Daftar Perangkat Performa Terendah (Top 5 Down)**: Peringatan dini perangkat yang paling sering mengalami gangguan.
+  - **Rekapitulasi Insiden**: Daftar seluruh pemadaman jaringan lengkap dengan waktu henti, waktu pemulihan, durasi, dan catatan penyebab.
+  - **Unduh Laporan PDF Resmi**: Menghasilkan dokumen PDF korporat berkelas eksekutif lengkap dengan kop instansi, rekap skor SLA, tabel insiden, dan kolom pengesahan tanda tangan.
+  - **Ekspor CSV**: Mengunduh data mentah riwayat insiden untuk kebutuhan analisis eksternal di Excel.
+
+---
+
+### 9. Pengaturan Sistem, Cadangan Basis Data & Retensi
+![Pengaturan Sistem](images/12-backup-system.png)
+
+- **Fungsi Utama**: Pusat konfigurasi parameter aplikasi dan pemeliharaan basis data:
+  1. **Umum**: Nama instansi, upload logo perusahaan (Base64), zona waktu nasional (WIB/WITA/WIT), dan bahasa antarmuka.
+  2. **Monitoring**: Batas toleransi Ping Timeout (ms), batas kegagalan sebelum dinyatakan offline (default: 3x), port standar RTSP (554).
+  3. **Notifikasi**: Tombol uji push notification browser, penanda dibaca, dan pembersihan riwayat notifikasi.
+  4. **Keamanan**: Durasi kedaluwarsa sesi JWT, ambang batas proteksi brute force login.
+  5. **Sistem & Basis Data**:
+     - **Cadangkan Database Sekarang**: Mengeksekusi checkpoint WAL SQLite (`PRAGMA wal_checkpoint(TRUNCATE)`) dan membuat salinan timestamped di `data/backups/`.
+     - **Unduh Berkas SQLite**: Mengunduh file `.sqlite` cadangan secara instan dari browser.
+     - **Bersihkan Log Lama**: Menghapus catatan riwayat melebihi batas retensi dan menjalankan `PRAGMA incremental_vacuum` untuk mengompresi ukuran disk basis data.
 
 ---
 
@@ -442,22 +495,36 @@ Proyek DevWatch dirancang dengan pola modular berbasis komponen murni tanpa kete
 
 ```text
 Monitoring-Devices/
+├── .env-example                 # Template konfigurasi variabel lingkungan (.env)
+├── DOKUMENTASI_PENGGUNAAN.md    # Buku panduan operasional IT & SOP lengkap (12 Bab)
+├── PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md # Buku panduan build & deployment server produksi lengkap
+├── PRD_Device_Monitoring.md     # Dokumen Persyaratan Produk (PRD) referensi Fase 1–5
+├── README.md                    # Dokumentasi utama aplikasi (berkas ini)
 ├── index.html                   # Shell HTML utama & kontainer aplikasi SPA
 ├── package.json                 # Konfigurasi dependensi dan skrip proyek
 ├── vite.config.js               # Konfigurasi bundler Vite + reverse proxy ke Express
-├── PRD_Device_Monitoring.md     # Dokumen Persyaratan Produk (PRD) referensi
-├── README.md                    # Dokumentasi lengkap aplikasi (berkas ini)
 │
-├── data/                        # Penyimpanan Database
-│   └── devwatch.db              # Database SQLite persisten (Node 24 built-in DatabaseSync)
+├── data/                        # Penyimpanan Database SQLite
+│   ├── .gitkeep
+│   ├── devwatch.db              # Database SQLite persisten (Node built-in DatabaseSync)
+│   └── backups/                 # Arsip snapshot cadangan database timestamped (.sqlite)
+│
+├── deployment/                  # Konfigurasi Reverse Proxy Produksi
+│   ├── Caddyfile                # Reverse proxy Caddy 2 (Automatic HTTPS Let's Encrypt)
+│   └── nginx.conf               # Reverse proxy Nginx (HTTP/2 + WebSocket)
+│
+├── ssl/                         # Direktori Sertifikat TLS/HTTPS Mandiri
+│   ├── .gitkeep
+│   ├── server.key               # Kunci privat TLS (dihasilkan via npm run cert:generate)
+│   └── server.crt               # Sertifikat X.509
 │
 ├── server/                      # Backend Express & Worker Engine
-│   ├── index.js                 # Entry point Express, WebSocket server, dan static fallback
-│   ├── config.js                # Konfigurasi port, JWT secret, dan toleransi polling
+│   ├── index.js                 # Entry point Express, Dual-Mode HTTPS, WebSocket, static fallback
+│   ├── config.js                # Konfigurasi port, JWT, database, timeout, dan path SSL
 │   ├── database/
-│   │   ├── schema.sql           # Skema DDL 7 tabel (users, devices, logs, incidents, settings)
-│   │   ├── db.js                # Wrapper koneksi synchronous SQLite Node 24
-│   │   └── seed.js              # Seeder data pengguna demo, 20 perangkat awal, dan log
+│   │   ├── schema.sql           # Skema DDL 8 tabel (users, devices, logs, incidents, settings, dll)
+│   │   ├── db.js                # Wrapper koneksi synchronous SQLite Node 24 (WAL mode)
+│   │   └── seed.js              # Seeder data pengguna default, 20 perangkat awal, dan riwayat log
 │   ├── middleware/
 │   │   ├── auth.js              # JWT authentication & Role-Based Access Control (RBAC)
 │   │   ├── rateLimiter.js       # Proteksi brute-force login (lockout 15 menit jika 5x gagal)
@@ -470,12 +537,14 @@ Monitoring-Devices/
 │   │   └── reportService.js     # Generator laporan mingguan, SLA bulanan, dan audit
 │   ├── routes/
 │   │   ├── auth.js              # Endpoint login, profil /me, logout
-│   │   ├── devices.js           # CRUD perangkat, ping instan, maintenance, impor CSV
+│   │   ├── devices.js           # CRUD perangkat, ping instan, maintenance, impor CSV, info ISAPI
 │   │   ├── logs.js              # Query & filter log sistem (3 tab)
 │   │   ├── reports.js           # Laporan mingguan, SLA tracker, insiden
 │   │   ├── users.js             # Administrasi pengguna & reset kata sandi (Admin Only)
-│   │   └── settings.js          # Pengaturan sistem 6 kategori
+│   │   └── settings.js          # Pengaturan sistem, backup database, dan vacuum log
 │   └── scripts/
+│       ├── load-test.js         # Pengujian beban & stress testing 250 perangkat concurrent
+│       ├── generate-cert.js     # Generator sertifikat TLS lokal self-signed (RSA 2048-bit)
 │       ├── install-service.js   # Pemasang Background Windows Service
 │       └── uninstall-service.js # Pencabut Windows Service
 │
@@ -486,8 +555,9 @@ Monitoring-Devices/
 │   ├── styles/                  # Modul Tata Gaya (CSS Murni Modern Dark Glassmorphism)
 │   ├── components/              # Komponen sidebar, topbar, device-card, grafik Chart.js
 │   ├── data/                    # State perangkat, sinkronisasi otomatis dengan backend
-│   └── pages/                   # Kontroler halaman (login, dashboard, devices, logs, reports, users, settings)
-└── images/                      # Tangkapan layar dokumentasi
+│   ├── pages/                   # Kontroler halaman (login, dashboard, devices, logs, reports, users, settings, about)
+│   └── services/                # Ekspor PDF resmi (jsPDF) & notifikasi peramban
+└── images/                      # Tangkapan layar galeri dokumentasi
 ```
 
 ---
@@ -573,8 +643,59 @@ Semua endpoint dilindungi dengan header `Authorization: Bearer <token>` kecuali 
 | `PUT` | `/api/users/:id` | Admin Only | Memperbarui nama, peran, atau status aktif pengguna |
 | `DELETE`| `/api/users/:id` | Admin Only | Menghapus akun pengguna |
 | `POST` | `/api/users/:id/reset-password` | Admin Only | Mengganti kata sandi pengguna |
+| `GET` | `/api/devices/:id/isapi` | Semua Peran | Mengambil metadata perangkat CCTV Hikvision via HTTP ISAPI |
 | `GET` | `/api/settings` | Admin Only | Mengambil pengaturan umum, monitoring, dan notifikasi |
 | `PUT` | `/api/settings` | Admin Only | Menyimpan perubahan pengaturan sistem |
+| `POST` | `/api/settings/backup` | Admin Only | Menjalankan WAL checkpoint & backup cadangan basis data |
+| `GET` | `/api/settings/backup/download` | Admin Only | Mengunduh berkas fisik snapshot cadangan `.sqlite` |
+| `POST` | `/api/settings/clean-logs` | Admin Only | Pembersihan log melampaui retensi & disk vacuum |
+
+---
+
+### 4. Panduan Deployment Produksi & HTTPS (Dual-Mode)
+
+> [!TIP]
+> **Panduan Server Produksi Lengkap**: Untuk tutorial langkah-demi-langkah mendalam mencakup setup Windows Server, Linux systemd, Process Manager (PM2 / NSSM), alur build, pencadangan otomatis, dan troubleshooting, silakan baca **[PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md](PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md)**.
+
+DevWatch mendukung fleksibilitas deployment skala enterprise dengan dua mode enkripsi TLS/HTTPS:
+
+#### Opsi 1: Native Node.js HTTPS (Tanpa Reverse Proxy Tambahan)
+Sangat ideal untuk intranet instansi atau server Windows lokal yang memerlukan komunikasi terenkripsi langsung dari Node:
+1. Buat sertifikat TLS lokal (RSA 2048-bit, masa berlaku 365 hari):
+   ```bash
+   npm run cert:generate
+   ```
+   *Sertifikat dan private key akan otomatis disimpan di `ssl/server.crt` dan `ssl/server.key`.*
+2. Aktifkan konfigurasi di berkas `.env`:
+   ```env
+   USE_HTTPS=true
+   PORT=3443
+   SSL_KEY_PATH=./ssl/server.key
+   SSL_CERT_PATH=./ssl/server.crt
+   ```
+3. Jalankan server:
+   ```bash
+   npm start
+   ```
+   Aplikasi akan melayani HTTPS & Secure WebSocket (`wss://`) di port `3443`.
+
+#### Opsi 2: Reverse Proxy Standar Industri (Caddy & Nginx)
+Tersedia konfigurasi siap pakai di direktori `deployment/`:
+
+- **Caddy Server (`deployment/Caddyfile`)**:
+  Menyediakan sertifikat SSL Let's Encrypt gratis dan terbarukan otomatis:
+  ```bash
+  caddy run --config deployment/Caddyfile
+  ```
+- **Nginx (`deployment/nginx.conf`)**:
+  Konfigurasi reverse proxy HTTP/2 tangguh dengan penanganan upgrade WebSocket (`/ws`), header keamanan Helmet, dan caching statis aset frontend Vite.
+
+#### Opsi 3: Pengujian Beban Jaringan (Stress & Load Testing)
+Sebelum mengoperasikan di jaringan kantor yang sangat padat, uji performa konkurensi backend dengan skrip simulasi 250 perangkat simultan:
+```bash
+npm run test:load
+```
+*Hasil tes memvalidasi waktu respons probe, kestabilan event loop Node.js, dan kehandalan SQLite WAL tanpa kebocoran memori (leak).*
 
 ---
 
