@@ -122,13 +122,13 @@ function renderUmum() {
       <div class="settings-item">
         <div class="settings-item-info">
           <div class="settings-item-label">Tema Tampilan</div>
-          <div class="settings-item-desc">Mode tampilan visual antarmuka aplikasi</div>
+          <div class="settings-item-desc">Tema warna aplikasi</div>
         </div>
         <div class="settings-item-control">
           <select class="form-control" id="set-theme">
-            <option value="dark" ${currentThemeVal === 'dark' ? 'selected' : ''}>🌙 Mode Gelap (Dark Mode)</option>
-            <option value="light" ${currentThemeVal === 'light' ? 'selected' : ''}>☀️ Mode Terang Lembut (Soft Light Mode)</option>
-            <option value="auto" ${currentThemeVal === 'auto' ? 'selected' : ''}>💻 Mengikuti Sistem OS (Auto)</option>
+            <option value="dark" ${currentThemeVal === 'dark' ? 'selected' : ''}>🌙 Mode Gelap</option>
+            <option value="light" ${currentThemeVal === 'light' ? 'selected' : ''}>☀️ Mode Terang Lembut</option>
+            <option value="auto" ${currentThemeVal === 'auto' ? 'selected' : ''}>💻 Otomatis (Sistem OS)</option>
           </select>
         </div>
       </div>
@@ -168,7 +168,7 @@ function renderUmum() {
         </div>
         <div class="settings-item-control" style="display:flex; flex-direction:column; gap:10px; align-items:flex-start;">
           <div style="display:flex; align-items:center; gap:14px;">
-            <div id="logo-preview-box" style="width:52px; height:52px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
+            <div id="logo-preview-box" style="width:52px; height:52px; border-radius:10px; background:${activeLogo ? 'transparent' : 'rgba(255,255,255,0.06)'}; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
               ${activeLogo ? `<img src="${activeLogo}" style="width:100%; height:100%; object-fit:contain;" alt="Logo" />` : '<span style="font-size:1.6rem;">📡</span>'}
             </div>
             <div style="display:flex; flex-direction:column; gap:6px;">
@@ -602,6 +602,7 @@ function bindSaveButtons() {
       reader.onload = (event) => {
         stagedLogo = event.target.result;
         if (previewBox) {
+          previewBox.style.background = 'transparent';
           previewBox.innerHTML = `<img src="${stagedLogo}" style="width:100%; height:100%; object-fit:contain;" alt="Logo" />`;
         }
         if (resetLogoBtn) resetLogoBtn.style.display = 'inline-flex';
@@ -614,6 +615,7 @@ function bindSaveButtons() {
     resetLogoBtn.onclick = () => {
       stagedLogo = '';
       if (previewBox) {
+        previewBox.style.background = 'rgba(255,255,255,0.06)';
         previewBox.innerHTML = '<span style="font-size:1.6rem;">📡</span>';
       }
       resetLogoBtn.style.display = 'none';

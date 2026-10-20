@@ -165,7 +165,6 @@ router.post('/', (req, res) => {
         email: cleanEmail,
         nama: cleanNama,
         role: 'admin',
-        avatar: initials || 'AD',
       },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn }

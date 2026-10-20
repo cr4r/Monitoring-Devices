@@ -159,6 +159,10 @@ export async function apiGetLogs(params = {}) {
   return request(`/logs${query ? `?${query}` : ''}`);
 }
 
+export async function apiGetLogDevices() {
+  return request('/logs/devices');
+}
+
 export async function apiGetIsapiInfo(id) {
   return request(`/devices/${id}/isapi`);
 }
@@ -184,7 +188,14 @@ export async function apiGetIncidentReport() {
   return request('/reports/incidents');
 }
 
-// ---- USERS (ADMIN) ----
+// ---- USERS ----
+export async function apiUpdateProfileAvatar(avatar) {
+  return request('/users/profile/avatar', {
+    method: 'PUT',
+    body: JSON.stringify({ avatar }),
+  });
+}
+
 export async function apiGetUsers() {
   return request('/users');
 }

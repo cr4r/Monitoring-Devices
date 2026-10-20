@@ -72,12 +72,32 @@ export function applySystemSettings(newSettings = {}) {
       el.textContent = appName;
     });
 
-    // 4. Ubah icon logo sidebar dengan logo custom jika ada
+    // 4. Ubah icon logo sidebar dan login dengan logo custom jika ada
     document.querySelectorAll('.sidebar-logo-icon').forEach((el) => {
       if (appLogo) {
         el.innerHTML = `<img src="${appLogo}" class="custom-app-logo" style="width:32px;height:32px;object-fit:contain;border-radius:6px;" alt="Logo" />`;
+        el.classList.add('has-custom-logo');
+        el.style.background = 'transparent';
+        el.style.boxShadow = 'none';
       } else {
         el.innerHTML = '📡';
+        el.classList.remove('has-custom-logo');
+        el.style.background = '';
+        el.style.boxShadow = '';
+      }
+    });
+
+    document.querySelectorAll('.login-logo-icon').forEach((el) => {
+      if (appLogo) {
+        el.innerHTML = `<img src="${appLogo}" class="custom-app-logo" style="width:42px;height:42px;object-fit:contain;" alt="Logo" />`;
+        el.classList.add('has-custom-logo');
+        el.style.background = 'transparent';
+        el.style.boxShadow = 'none';
+      } else {
+        el.innerHTML = '📡';
+        el.classList.remove('has-custom-logo');
+        el.style.background = '';
+        el.style.boxShadow = '';
       }
     });
 
@@ -112,9 +132,17 @@ export function applySystemSettings(newSettings = {}) {
 export function formatDateWithTz(dateInput, options = {}) {
   if (!dateInput) return '—';
   try {
+    let str = String(dateInput).trim();
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(str)) {
+      str = str.replace(' ', 'T') + 'Z';
+    } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(str)) {
+      str += 'Z';
+    }
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return String(dateInput);
     const tz = cachedSettings.timezone || 'Asia/Jakarta';
     const lang = cachedSettings.language === 'en' ? 'en-US' : 'id-ID';
-    return new Date(dateInput).toLocaleString(lang, {
+    return d.toLocaleString(lang, {
       timeZone: tz,
       year: 'numeric',
       month: 'short',

@@ -1,10 +1,5 @@
-// ================================================================
-// DevWatch — logs.js
-// Log sistem: 3 tab, filter, color coding, pagination, export PDF
-// ================================================================
-
 import Swal from 'sweetalert2';
-import { apiGetLogs } from '../api.js';
+import { apiGetLogs, apiGetLogDevices } from '../api.js';
 import { formatDateWithTz } from '../settingsManager.js';
 import { exportLogsPdf } from '../services/pdfService.js';
 import { getSession } from '../main.js';
@@ -16,6 +11,55 @@ let logPage = 1;
 let logRowsPerPage = 25;
 let backendLogs = [];
 let backendCounts = { status: 0, aktivitas: 0, konfigurasi: 0 };
+let logDeviceList = [];
+let selectedDeviceKey = 'all';
+
+function getDeviceKey(d) {
+  if (!d) return 'all';
+  return `${d.device_name || ''}:::${d.device_ip || ''}:::${d.device_created_at || ''}`;
+}
+
+export async function fetchLiveDevices() {
+  const session = getSession();
+  if (session?.is_preview) {
+    logDeviceList = [
+      {
+        device_id: 1,
+        device_name: 'Router Gateway Utama',
+        device_ip: '192.168.1.1',
+        device_created_at: '2026-10-15 08:00:00',
+        is_active: 1,
+        total_log: 12,
+      },
+      {
+        device_id: 2,
+        device_name: 'Core Switch Lt. 2',
+        device_ip: '192.168.1.2',
+        device_created_at: '2026-10-15 08:30:00',
+        is_active: 1,
+        total_log: 8,
+      },
+      {
+        device_id: 99,
+        device_name: 'PC Marketing Lama (Dihapus)',
+        device_ip: '192.168.1.55',
+        device_created_at: '2026-09-01 10:15:00',
+        is_active: 0,
+        total_log: 24,
+      },
+    ];
+    return;
+  }
+
+  try {
+    const res = await apiGetLogDevices();
+    if (res && res.data) {
+      logDeviceList = res.data;
+    }
+  } catch (err) {
+    console.error('Gagal mengambil daftar perangkat log:', err);
+  }
+}
 
 export async function fetchLiveLogs() {
   const session = getSession();
@@ -27,6 +71,7 @@ export async function fetchLiveLogs() {
         device: r.device_name || 'Device',
         ip: r.device_ip || '',
         deviceId: r.device_id,
+        deviceCreatedAt: r.device_created_at || '2026-10-15 08:00:00',
         statusSebelum: r.status_sebelumnya?.toLowerCase() || 'online',
         statusBaru: r.status_baru?.toLowerCase() || 'offline',
         metode: r.metode || 'Probe',
@@ -92,13 +137,22 @@ export async function fetchLiveLogs() {
   }
 
   try {
+    let selectedDev = null;
+    if (selectedDeviceKey !== 'all') {
+      selectedDev = logDeviceList.find((d) => getDeviceKey(d) === selectedDeviceKey);
+    }
+
     const res = await apiGetLogs({
       type: activeTab,
+      tipe: logFilters.tipe,
       search: logFilters.search,
       dateFrom: logFilters.dateFrom,
       dateTo: logFilters.dateTo,
       page: logPage,
       limit: logRowsPerPage,
+      deviceName: selectedDev ? selectedDev.device_name : undefined,
+      deviceIp: selectedDev ? selectedDev.device_ip : undefined,
+      deviceCreatedAt: selectedDev ? selectedDev.device_created_at : undefined,
     });
     if (res && res.data) {
       backendLogs = res.data.map((r) => {
@@ -109,6 +163,7 @@ export async function fetchLiveLogs() {
             device: r.device_name || 'Device',
             ip: r.device_ip || '',
             deviceId: r.device_id,
+            deviceCreatedAt: r.device_created_at,
             statusSebelum: r.status_lama || 'online',
             statusBaru: r.status_baru || 'offline',
             metode: 'Probe',
@@ -149,6 +204,83 @@ export async function fetchLiveLogs() {
   }
 }
 
+function renderDeviceOptGroups() {
+  const activeDevices = logDeviceList.filter((d) => d.is_active === 1);
+  const archivedDevices = logDeviceList.filter((d) => d.is_active === 0);
+
+  let html = '';
+  if (activeDevices.length > 0) {
+    html += `<optgroup label="🟢 Perangkat Aktif (${activeDevices.length})">`;
+    activeDevices.forEach((d) => {
+      const key = getDeviceKey(d);
+      const createdStr = d.device_created_at ? formatDateWithTz(d.device_created_at) : 'Awal';
+      html += `<option value="${key}" ${selectedDeviceKey === key ? 'selected' : ''}>🟢 ${d.device_name} (${d.device_ip}) • Dibuat: ${createdStr}</option>`;
+    });
+    html += `</optgroup>`;
+  }
+
+  if (archivedDevices.length > 0) {
+    html += `<optgroup label="📦 Riwayat Terhapus / Arsip (${archivedDevices.length})">`;
+    archivedDevices.forEach((d) => {
+      const key = getDeviceKey(d);
+      const createdStr = d.device_created_at ? formatDateWithTz(d.device_created_at) : 'Awal';
+      html += `<option value="${key}" ${selectedDeviceKey === key ? 'selected' : ''}>📦 ${d.device_name} (${d.device_ip}) • Dibuat: ${createdStr} [Terhapus]</option>`;
+    });
+    html += `</optgroup>`;
+  }
+
+  return html;
+}
+
+function renderSelectedDeviceBanner() {
+  if (selectedDeviceKey === 'all') return '';
+  const dev = logDeviceList.find((d) => getDeviceKey(d) === selectedDeviceKey);
+  if (!dev) return '';
+
+  const isActive = dev.is_active === 1;
+  const createdStr = dev.device_created_at ? formatDateWithTz(dev.device_created_at) : 'Tidak tercatat';
+
+  return `
+    <div style="
+      background: ${isActive ? 'rgba(99,102,241,0.08)' : 'rgba(234,179,8,0.1)'};
+      border: 1px solid ${isActive ? 'rgba(99,102,241,0.3)' : 'rgba(234,179,8,0.3)'};
+      border-radius: var(--border-radius-md);
+      padding: 10px 16px;
+      margin-bottom: var(--spacing-md);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    ">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:1.4rem;">${isActive ? '🖥️' : '📦'}</span>
+        <div>
+          <div style="font-weight:700; font-size:0.9rem; color:var(--color-heading); display:flex; align-items:center; gap:8px;">
+            <span>${dev.device_name}</span>
+            <span class="chip" style="font-family:var(--font-mono); font-size:0.75rem;">${dev.device_ip}</span>
+            <span style="
+              font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:12px;
+              background:${isActive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'};
+              color:${isActive ? 'var(--color-online)' : 'var(--color-offline)'};
+            ">${isActive ? '🟢 Aktif di Sistem' : '📦 Arsip (Perangkat Telah Dihapus)'}</span>
+          </div>
+          <div style="font-size:0.75rem; color:var(--color-muted); margin-top:2px;">
+            📅 Dibuat pada: <strong style="color:var(--color-text);">${createdStr}</strong>
+            <span style="margin:0 6px;">•</span>
+            Total log tercatat: <strong style="color:var(--color-text);">${dev.total_log || 0} entri</strong>
+            <span style="margin:0 6px;">•</span>
+            <span style="color:var(--color-muted); font-style:italic;">Riwayat log tetap tersimpan permanen walau perangkat telah dihapus.</span>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-xs" id="clear-device-filter-btn" style="padding:4px 10px; font-size:0.75rem;">
+        ✕ Tampilkan Semua Perangkat
+      </button>
+    </div>
+  `;
+}
+
 export function renderLogs() {
   return `
     <div class="page-container fade-in-up">
@@ -163,34 +295,54 @@ export function renderLogs() {
         </div>
       </div>
 
-      <!-- Filter Panel -->
+      <!-- Filter Panel Modern 2-Tier -->
       <div class="log-filter-panel">
-        <div class="form-group">
-          <label class="form-label">Kata Kunci</label>
-          <input type="text" class="form-control" id="log-search" placeholder="Cari dalam log..." value="${logFilters.search}" />
+        <div class="log-filter-row-top">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; font-weight:600;">
+              <span>🖥️ Organisir Per Perangkat</span>
+              <span style="font-size:0.7rem; color:var(--color-accent); font-weight:500;">Diferensiasi berdasarkan tanggal pembuatan perangkat</span>
+            </label>
+            <select class="form-control" id="log-filter-device" style="font-family:var(--font-sans); font-size:0.85rem; height:40px;">
+              <option value="all" ${selectedDeviceKey === 'all' ? 'selected' : ''}>🌐 Semua Perangkat (Gabungan Riwayat)</option>
+              ${renderDeviceOptGroups()}
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Dari Tanggal</label>
-          <input type="date" class="form-control" id="log-date-from" value="${logFilters.dateFrom}" />
+
+        <div class="log-filter-row-bottom">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="font-size:0.75rem;">Kata Kunci</label>
+            <input type="text" class="form-control" id="log-search" placeholder="Cari pesan log, IP, aksi..." value="${logFilters.search}" style="font-size:0.82rem;" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="font-size:0.75rem;">Dari Tanggal</label>
+            <input type="date" class="form-control" id="log-date-from" value="${logFilters.dateFrom}" style="font-size:0.82rem;" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="font-size:0.75rem;">Sampai Tanggal</label>
+            <input type="date" class="form-control" id="log-date-to" value="${logFilters.dateTo}" style="font-size:0.82rem;" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="font-size:0.75rem;">Status / Tipe</label>
+            <select class="form-control" id="log-filter-tipe" style="font-size:0.82rem;">
+              <option value="all" ${logFilters.tipe === 'all' ? 'selected' : ''}>Semua Tipe</option>
+              <option value="online" ${logFilters.tipe === 'online' ? 'selected' : ''}>🟢 Online</option>
+              <option value="offline" ${logFilters.tipe === 'offline' ? 'selected' : ''}>🔴 Offline</option>
+              <option value="maintenance" ${logFilters.tipe === 'maintenance' ? 'selected' : ''}>🟡 Maintenance</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <button class="btn btn-primary" id="log-apply-filter-btn" style="height:38px; padding:0 18px; white-space:nowrap; display:inline-flex; align-items:center; gap:6px;">
+              🔍 Filter
+            </button>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Sampai Tanggal</label>
-          <input type="date" class="form-control" id="log-date-to" value="${logFilters.dateTo}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tipe Log</label>
-          <select class="form-control" id="log-filter-tipe">
-            <option value="all">Semua Tipe</option>
-            <option value="online">🟢 Online</option>
-            <option value="offline">🔴 Offline</option>
-            <option value="maintenance">🟡 Maintenance</option>
-            <option value="warning">⚠️ Warning</option>
-            <option value="info">ℹ️ Info</option>
-          </select>
-        </div>
-        <div class="form-group" style="align-self:end;">
-          <button class="btn btn-primary w-full" id="log-apply-filter-btn">🔍 Terapkan Filter</button>
-        </div>
+      </div>
+
+      <!-- Contextual Device Banner -->
+      <div id="log-device-banner-container">
+        ${renderSelectedDeviceBanner()}
       </div>
 
       <!-- Tabs -->
@@ -260,7 +412,7 @@ function renderLogTable() {
         <thead>
           <tr>
             <th>Waktu</th>
-            <th>Device</th>
+            <th>Device & Waktu Pembuatan</th>
             <th>Pesan Log</th>
             <th>Metode</th>
             <th>Response</th>
@@ -273,8 +425,15 @@ function renderLogTable() {
                 ${formatDateWithTz(l.waktu)}
               </td>
               <td>
-                <div style="font-weight:600; color:var(--color-text);">${l.device}</div>
+                <div style="font-weight:600; color:var(--color-text); display:flex; align-items:center; gap:6px;">
+                  <span>${l.device}</span>
+                  ${l.deviceId ? '' : '<span style="font-size:0.65rem; background:rgba(234,179,8,0.2); color:var(--color-maintenance); padding:1px 5px; border-radius:4px; font-weight:700;">Arsip</span>'}
+                </div>
                 <div class="ip-text" style="margin-top:2px;">${l.ip}</div>
+                <div style="font-size:0.7rem; color:var(--color-muted); margin-top:3px; display:flex; align-items:center; gap:4px;">
+                  <span>📅 Dibuat:</span>
+                  <span style="font-family:var(--font-mono); color:var(--color-text);">${l.deviceCreatedAt ? formatDateWithTz(l.deviceCreatedAt) : 'Awal Sistem'}</span>
+                </div>
               </td>
               <td class="log-entry-msg">${l.pesan}</td>
               <td><span class="chip">${l.metode}</span></td>
@@ -393,17 +552,60 @@ function emptyLog() {
 }
 
 export function initLogsEvents() {
+  const updateBannerAndBadges = () => {
+    const bannerContainer = document.getElementById('log-device-banner-container');
+    if (bannerContainer) {
+      bannerContainer.innerHTML = renderSelectedDeviceBanner();
+      document.getElementById('clear-device-filter-btn')?.addEventListener('click', () => {
+        selectedDeviceKey = 'all';
+        const sel = document.getElementById('log-filter-device');
+        if (sel) sel.value = 'all';
+        logPage = 1;
+        refresh();
+      });
+    }
+
+    const bStatus = document.getElementById('badge-count-status');
+    const bAktivitas = document.getElementById('badge-count-aktivitas');
+    const bKonfigurasi = document.getElementById('badge-count-konfigurasi');
+    if (bStatus) bStatus.textContent = backendCounts.status;
+    if (bAktivitas) bAktivitas.textContent = backendCounts.aktivitas;
+    if (bKonfigurasi) bKonfigurasi.textContent = backendCounts.konfigurasi;
+  };
+
   const refresh = async () => {
     await fetchLiveLogs();
     const content = document.getElementById('log-table-content');
     if (content) content.innerHTML = renderLogTable();
+    updateBannerAndBadges();
     bindLogRowsSelect();
   };
 
+  // Muat log langsung saat halaman diinisialisasi
   fetchLiveLogs().then(() => {
     const content = document.getElementById('log-table-content');
     if (content) content.innerHTML = renderLogTable();
+    updateBannerAndBadges();
     bindLogRowsSelect();
+  });
+
+  // Muat daftar perangkat secara paralel untuk opsi dropdown
+  fetchLiveDevices().then(() => {
+    const devSelect = document.getElementById('log-filter-device');
+    if (devSelect) {
+      devSelect.innerHTML = `
+        <option value="all" ${selectedDeviceKey === 'all' ? 'selected' : ''}>🌐 Semua Perangkat (Gabungan Riwayat)</option>
+        ${renderDeviceOptGroups()}
+      `;
+      devSelect.value = selectedDeviceKey;
+    }
+  });
+
+  // Device select filter change
+  document.getElementById('log-filter-device')?.addEventListener('change', (e) => {
+    selectedDeviceKey = e.target.value;
+    logPage = 1;
+    refresh();
   });
 
   // Tab switching
@@ -423,6 +625,7 @@ export function initLogsEvents() {
     logFilters.dateFrom = document.getElementById('log-date-from')?.value || '';
     logFilters.dateTo = document.getElementById('log-date-to')?.value || '';
     logFilters.tipe = document.getElementById('log-filter-tipe')?.value || 'all';
+    selectedDeviceKey = document.getElementById('log-filter-device')?.value || 'all';
     logPage = 1;
     refresh();
   });
@@ -430,6 +633,9 @@ export function initLogsEvents() {
   // Clear filter
   document.getElementById('log-clear-filter-btn')?.addEventListener('click', () => {
     logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
+    selectedDeviceKey = 'all';
+    const devSel = document.getElementById('log-filter-device');
+    if (devSel) devSel.value = 'all';
     document.getElementById('log-search').value = '';
     document.getElementById('log-date-from').value = '';
     document.getElementById('log-date-to').value = '';
@@ -458,7 +664,7 @@ export function initLogsEvents() {
         <div style="text-align:left; font-size:0.88rem; color:#94a3b8;">
           <p>Total entri yang akan diekspor: <b style="color:#f1f5f9;">${data.length} baris</b></p>
           <p style="margin-top:6px;">Kategori aktif: <b style="color:var(--color-accent);">${activeTab.toUpperCase()}</b></p>
-          <p style="margin-top:6px; font-size:0.78rem; color:#64748b;">Kriteria pencarian dan rentang tanggal akan dicantumkan secara otomatis pada dokumen resmi PDF.</p>
+          <p style="margin-top:6px; font-size:0.78rem; color:#64748b;">Kriteria pencarian, identifikasi waktu pembuatan, dan rentang tanggal akan dicantumkan secara otomatis pada dokumen resmi PDF.</p>
         </div>
       `,
       icon: 'info',

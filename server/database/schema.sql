@@ -48,16 +48,16 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE TABLE IF NOT EXISTS device_status_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  device_id INTEGER NOT NULL,
+  device_id INTEGER,
   device_name TEXT NOT NULL,
   device_ip TEXT NOT NULL,
+  device_created_at DATETIME,
   waktu DATETIME DEFAULT CURRENT_TIMESTAMP,
   status_sebelumnya TEXT,
   status_baru TEXT NOT NULL,
   metode TEXT,
   response_time TEXT,
-  pesan_log TEXT NOT NULL,
-  FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  pesan_log TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS user_activity_logs (

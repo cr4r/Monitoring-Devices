@@ -10,7 +10,36 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Hanya role admin yang bisa mengakses seluruh route ini
+// PUT /api/users/profile/avatar — Update foto profil sendiri (Dapat diakses semua pengguna login)
+router.put('/profile/avatar', authenticateToken, (req, res) => {
+  const { avatar } = req.body;
+  if (!avatar || typeof avatar !== 'string') {
+    return res.status(400).json({ success: false, message: 'Data foto avatar tidak valid.' });
+  }
+
+  run(
+    `UPDATE users
+     SET avatar = ?,
+         updated_at = datetime('now')
+     WHERE id = ?`,
+    [avatar, req.user.id]
+  );
+
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  run(
+    `INSERT INTO user_activity_logs (user_id, user_email, user_nama, aksi, ip_akses, detail)
+     VALUES (?, ?, ?, 'Ubah Foto Profil', ?, 'Pengguna memperbarui foto profil terkompresi')`,
+    [req.user.id, req.user.email, req.user.nama, ip]
+  );
+
+  res.json({
+    success: true,
+    message: 'Foto profil berhasil diperbarui.',
+    data: { avatar },
+  });
+});
+
+// Hanya role admin yang bisa mengakses seluruh route manajemen di bawah ini
 router.use(authenticateToken, requireRole(['admin']));
 
 // GET /api/users — Daftar seluruh pengguna

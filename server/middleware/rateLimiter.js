@@ -4,8 +4,15 @@
 // ================================================================
 
 import { config } from '../config.js';
+import { getSystemSetting } from '../database/db.js';
 
 const failureMap = new Map(); // key: email or ip -> { count, lockoutUntil }
+
+export function getSecuritySettings() {
+  const maxAttempts = parseInt(getSystemSetting('max_login_attempts', String(config.sessionLockoutAttempts)), 10) || 5;
+  const lockoutMins = parseInt(getSystemSetting('lockout_duration_minutes', String(config.sessionLockoutMinutes)), 10) || 15;
+  return { maxAttempts, lockoutMins };
+}
 
 export function loginRateLimiter(req, res, next) {
   const key = req.body?.email?.toLowerCase() || req.ip;
@@ -35,8 +42,10 @@ export function recordFailedLogin(key) {
   const entry = failureMap.get(key) || { count: 0, lockoutUntil: null };
   entry.count += 1;
 
-  if (entry.count >= config.sessionLockoutAttempts) {
-    entry.lockoutUntil = now + config.sessionLockoutMinutes * 60 * 1000;
+  const { maxAttempts, lockoutMins } = getSecuritySettings();
+
+  if (entry.count >= maxAttempts) {
+    entry.lockoutUntil = now + lockoutMins * 60 * 1000;
   }
 
   failureMap.set(key, entry);

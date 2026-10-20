@@ -80,6 +80,10 @@ export function renderSidebar() {
     ? session.nama.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
     : 'U';
 
+  const userAvatarHtml = (session?.avatar && typeof session.avatar === 'string' && (session.avatar.startsWith('data:image') || session.avatar.startsWith('http') || session.avatar.startsWith('/')))
+    ? `<img src="${session.avatar}" alt="${session?.nama || 'Pengguna'}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
+    : initials;
+
   const appName = getAppSetting('app_name', 'DevWatch');
   const appLogo = getAppSetting('app_logo', '');
 
@@ -101,7 +105,7 @@ export function renderSidebar() {
 
       <div class="sidebar-footer">
         <div class="sidebar-user" id="sidebar-user-btn">
-          <div class="user-avatar" title="${session?.nama || 'Pengguna'}">${initials}</div>
+          <div class="user-avatar" id="sidebar-user-avatar" title="${session?.nama || 'Pengguna'}" style="overflow:hidden;">${userAvatarHtml}</div>
           <div class="user-info">
             <div class="user-name">${session?.nama || 'Pengguna'}</div>
             <div class="user-role">${getRoleLabel(role)}</div>

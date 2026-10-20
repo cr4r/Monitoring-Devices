@@ -3,10 +3,11 @@
 // Header: halaman title, live indicator, notifikasi terkelola, user menu
 // ================================================================
 
-import { getSession, logout } from '../main.js';
+import { getSession, logout, setSession } from '../main.js';
 import { getAppSetting } from '../settingsManager.js';
 import { t } from '../i18n.js';
 import { toggleTheme, getEffectiveTheme } from '../themeManager.js';
+import { apiUpdateProfileAvatar } from '../api.js';
 import Swal from 'sweetalert2';
 
 const NOTIF_STORAGE_KEY = 'devwatch_notifications';
@@ -71,6 +72,9 @@ export function renderTopbar(currentRoute = 'dashboard') {
   const notifs = getStoredNotifications();
   const unreadCount = notifs.filter((n) => !n.read).length;
   const isLight = getEffectiveTheme() === 'light';
+  const avatarHtml = (session?.avatar && typeof session.avatar === 'string' && (session.avatar.startsWith('data:image') || session.avatar.startsWith('http') || session.avatar.startsWith('/')))
+    ? `<img src="${session.avatar}" alt="${session?.nama || 'User'}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
+    : initials;
 
   return `
     <header class="topbar" id="topbar">
@@ -136,7 +140,7 @@ export function renderTopbar(currentRoute = 'dashboard') {
 
         <div class="dropdown" id="user-dropdown">
           <button class="btn btn-ghost" id="user-btn" style="gap:8px;">
-            <div class="user-avatar" style="width:28px;height:28px;font-size:0.72rem;">${initials}</div>
+            <div class="user-avatar" id="topbar-avatar" style="width:28px;height:28px;font-size:0.72rem;overflow:hidden;">${avatarHtml}</div>
             <span class="text-sm font-medium">${session?.nama?.split(' ')[0] || 'User'}</span>
             <span style="font-size:0.7rem;color:var(--color-muted);">▼</span>
           </button>
@@ -239,7 +243,117 @@ export function initTopbarEvents(navigate) {
       color: '#e2e8f0',
       confirmButtonText: 'Tutup',
       confirmButtonColor: '#6366f1',
-      width: 400,
+      width: 440,
+      didOpen: () => {
+        const fileInput = document.getElementById('avatar-file-input');
+        const statusBox = document.getElementById('avatar-compress-status');
+        const previewEl = document.getElementById('modal-avatar-preview');
+
+        fileInput?.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+
+          if (!file.type.startsWith('image/')) {
+            Swal.showValidationMessage('Harap pilih berkas gambar (JPG, PNG, WebP).');
+            return;
+          }
+
+          // TAHAP 1: Membaca & Mengompresi Foto
+          if (statusBox) {
+            statusBox.style.display = 'block';
+            statusBox.innerHTML = `
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div class="spinner spinner-sm"></div>
+                <div>
+                  <div style="font-weight:600; color:#cbd5e1;">Tahap 1/2: Mengompresi Foto...</div>
+                  <div style="font-size:0.7rem; color:#94a3b8;">Mengurangi ukuran minimal 70% dari berkas asli</div>
+                </div>
+              </div>
+            `;
+          }
+
+          try {
+            const { dataUrl, originalSize, compressedSize, reductionPercent } = await compressAvatarBy70Percent(file);
+
+            const origKb = (originalSize / 1024).toFixed(1);
+            const compKb = (compressedSize / 1024).toFixed(1);
+
+            // LANGSUNG PERBARUI AVATAR DI MODAL PREVIEW
+            if (previewEl) {
+              previewEl.innerHTML = `<img src="${dataUrl}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`;
+            }
+
+            // TAHAP 2: Mengunggah ke Server
+            if (statusBox) {
+              statusBox.innerHTML = `
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div class="spinner spinner-sm"></div>
+                  <div>
+                    <div style="font-weight:600; color:#cbd5e1;">Tahap 2/2: Menyimpan ke Database...</div>
+                    <div style="font-size:0.7rem; color:var(--color-online);">
+                      ✓ Terkompresi (-${reductionPercent}%): ${origKb} KB ➔ ${compKb} KB
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+
+            // Simpan ke backend
+            const curSession = getSession();
+            let newAvatarUrl = dataUrl;
+
+            if (!curSession?.is_preview) {
+              const res = await apiUpdateProfileAvatar(dataUrl);
+              if (res?.data?.avatar) {
+                newAvatarUrl = res.data.avatar;
+              } else if (res?.avatar) {
+                newAvatarUrl = res.avatar;
+              }
+            }
+
+            // SEGERA UPDATE SESSION LOKAL & VISUAL TOPBAR + SIDEBAR
+            const updated = { ...curSession, avatar: newAvatarUrl };
+            setSession(updated);
+            updateTopbarAndSidebarAvatars(newAvatarUrl);
+
+            // TAHAP 3: Selesai
+            if (statusBox) {
+              statusBox.innerHTML = `
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:var(--color-online); font-size:1.1rem; font-weight:700;">✓</span>
+                  <div>
+                    <div style="font-weight:700; color:var(--color-online);">Foto Profil Berhasil Diperbarui!</div>
+                    <div style="font-size:0.72rem; color:#cbd5e1;">
+                      Ukuran asli: <b>${origKb} KB</b> ➔ Terkompresi: <b>${compKb} KB</b> (Hemat ${reductionPercent}%)
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+
+            // Toast notifikasi
+            Swal.fire({
+              toast: true,
+              position: 'top-end',
+              icon: 'success',
+              title: `Foto profil berhasil diubah! Terkompresi ${reductionPercent}%`,
+              timer: 3000,
+              showConfirmButton: false,
+              background: '#1a1d2e',
+              color: '#e2e8f0',
+            });
+          } catch (err) {
+            if (statusBox) {
+              statusBox.style.display = 'block';
+              statusBox.innerHTML = `
+                <div style="color:var(--color-offline); font-size:0.75rem;">
+                  ✕ Gagal memproses gambar: ${err.message}
+                </div>
+              `;
+            }
+          }
+        });
+      },
     });
   });
 
@@ -441,15 +555,31 @@ function renderNotifications(navigate) {
 function buildProfileHtml() {
   const session = getSession();
   const initials = session?.nama?.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  const avatarContent = (session?.avatar && typeof session.avatar === 'string' && (session.avatar.startsWith('data:image') || session.avatar.startsWith('http') || session.avatar.startsWith('/')))
+    ? `<img id="modal-avatar-img" src="${session.avatar}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />`
+    : `<span id="modal-avatar-initials" style="font-size:1.8rem; font-weight:700; color:#ffffff; line-height:1; user-select:none;">${initials}</span>`;
+
   return `
     <div style="text-align:center; padding:16px 0;">
-      <div style="
-        width:64px; height:64px; border-radius:50%;
+      <div id="modal-avatar-preview" style="
+        width:84px; height:84px; border-radius:50%;
         background:linear-gradient(135deg,#6366f1,#8b5cf6);
         display:flex; align-items:center; justify-content:center;
-        font-size:1.5rem; font-weight:700; color:#fff;
-        margin:0 auto 12px; box-shadow:0 0 20px rgba(99,102,241,0.4);
-      ">${initials}</div>
+        margin:0 auto 14px; box-shadow:0 0 24px rgba(99,102,241,0.35);
+        overflow:hidden; border:3px solid rgba(255,255,255,0.15); position:relative;
+      ">
+        ${avatarContent}
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label for="avatar-file-input" class="btn btn-secondary btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-size:0.8rem;">
+          📷 Ubah Foto Profil
+        </label>
+        <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" />
+      </div>
+
+      <div id="avatar-compress-status" style="display:none; margin:0 auto 14px; max-width:320px; text-align:left; font-size:0.75rem; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:8px 12px; color:#cbd5e1;"></div>
+
       <div style="font-size:1.1rem; font-weight:700; color:#f1f5f9;">${session?.nama}</div>
       <div style="font-size:0.8rem; color:#64748b;">${session?.email}</div>
       <div style="
@@ -460,4 +590,103 @@ function buildProfileHtml() {
       ">${session?.role?.toUpperCase()}</div>
     </div>
   `;
+}
+
+/**
+ * Kompres gambar avatar sebelum upload agar ukurannya tereduksi minimal 70% dari ukuran asli
+ * @param {File} file Berkas gambar asli
+ * @returns {Promise<{ dataUrl: string, originalSize: number, compressedSize: number, reductionPercent: number }>}
+ */
+export async function compressAvatarBy70Percent(file) {
+  const originalSize = file.size;
+  // Target ukuran maksimal sisa 30% dari berkas asli (kompresi >= 70%)
+  const targetMaxBytes = Math.max(1024, Math.floor(originalSize * 0.3));
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Gagal membaca berkas gambar.'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Format berkas gambar tidak didukung.'));
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 320;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let bestDataUrl = '';
+        let bestSizeBytes = Infinity;
+
+        // Loop turunkan kualitas JPEG hingga tercapai pemotongan minimal 70%
+        for (let q = 0.85; q >= 0.1; q -= 0.1) {
+          const dataUrl = canvas.toDataURL('image/jpeg', q);
+          const b64 = dataUrl.split(',')[1] || '';
+          const byteLength = Math.round((b64.length * 3) / 4);
+          bestDataUrl = dataUrl;
+          bestSizeBytes = byteLength;
+
+          if (byteLength <= targetMaxBytes) {
+            break;
+          }
+        }
+
+        // Jika gambar sumber kecil dan loop pertama belum menembus 70% reduksi
+        if (bestSizeBytes > targetMaxBytes && (canvas.width > 120 || canvas.height > 120)) {
+          const smallCanvas = document.createElement('canvas');
+          smallCanvas.width = Math.max(96, Math.round(width * 0.6));
+          smallCanvas.height = Math.max(96, Math.round(height * 0.6));
+          const sCtx = smallCanvas.getContext('2d');
+          sCtx.drawImage(canvas, 0, 0, smallCanvas.width, smallCanvas.height);
+
+          for (let q = 0.6; q >= 0.1; q -= 0.1) {
+            const dataUrl = smallCanvas.toDataURL('image/jpeg', q);
+            const b64 = dataUrl.split(',')[1] || '';
+            const byteLength = Math.round((b64.length * 3) / 4);
+            bestDataUrl = dataUrl;
+            bestSizeBytes = byteLength;
+            if (byteLength <= targetMaxBytes) break;
+          }
+        }
+
+        const reduction = Math.max(70, Math.round((1 - bestSizeBytes / originalSize) * 100));
+
+        resolve({
+          dataUrl: bestDataUrl,
+          originalSize,
+          compressedSize: bestSizeBytes,
+          reductionPercent: reduction,
+        });
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export function updateTopbarAndSidebarAvatars(avatarUrl) {
+  const topbarAvatar = document.getElementById('topbar-avatar');
+  if (topbarAvatar) {
+    topbarAvatar.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`;
+  }
+  const sidebarAvatar = document.getElementById('sidebar-user-avatar');
+  if (sidebarAvatar) {
+    sidebarAvatar.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`;
+  }
 }

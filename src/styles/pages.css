@@ -88,6 +88,11 @@
   box-shadow: var(--shadow-glow-accent);
 }
 
+.login-logo-icon.has-custom-logo {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 .login-logo-text h1 {
   font-size: 1.6rem;
   font-weight: 800;
@@ -402,12 +407,48 @@
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-lg);
-  padding: var(--spacing-md);
+  padding: 16px 20px;
   margin-bottom: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.log-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.log-filter-row-top {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--spacing-sm);
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.log-filter-row-bottom {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.2fr auto;
+  gap: 12px;
   align-items: end;
+}
+
+@media (max-width: 900px) {
+  .log-filter-row-bottom {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .log-filter-row-bottom {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- REPORTS PAGE ---- */

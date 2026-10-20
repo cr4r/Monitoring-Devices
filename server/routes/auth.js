@@ -6,9 +6,9 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { queryOne, run } from '../database/db.js';
+import { queryOne, run, getSystemSetting } from '../database/db.js';
 import { config } from '../config.js';
-import { loginRateLimiter, recordFailedLogin, resetFailedLogin } from '../middleware/rateLimiter.js';
+import { loginRateLimiter, recordFailedLogin, resetFailedLogin, getSecuritySettings } from '../middleware/rateLimiter.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -21,6 +21,23 @@ router.post('/login', loginRateLimiter, async (req, res) => {
       success: false,
       message: 'Email dan kata sandi wajib diisi.',
     });
+  }
+
+  // 1. Verifikasi IP Whitelist jika diaktifkan di pengaturan sistem
+  const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').trim();
+  const rawWhitelist = getSystemSetting('ip_whitelist', '').trim();
+  if (rawWhitelist) {
+    const allowedIps = rawWhitelist.split(',').map((s) => s.trim()).filter(Boolean);
+    const isAllowed = allowedIps.some((allowed) => {
+      if (allowed === '127.0.0.1' && (clientIp === '::1' || clientIp === '127.0.0.1' || clientIp.endsWith('127.0.0.1'))) return true;
+      return clientIp === allowed || clientIp.includes(allowed);
+    });
+    if (!isAllowed) {
+      return res.status(403).json({
+        success: false,
+        message: `Akses ditolak. Alamat IP Anda (${clientIp}) tidak terdaftar dalam whitelist keamanan sistem. Hubungi Administrator.`,
+      });
+    }
   }
 
   const cleanEmail = email.trim().toLowerCase();
@@ -53,13 +70,14 @@ router.post('/login', loginRateLimiter, async (req, res) => {
 
   const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
   if (!isPasswordValid) {
+    const { maxAttempts, lockoutMins } = getSecuritySettings();
     const entry = recordFailedLogin(cleanEmail);
-    const attemptsLeft = config.sessionLockoutAttempts - entry.count;
+    const attemptsLeft = maxAttempts - entry.count;
     return res.status(401).json({
       success: false,
       message: attemptsLeft > 0
         ? `Kata sandi salah. Sisa percobaan: ${attemptsLeft} kali.`
-        : `Akun dikunci selama ${config.sessionLockoutMinutes} menit karena 5x gagal login.`,
+        : `Akun dikunci selama ${lockoutMins} menit karena ${maxAttempts}x gagal login.`,
     });
   }
 
@@ -67,7 +85,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
   resetFailedLogin(cleanEmail);
 
   // Perbarui last_login dan ip_akses
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const ip = clientIp;
   run(
     `UPDATE users SET last_login = datetime('now'), ip_akses = ? WHERE id = ?`,
     [ip, user.id]
@@ -80,17 +98,17 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     [user.id, user.email, user.nama, ip]
   );
 
-  // Buat Token JWT
+  // Buat Token JWT dengan durasi dari pengaturan sistem
+  const sessionMinutes = parseInt(getSystemSetting('session_timeout_minutes', '60'), 10) || 60;
   const token = jwt.sign(
     {
       id: user.id,
       email: user.email,
       nama: user.nama,
       role: user.role,
-      avatar: user.avatar,
     },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
+    { expiresIn: `${sessionMinutes}m` }
   );
 
   res.json({
