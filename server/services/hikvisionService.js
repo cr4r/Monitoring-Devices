@@ -24,14 +24,18 @@ export function parseRtspUrl(ipOrUrl) {
   }
 
   try {
-    // Tambahkan scheme jika perlu agar URL bisa di-parse
-    const u = new URL(str.startsWith('rtsp://') ? str.replace('rtsp://', 'http://') : str);
+    // Tangani skema rtsp:// maupun typo rstp://
+    let normalized = str;
+    if (/^r[ts]{2}p:\/\//i.test(normalized)) {
+      normalized = normalized.replace(/^r[ts]{2}p:\/\//i, 'http://');
+    }
+    const u = new URL(normalized);
     return {
       host: u.hostname,
       port: parseInt(u.port, 10) || 554,
-      username: u.username || null,
-      password: u.password || null,
-      path: u.pathname + u.search || '/',
+      username: u.username ? decodeURIComponent(u.username) : null,
+      password: u.password ? decodeURIComponent(u.password) : null,
+      path: (u.pathname || '/') + (u.search || ''),
     };
   } catch {
     // Fallback: coba ekstrak IP manual
@@ -116,7 +120,6 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     socket.on('connect', () => {
       // Susun RTSP OPTIONS request
       const streamPath = rtspPath || `/Streaming/Channels/101`;
-      // Jika ada credential, gunakan URL dengan auth
       const rtspUrl = (username && password)
         ? `rtsp://${username}:${password}@${host}:${port}${streamPath}`
         : `rtsp://${host}:${port}${streamPath}`;
@@ -130,33 +133,18 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
       }
       rtspCmd += `\r\n`;
       socket.write(rtspCmd);
-
-      // Jika TCP berhasil terhubung, device sudah pasti online meskipun tidak ada data RTSP
-      // Tunggu data — jika tidak ada data dalam 1.5 detik, resolve sebagai online (port open)
-      setTimeout(() => {
-        if (!resolved) {
-          const duration = Date.now() - startTime;
-          doResolve({
-            alive: true,
-            time: Math.max(1, duration),
-            statusText: `${duration} ms (RTSP Port Open)`,
-            protocol: 'TCP/554',
-          });
-        }
-      }, Math.min(1500, timeoutMs - 200));
     });
 
     socket.on('data', (chunk) => {
       receivedData += chunk.toString();
-      // Respons valid: format RTSP, HTTP, atau data apapun dari port 554
+      // Respons valid: harus mengandung header atau status line protokol RTSP resmi
       const hasValidResponse =
-        receivedData.includes('RTSP/1.0') ||
+        receivedData.includes('RTSP/') ||
         receivedData.includes('CSeq') ||
-        receivedData.includes('200 OK') ||
-        receivedData.includes('401') ||
         receivedData.includes('Public:') ||
         receivedData.includes('Server:') ||
-        receivedData.length > 0;
+        receivedData.includes('WWW-Authenticate') ||
+        /RTSP\/\d\.\d\s+\d{3}/i.test(receivedData);
 
       if (hasValidResponse) {
         const duration = Date.now() - startTime;
@@ -173,8 +161,18 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
       doResolve({
         alive: false,
         time: 0,
-        statusText: `RTSP Timeout (Port ${port})`,
+        statusText: `RTSP Timeout (Port ${port} tidak merespons)`,
       });
+    });
+
+    socket.on('close', () => {
+      if (!resolved) {
+        doResolve({
+          alive: false,
+          time: 0,
+          statusText: `RTSP Closed (Koneksi ditutup tanpa data)`,
+        });
+      }
     });
 
     socket.on('error', (err) => {

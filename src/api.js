@@ -7,8 +7,21 @@ const TOKEN_KEY = 'devwatch_token';
 const SESSION_KEY = 'devwatch_session';
 let wsInstance = null;
 
+// Deteksi apakah sesi saat ini adalah Mode Preview
+function _isCurrentSessionPreview() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return Boolean(parsed?.is_preview);
+  } catch {
+    return false;
+  }
+}
+
 // Bersihkan sesi lokal tanpa import circular (main.js)
 function _clearLocalSession() {
+  if (_isCurrentSessionPreview()) return; // Jangan hapus sesi mode preview
   try { localStorage.removeItem(SESSION_KEY); } catch {}
   try { localStorage.removeItem(TOKEN_KEY); } catch {}
 }
@@ -47,6 +60,9 @@ export async function request(endpoint, options = {}) {
   });
 
   if (res.status === 401 && !endpoint.includes('/auth/login')) {
+    if (_isCurrentSessionPreview()) {
+      return { success: false, message: 'Preview session active' };
+    }
     // Sesi kedaluwarsa — bersihkan sesi lokal & arahkan ke login
     _clearLocalSession();
     if (!window.location.hash.includes('login')) {
@@ -90,15 +106,46 @@ export async function apiGetMe() {
 
 // ---- DEVICES ----
 export async function apiGetDevices(params = {}) {
+  if (_isCurrentSessionPreview()) {
+    const { mockDevices } = await import('./data/mock-devices.js');
+    return { success: true, data: mockDevices };
+  }
   const query = new URLSearchParams(params).toString();
   return request(`/devices${query ? `?${query}` : ''}`);
 }
 
 export async function apiGetDevice(id) {
+  if (_isCurrentSessionPreview()) {
+    const { mockDevices } = await import('./data/mock-devices.js');
+    const dev = mockDevices.find((d) => d.id === Number(id));
+    if (!dev) {
+      throw new Error('Perangkat demo tidak ditemukan');
+    }
+    const isOnline = dev.status === 'online';
+    const latency = dev.responseTime || (isOnline ? 18 : 0);
+    const timeline24h = Array.from({ length: 24 }, (_, i) => ({
+      hour: `${String(i).padStart(2, '0')}:00`,
+      status: dev.status,
+      latency: isOnline ? Math.max(1, latency + ((i * 7) % 5) - 2) : 0,
+    }));
+    return {
+      success: true,
+      data: {
+        ...dev,
+        timeline24h,
+      },
+    };
+  }
   return request(`/devices/${id}`);
 }
 
 export async function apiCreateDevice(payload) {
+  if (_isCurrentSessionPreview()) {
+    const { addDevice } = await import('./data/mock-devices.js');
+    const newDev = addDevice(payload);
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true, data: newDev };
+  }
   return request('/devices', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -106,6 +153,15 @@ export async function apiCreateDevice(payload) {
 }
 
 export async function apiUpdateDevice(id, payload) {
+  if (_isCurrentSessionPreview()) {
+    const { mockDevices } = await import('./data/mock-devices.js');
+    const dev = mockDevices.find((d) => d.id === Number(id));
+    if (dev) {
+      Object.assign(dev, payload);
+    }
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true, data: dev || payload };
+  }
   return request(`/devices/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
@@ -113,12 +169,24 @@ export async function apiUpdateDevice(id, payload) {
 }
 
 export async function apiDeleteDevice(id) {
+  if (_isCurrentSessionPreview()) {
+    const { deleteDevice } = await import('./data/mock-devices.js');
+    deleteDevice(Number(id));
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true };
+  }
   return request(`/devices/${id}`, {
     method: 'DELETE',
   });
 }
 
 export async function apiBulkDeleteDevices(ids) {
+  if (_isCurrentSessionPreview()) {
+    const { deleteDevice } = await import('./data/mock-devices.js');
+    ids.forEach((id) => deleteDevice(Number(id)));
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true };
+  }
   return request('/devices/bulk-delete', {
     method: 'POST',
     body: JSON.stringify({ ids }),
@@ -126,12 +194,48 @@ export async function apiBulkDeleteDevices(ids) {
 }
 
 export async function apiPingDevice(id) {
+  if (_isCurrentSessionPreview()) {
+    const { mockDevices } = await import('./data/mock-devices.js');
+    const dev = mockDevices.find((d) => d.id === Number(id));
+    const isOnline = dev ? dev.status === 'online' : true;
+    const latency = dev?.responseTime && Number(dev.responseTime) > 0 ? Number(dev.responseTime) : (isOnline ? 18 : 0);
+    return {
+      success: true,
+      data: {
+        id: Number(id),
+        nama: dev?.nama || 'Perangkat Demo',
+        ip: dev?.ip || '192.168.1.1',
+        alive: isOnline,
+        status: isOnline ? 'online' : 'offline',
+        time: latency,
+        responseTime: latency,
+        statusText: isOnline ? `${latency} ms` : 'Request Timeout (Simulasi)',
+        method: (dev?.metode || 'PING').toUpperCase(),
+      },
+      alive: isOnline,
+      status: isOnline ? 'online' : 'offline',
+      time: latency,
+      responseTime: latency,
+      statusText: isOnline ? `${latency} ms` : 'Request Timeout (Simulasi)',
+      method: (dev?.metode || 'PING').toUpperCase(),
+    };
+  }
   return request(`/devices/${id}/ping`, {
     method: 'POST',
   });
 }
 
 export async function apiTestConnection(payload) {
+  if (_isCurrentSessionPreview()) {
+    return {
+      success: true,
+      alive: true,
+      time: 16,
+      responseTime: 16,
+      statusText: '16 ms (Uji Koneksi Mode Preview Berhasil)',
+      protocol: payload.metode || 'PING',
+    };
+  }
   return request('/devices/test-connection', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -139,6 +243,13 @@ export async function apiTestConnection(payload) {
 }
 
 export async function apiSetMaintenance(id, reason, durationMinutes = 120) {
+  if (_isCurrentSessionPreview()) {
+    const { updateDeviceStatus } = await import('./data/mock-devices.js');
+    const until = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
+    updateDeviceStatus(Number(id), 'maintenance', { alasan: reason, selesai: until });
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true };
+  }
   return request(`/devices/${id}/maintenance`, {
     method: 'POST',
     body: JSON.stringify({ action: 'start', reason, durationMinutes }),
@@ -146,6 +257,12 @@ export async function apiSetMaintenance(id, reason, durationMinutes = 120) {
 }
 
 export async function apiFinishMaintenance(id) {
+  if (_isCurrentSessionPreview()) {
+    const { updateDeviceStatus } = await import('./data/mock-devices.js');
+    updateDeviceStatus(Number(id), 'online', null);
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true };
+  }
   return request(`/devices/${id}/maintenance`, {
     method: 'POST',
     body: JSON.stringify({ action: 'finish' }),
@@ -153,6 +270,12 @@ export async function apiFinishMaintenance(id) {
 }
 
 export async function apiImportCsv(devices) {
+  if (_isCurrentSessionPreview()) {
+    const { addDevice } = await import('./data/mock-devices.js');
+    devices.forEach((d) => addDevice(d));
+    window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
+    return { success: true, count: devices.length };
+  }
   return request('/devices/import-csv', {
     method: 'POST',
     body: JSON.stringify({ devices }),
@@ -174,7 +297,46 @@ export async function apiGetLogDevices() {
 }
 
 export async function apiGetIsapiInfo(id) {
+  if (_isCurrentSessionPreview()) {
+    return {
+      success: true,
+      data: {
+        supported: true,
+        message: 'Endpoint ISAPI v2.0 (Simulasi Preview)',
+        metadata: {
+          model: 'DS-2CD2143G0-IS (Preview)',
+          firmwareVersion: 'V5.6.80 build 210609',
+          serialNumber: 'DS2CD2143G02026PREVIEW',
+        },
+      },
+    };
+  }
   return request(`/devices/${id}/isapi`);
+}
+
+export async function apiGetRtspStreamInfo(id) {
+  if (_isCurrentSessionPreview()) {
+    const { mockDevices } = await import('./data/mock-devices.js');
+    const dev = mockDevices.find((d) => d.id === Number(id));
+    const isOnline = dev ? dev.status === 'online' : true;
+    return {
+      success: true,
+      data: {
+        id: Number(id),
+        nama: dev?.nama || 'CCTV RTSP Preview',
+        ip: dev?.ip || 'rtsp://admin:adminWLptpn511@10.10.38.192:554/cam/realmonitor?channel=1&subtype=1',
+        fullRtspUrl: dev?.ip || 'rtsp://admin:adminWLptpn511@10.10.38.192:554/cam/realmonitor?channel=1&subtype=1',
+        currentLatencyMs: dev?.responseTime || 18,
+        isOnline,
+        profiles: [
+          { name: 'Main Stream (1080p)', resolution: '1920x1080', fps: 30, bitrate: '4.1 Mbps', codec: 'H.264' },
+          { name: 'Sub Stream (720p)', resolution: '1280x720', fps: 25, bitrate: '1.8 Mbps', codec: 'H.264' },
+          { name: 'Mobile Stream (480p)', resolution: '640x480', fps: 15, bitrate: '600 Kbps', codec: 'H.264' },
+        ],
+      },
+    };
+  }
+  return request(`/devices/${id}/rtsp-stream-info`);
 }
 
 // ---- REPORTS ----

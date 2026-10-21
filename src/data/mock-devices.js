@@ -61,7 +61,11 @@ export function cleanDeviceIp(rawIp) {
     const ipMatch = s.match(/@([a-zA-Z0-9.\-_]+)(?::\d+)?/);
     if (ipMatch) return ipMatch[1];
     try {
-      const u = new URL(s.startsWith('rtsp://') ? s.replace('rtsp://', 'http://') : s);
+      let normalized = s;
+      if (/^r[ts]{2}p:\/\//i.test(normalized)) {
+        normalized = normalized.replace(/^r[ts]{2}p:\/\//i, 'http://');
+      }
+      const u = new URL(normalized);
       return u.hostname || s;
     } catch {}
   }

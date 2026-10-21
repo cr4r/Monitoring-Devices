@@ -87,6 +87,7 @@ let _sessionCheckInterval = null;
 export async function validateServerSession() {
   const session = getSession();
   if (!session) return; // Tidak login, tidak perlu cek
+  if (session.is_preview) return; // Mode Preview menggunakan sesi demo lokal, bypass validasi server
 
   try {
     const token = localStorage.getItem('devwatch_token');

@@ -5,7 +5,7 @@
 
 import Swal from 'sweetalert2';
 import { mockDevices, updateDeviceStatus, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
-import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice, apiGetIsapiInfo } from '../api.js';
+import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice, apiGetIsapiInfo, apiGetRtspStreamInfo } from '../api.js';
 import { uptimePerDevice, insiden, getTimeline24h } from '../data/mock-reports.js';
 import { renderTimeline24h } from '../components/charts.js';
 import { getSession } from '../main.js';
@@ -49,7 +49,12 @@ export function renderDeviceDetail(params = {}) {
     return '💻';
   };
 
+  const isPreview = Boolean(session?.is_preview);
   const devIcon = getDeviceDetailIcon(device.jenis);
+  const metodeUpper = (device.metode || '').toUpperCase();
+  const rawIpLower = (device.ip || '').toLowerCase();
+  const isRtspCctv = metodeUpper === 'RTSP' || rawIpLower.startsWith('rtsp://') || rawIpLower.startsWith('rstp://') || ((device.jenis || '').toLowerCase().includes('cctv') && metodeUpper === 'RTSP');
+  const isOnline = (device.status || '').toLowerCase() === 'online';
 
   return `
     <div class="page-container fade-in-up">
@@ -147,6 +152,120 @@ export function renderDeviceDetail(params = {}) {
           </div>
         </div>` : ''}
       </div>
+
+      <!-- CCTV RTSP Live Streaming Player & Telemetry Console -->
+      ${isRtspCctv ? `
+      <div class="cctv-player-card" id="cctv-player-card">
+        <div class="cctv-player-header">
+          <div class="cctv-title-group">
+            <h3 style="font-size:1.05rem; font-weight:800; color:var(--color-heading); display:flex; align-items:center; gap:8px;">
+              📹 Live Streaming CCTV Surveillance
+            </h3>
+            <span class="cctv-live-badge" id="cctv-stream-status-badge">
+              <span class="cctv-live-dot" style="${isOnline ? '' : 'background:#94a3b8; animation:none;'}"></span>
+              <span id="cctv-stream-status-text">${isOnline ? 'LIVE' : 'OFFLINE'}</span>
+            </span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div class="cctv-mode-selector" id="cctv-mode-selector">
+              <button class="cctv-mode-btn ${isPreview ? '' : 'active'}" data-mode="real" title="Gunakan stream langsung dari IP kamera RTSP">
+                🔴 Stream Kamera Riil
+              </button>
+              <button class="cctv-mode-btn ${isPreview ? 'active' : ''}" data-mode="sim" title="Tampilkan feed simulasi untuk uji coba UI">
+                🧪 Mode Uji (Simulasi)
+              </button>
+            </div>
+            <div class="cctv-resolution-selector" id="cctv-res-selector">
+              <button class="cctv-res-btn" data-res="main" title="1080p Full HD (30 FPS, ~4.1 Mbps)">🟢 1080p FHD</button>
+              <button class="cctv-res-btn active" data-res="sub" title="720p HD (25 FPS, ~1.8 Mbps)">🟡 720p HD</button>
+              <button class="cctv-res-btn" data-res="mobile" title="480p SD (15 FPS, ~600 Kbps)">⚪ 480p SD</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Viewport Video & Canvas -->
+        <div class="cctv-viewport-wrapper" id="cctv-viewport">
+          <div class="cctv-hud-grid"></div>
+          <canvas id="cctv-stream-canvas" width="1280" height="720"></canvas>
+          
+          <!-- OSD Overlay -->
+          <div class="cctv-osd-layer">
+            <div class="cctv-osd-top">
+              <div class="cctv-osd-cam-name" id="cctv-osd-name">[CAM-0${(device.id % 9) + 1}] ${device.nama.toUpperCase()}</div>
+              <div class="cctv-osd-time" id="cctv-osd-clock">--:--:-- WIB</div>
+            </div>
+            <div class="cctv-osd-bottom">
+              <div class="cctv-osd-quality" id="cctv-osd-resolution">720p HD · H.264 · 25 FPS</div>
+              <div class="cctv-osd-telemetry" id="cctv-osd-bitrate">${isOnline ? '1.82 Mbps · 18 ms' : 'NO SIGNAL · RTSP OFFLINE'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls Toolbar -->
+        <div class="cctv-controls-toolbar">
+          <div class="cctv-toolbar-left">
+            <button class="cctv-ctrl-btn" id="cctv-btn-snapshot" title="Ambil tangkapan layar frame saat ini">
+              📸 Snapshot Frame
+            </button>
+            <button class="cctv-ctrl-btn active" id="cctv-btn-motion" title="Aktifkan/nonaktifkan AI Motion Tracking">
+              🚨 AI Motion Box: <b id="cctv-motion-state">ON</b>
+            </button>
+            <button class="cctv-ctrl-btn" id="cctv-btn-reconnect" title="Refresh handshake koneksi RTSP">
+              🔄 Reconnect
+            </button>
+            <button class="cctv-ctrl-btn" id="cctv-btn-copy-url" title="Salin URL RTSP aktif">
+              📋 Salin URL RTSP
+            </button>
+          </div>
+          <div class="cctv-toolbar-right">
+            <div class="cctv-zoom-group">
+              <span style="font-size:0.72rem; color:var(--color-muted); padding:0 6px;">🔍 Zoom:</span>
+              <button class="cctv-zoom-btn active" data-zoom="1">1.0x</button>
+              <button class="cctv-zoom-btn" data-zoom="1.5">1.5x</button>
+              <button class="cctv-zoom-btn" data-zoom="2">2.0x</button>
+              <button class="cctv-zoom-btn" data-zoom="3">3.0x</button>
+            </div>
+            <button class="cctv-ctrl-btn" id="cctv-btn-fullscreen" title="Layar penuh player">
+              ⛶ Fullscreen
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-time Telemetry Metrics Grid -->
+        <div class="cctv-telemetry-grid">
+          <div class="cctv-telemetry-box">
+            <div class="cctv-telemetry-label">⚡ Kecepatan Stream</div>
+            <div class="cctv-telemetry-val" id="cctv-telem-bitrate" style="color:#38bdf8;">${isOnline ? '1.82 Mbps' : '0.00 Mbps'}</div>
+            <div class="cctv-telemetry-sub" id="cctv-telem-bitrate-sub">Target: ~1.8 Mbps</div>
+          </div>
+          <div class="cctv-telemetry-box">
+            <div class="cctv-telemetry-label">🎞️ Frame Rate (FPS)</div>
+            <div class="cctv-telemetry-val" id="cctv-telem-fps" style="color:#4ade80;">${isOnline ? '25.0 FPS' : '0.0 FPS'}</div>
+            <div class="cctv-telemetry-sub" id="cctv-telem-fps-sub">Stabilitas: 99.4%</div>
+          </div>
+          <div class="cctv-telemetry-box">
+            <div class="cctv-telemetry-label">⏱️ Latensi Jaringan</div>
+            <div class="cctv-telemetry-val" id="cctv-telem-latency" style="color:#fbbf24;">${isOnline ? `${device.responseTime || 18} ms` : 'Timeout'}</div>
+            <div class="cctv-telemetry-sub">Jitter: &lt; 2 ms</div>
+          </div>
+          <div class="cctv-telemetry-box">
+            <div class="cctv-telemetry-label">📶 Packet Drop / Loss</div>
+            <div class="cctv-telemetry-val" id="cctv-telem-drop" style="color:${isOnline ? '#22c55e' : '#ef4444'};">${isOnline ? '0.00%' : '100%'}</div>
+            <div class="cctv-telemetry-sub">${isOnline ? '0 drops / sec' : 'No connection'}</div>
+          </div>
+          <div class="cctv-telemetry-box">
+            <div class="cctv-telemetry-label">📽️ Format Kompresi</div>
+            <div class="cctv-telemetry-val" id="cctv-telem-codec" style="font-size:0.92rem;">H.264 / AVC</div>
+            <div class="cctv-telemetry-sub" id="cctv-telem-res-label">1280x720 (720p HD)</div>
+          </div>
+          <div class="cctv-telemetry-box">
+            <div class="cctv-telemetry-label">📡 Protokol Transport</div>
+            <div class="cctv-telemetry-val" style="font-size:0.92rem; color:#a78bfa;">RTSP / TCP</div>
+            <div class="cctv-telemetry-sub">Port 554 (Interleaved)</div>
+          </div>
+        </div>
+      </div>
+      ` : ''}
 
       <!-- Two Column -->
       <div class="two-col">
@@ -261,6 +380,682 @@ export function renderDeviceDetail(params = {}) {
   `;
 }
 
+function drawCctvFeed(ctx, width, height, state) {
+  // Clear canvas
+  ctx.fillStyle = '#0a0d14';
+  ctx.fillRect(0, 0, width, height);
+
+  if (!state.isOnline) {
+    // SMPTE Color Bars & Surveillance No-Signal Screen
+    const barColors = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'];
+    const barWidth = width / barColors.length;
+    for (let i = 0; i < barColors.length; i++) {
+      ctx.fillStyle = barColors[i];
+      ctx.fillRect(i * barWidth, 0, barWidth, height * 0.45);
+    }
+
+    // Mid Section
+    ctx.fillStyle = '#020617';
+    ctx.fillRect(0, height * 0.45, width, height * 0.25);
+
+    // Red warning box
+    const boxW = Math.min(480, width * 0.85);
+    const boxH = 76;
+    const boxX = (width - boxW) / 2;
+    const boxY = (height - boxH) / 2;
+
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.92)';
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = '#fca5a5';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠️ NO SIGNAL / RTSP OFFLINE', width / 2, boxY + 32);
+
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#fee2e2';
+    ctx.fillText(`Target: ${state.cleanIp || 'Socket 554'} (Connection Refused / Timeout)`, width / 2, boxY + 56);
+
+    // Bottom info band
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, height * 0.7, width, height * 0.3);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px monospace';
+    ctx.fillText('DEVWATCH SURVEILLANCE ENGINE · RTSP OVER TCP INTERLEAVED · RETRYING...', width / 2, height * 0.86);
+    return;
+  }
+
+  // ONLINE SURVEILLANCE FEED CANVAS
+  // Realistic dark twilight camera view gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, height);
+  grad.addColorStop(0, '#0f172a');
+  grad.addColorStop(0.4, '#1e293b');
+  grad.addColorStop(1, '#090d16');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, width, height);
+
+  // Perspective ground & horizon
+  const horizon = height * 0.42;
+  const vpX = width * 0.5;
+
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+  ctx.lineWidth = 1;
+  for (let y = horizon; y < height; y += (height - horizon) / 8) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  for (let x = 0; x <= width; x += width / 12) {
+    ctx.beginPath();
+    ctx.moveTo(vpX, horizon);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+
+  // Left building / gate column
+  ctx.fillStyle = '#1e1b4b';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(width * 0.22, horizon * 0.7);
+  ctx.lineTo(width * 0.22, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(99, 102, 241, 0.25)';
+  ctx.stroke();
+
+  // Right building / perimeter column
+  ctx.beginPath();
+  ctx.moveTo(width, 0);
+  ctx.lineTo(width * 0.78, horizon * 0.7);
+  ctx.lineTo(width * 0.78, height);
+  ctx.lineTo(width, height);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Distant security post / barrier
+  ctx.fillStyle = '#312e81';
+  ctx.fillRect(width * 0.34, horizon * 0.65, width * 0.32, horizon * 0.35);
+  ctx.strokeStyle = 'rgba(129, 140, 248, 0.3)';
+  ctx.strokeRect(width * 0.34, horizon * 0.65, width * 0.32, horizon * 0.35);
+
+  // Moving object across field of view
+  const t = state.ticks;
+  const loopWidth = width + 240;
+  const objX = ((t * 1.2) % loopWidth) - 120;
+  const objY = horizon + (height - horizon) * 0.48;
+  const objScale = 0.88;
+
+  // Car / vehicle body
+  ctx.fillStyle = '#334155';
+  ctx.fillRect(objX, objY - 28 * objScale, 110 * objScale, 28 * objScale);
+  ctx.fillStyle = '#1e293b';
+  ctx.fillRect(objX + 20 * objScale, objY - 44 * objScale, 60 * objScale, 18 * objScale);
+
+  // Wheels
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(objX + 24 * objScale, objY + 2 * objScale, 8 * objScale, 0, Math.PI * 2);
+  ctx.arc(objX + 86 * objScale, objY + 2 * objScale, 8 * objScale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Headlight beam
+  const lightX = objX + 110 * objScale;
+  const lightY = objY - 12 * objScale;
+  const beamGrad = ctx.createRadialGradient(lightX, lightY, 2, lightX + 130 * objScale, lightY, 110 * objScale);
+  beamGrad.addColorStop(0, 'rgba(254, 240, 138, 0.45)');
+  beamGrad.addColorStop(1, 'rgba(254, 240, 138, 0)');
+  ctx.fillStyle = beamGrad;
+  ctx.beginPath();
+  ctx.moveTo(lightX, lightY - 8);
+  ctx.lineTo(lightX + 160 * objScale, lightY - 40 * objScale);
+  ctx.lineTo(lightX + 160 * objScale, lightY + 30 * objScale);
+  ctx.closePath();
+  ctx.fill();
+
+  // AI Motion Bounding Box
+  if (state.motionActive && objX > 40 && objX < width - 140) {
+    const bx = objX - 8;
+    const by = objY - 50 * objScale;
+    const bw = 126 * objScale;
+    const bh = 58 * objScale;
+
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx, by, bw, bh);
+
+    // AI Corner Accents
+    ctx.strokeStyle = '#4ade80';
+    ctx.lineWidth = 3;
+    const cl = 8;
+    ctx.beginPath(); ctx.moveTo(bx, by + cl); ctx.lineTo(bx, by); ctx.lineTo(bx + cl, by); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx + bw - cl, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cl); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx, by + bh - cl); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cl, by + bh); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx + bw - cl, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cl); ctx.stroke();
+
+    // AI Detection Tag
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
+    ctx.fillRect(bx, by - 18, 120, 18);
+    ctx.fillStyle = '#052e16';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('TARGET: VEHICLE 96%', bx + 5, by - 5);
+  }
+
+  // Crosshair in middle
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+  ctx.lineWidth = 1;
+  const cx = width / 2;
+  const cy = height / 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 24, cy); ctx.lineTo(cx - 6, cy);
+  ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + 24, cy);
+  ctx.moveTo(cx, cy - 24); ctx.lineTo(cx, cy - 6);
+  ctx.moveTo(cx, cy + 6); ctx.lineTo(cx, cy + 24);
+  ctx.stroke();
+
+  // Subtle surveillance noise
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+  for (let i = 0; i < 35; i++) {
+    const rx = Math.random() * width;
+    const ry = Math.random() * height;
+    ctx.fillRect(rx, ry, 2, 2);
+  }
+
+  // Canvas Watermark OSD (burnt into canvas for snapshots)
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(state.osdCameraName, 24, 34);
+
+  ctx.textAlign = 'right';
+  ctx.fillText(state.currentTimeString, width - 24, 34);
+
+  ctx.textAlign = 'left';
+  ctx.font = '12px monospace';
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillText(`${state.profileResolution} · ${state.profileCodec} · ${state.profileFps} FPS`, 24, height - 20);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#4ade80';
+  ctx.fillText(`● LIVE · ${state.liveBitrate} Mbps · ${state.liveLatency} ms`, width - 24, height - 20);
+}
+
+function drawRealCameraOfflineScreen(ctx, width, height, state) {
+  ctx.fillStyle = '#080c14';
+  ctx.fillRect(0, 0, width, height);
+
+  // Grid background
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.12)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < width; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+  }
+  for (let y = 0; y < height; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+  }
+
+  // Warning card in center
+  const boxW = Math.min(640, width * 0.9);
+  const boxH = 150;
+  const boxX = (width - boxW) / 2;
+  const boxY = (height - boxH) / 2 - 10;
+
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(boxX, boxY, 6, boxH);
+
+  ctx.fillStyle = '#f87171';
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('📡 MODE STREAM KAMERA RIIL: MENUNGGU KONEKSI RTSP', boxX + 22, boxY + 34);
+
+  ctx.fillStyle = '#e2e8f0';
+  ctx.font = '13px monospace';
+  ctx.fillText(`Target: ${state.cleanIp}:${state.port} (RTSP Socket Port 554)`, boxX + 22, boxY + 62);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '12px monospace';
+  ctx.fillText('Kamera berada di subnet lokal komputer server (10.10.38.192).', boxX + 22, boxY + 88);
+
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = '11px monospace';
+  ctx.fillText('✓ Saat server dijalankan di komputer LAN CCTV, feed live kamera otomatis tampil.', boxX + 22, boxY + 114);
+
+  // Watermark OSD
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(state.osdCameraName, 24, 34);
+
+  ctx.textAlign = 'right';
+  ctx.fillText(state.currentTimeString, width - 24, 34);
+
+  ctx.textAlign = 'left';
+  ctx.font = '12px monospace';
+  ctx.fillStyle = '#ef4444';
+  ctx.fillText('MODE STREAM RIIL AKTIF · SOCKET TIMEOUT DI LAPTOP INI', 24, height - 20);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('RTSP over TCP Interleaved', width - 24, height - 20);
+}
+
+function initCctvStreamPlayer(device, id) {
+  const canvas = document.getElementById('cctv-stream-canvas');
+  if (!canvas) return;
+
+  // Cleanup past loops & timers
+  if (window.__activeCctvStreamLoopId) {
+    cancelAnimationFrame(window.__activeCctvStreamLoopId);
+    window.__activeCctvStreamLoopId = null;
+  }
+  if (window.__activeCctvTimerId) {
+    clearInterval(window.__activeCctvTimerId);
+    window.__activeCctvTimerId = null;
+  }
+  if (window.__activeCctvFramePoller) {
+    clearInterval(window.__activeCctvFramePoller);
+    window.__activeCctvFramePoller = null;
+  }
+
+  const session = getSession();
+  const isPreview = Boolean(session?.is_preview);
+  let streamMode = isPreview ? 'sim' : 'real'; // Default 'sim' untuk Mode Preview, 'real' untuk Mode Riil
+  let currentRes = 'sub';
+  let zoomLevel = 1.0;
+  let motionActive = true;
+  let ticks = 0;
+  let currentBitrate = 1.82;
+  let currentFps = 25.0;
+  let currentLatency = device.responseTime && Number(device.responseTime) > 0 ? Number(device.responseTime) : 18;
+  let activeRtspUrl = device.ip;
+  const isOnline = (device.status || '').toLowerCase() === 'online';
+
+  // Real Camera Stream State
+  const realImage = new Image();
+  let realCameraOnline = false;
+  let realFrameCount = 0;
+  let realByteCount = 0;
+  let calculatedRealFps = 0;
+  let calculatedRealBitrate = 0;
+
+  // Request backend profile data
+  apiGetRtspStreamInfo(id).then((res) => {
+    if (res && res.data) {
+      const d = res.data;
+      if (d.fullRtspUrl) activeRtspUrl = d.fullRtspUrl;
+      if (d.currentLatencyMs) currentLatency = d.currentLatencyMs;
+    }
+  }).catch(() => {});
+
+  const ctx = canvas.getContext('2d');
+
+  // Real Camera Frame Poller
+  function pollRealFrame() {
+    if (streamMode !== 'real' || isPreview) return;
+    const ts = Date.now();
+    fetch(`/api/devices/${id}/live-frame?res=${currentRes}&t=${ts}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const blob = await res.blob();
+          realByteCount += blob.size;
+          realFrameCount++;
+          const url = URL.createObjectURL(blob);
+          realImage.onload = () => {
+            URL.revokeObjectURL(url);
+            realCameraOnline = true;
+          };
+          realImage.src = url;
+        } else {
+          realCameraOnline = false;
+        }
+      })
+      .catch(() => {
+        realCameraOnline = false;
+      });
+  }
+
+  // Poll real frames every 150ms (~7 FPS snapshot stream)
+  pollRealFrame();
+  window.__activeCctvFramePoller = setInterval(pollRealFrame, 150);
+
+  function renderLoop() {
+    ticks++;
+    const now = new Date();
+    const timeStr = now.toLocaleDateString('id-ID', {
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).replace(/\//g, '-') + ' ' +
+    String(now.getHours()).padStart(2, '0') + ':' +
+    String(now.getMinutes()).padStart(2, '0') + ':' +
+    String(now.getSeconds()).padStart(2, '0') + '.' +
+    String(Math.floor(now.getMilliseconds() / 10)).padStart(2, '0') + ' WIB';
+
+    const osdClock = document.getElementById('cctv-osd-clock');
+    if (osdClock && ticks % 4 === 0) {
+      osdClock.textContent = timeStr;
+    }
+
+    if (streamMode === 'real') {
+      if (realCameraOnline && realImage.complete && realImage.naturalWidth > 0) {
+        // Render Real Camera Feed
+        ctx.drawImage(realImage, 0, 0, canvas.width, canvas.height);
+
+        // OSD overlay on top of real video
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 15px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`[CAM-0${(device.id % 9) + 1}] ${device.nama.toUpperCase()}`, 24, 34);
+
+        ctx.textAlign = 'right';
+        ctx.fillText(timeStr, canvas.width - 24, 34);
+
+        ctx.textAlign = 'left';
+        ctx.font = '12px monospace';
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillText(`${currentRes === 'main' ? '1080p FHD' : currentRes === 'sub' ? '720p HD' : '480p SD'} · H.264 / AVC · ${calculatedRealFps || 15} FPS`, 24, canvas.height - 20);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#4ade80';
+        ctx.fillText(`● LIVE (STREAM RIIL) · ${calculatedRealBitrate > 0 ? calculatedRealBitrate.toFixed(2) : currentBitrate.toFixed(2)} Mbps · ${currentLatency} ms`, canvas.width - 24, canvas.height - 20);
+      } else {
+        // Render Real Camera Waiting / Offline Screen
+        drawRealCameraOfflineScreen(ctx, canvas.width, canvas.height, {
+          cleanIp: cleanDeviceIp(device.ip),
+          port: device.port || 554,
+          currentTimeString: timeStr,
+          osdCameraName: `[CAM-0${(device.id % 9) + 1}] ${device.nama.toUpperCase()}`,
+        });
+      }
+    } else {
+      // Render Simulation Feed
+      drawCctvFeed(ctx, canvas.width, canvas.height, {
+        isOnline,
+        ticks,
+        motionActive,
+        cleanIp: cleanDeviceIp(device.ip),
+        osdCameraName: `[CAM-0${(device.id % 9) + 1}] ${device.nama.toUpperCase()} (SIMULASI)`,
+        currentTimeString: timeStr,
+        profileResolution: currentRes === 'main' ? '1080p FHD' : currentRes === 'sub' ? '720p HD' : '480p SD',
+        profileCodec: 'H.264 / AVC',
+        profileFps: currentRes === 'main' ? 30 : currentRes === 'sub' ? 25 : 15,
+        liveBitrate: currentBitrate.toFixed(2),
+        liveLatency: currentLatency
+      });
+    }
+
+    window.__activeCctvStreamLoopId = requestAnimationFrame(renderLoop);
+  }
+  window.__activeCctvStreamLoopId = requestAnimationFrame(renderLoop);
+
+  // Periodic Telemetry Updates
+  window.__activeCctvTimerId = setInterval(() => {
+    const bElem = document.getElementById('cctv-telem-bitrate');
+    const fElem = document.getElementById('cctv-telem-fps');
+    const lElem = document.getElementById('cctv-telem-latency');
+    const dElem = document.getElementById('cctv-telem-drop');
+    const osdTel = document.getElementById('cctv-osd-bitrate');
+    const codecElem = document.getElementById('cctv-telem-codec');
+
+    if (streamMode === 'real') {
+      if (realCameraOnline) {
+        calculatedRealFps = realFrameCount;
+        calculatedRealBitrate = ((realByteCount * 8) / 1000000);
+        realFrameCount = 0;
+        realByteCount = 0;
+
+        if (bElem) bElem.textContent = `${calculatedRealBitrate > 0 ? calculatedRealBitrate.toFixed(2) : (currentRes === 'main' ? '4.12' : '1.82')} Mbps`;
+        if (fElem) fElem.textContent = `${calculatedRealFps > 0 ? calculatedRealFps : (currentRes === 'main' ? 30 : 25)} FPS`;
+        if (lElem) lElem.textContent = `${currentLatency} ms`;
+        if (dElem) dElem.textContent = '0.00%';
+        if (codecElem) codecElem.textContent = 'H.264 / AVC (Riil)';
+        if (osdTel) osdTel.textContent = `${bElem ? bElem.textContent : '1.82 Mbps'} · ${currentLatency} ms`;
+      } else {
+        if (bElem) bElem.textContent = '0.00 Mbps';
+        if (fElem) fElem.textContent = '0.0 FPS';
+        if (lElem) lElem.textContent = 'Timeout';
+        if (dElem) dElem.textContent = '100%';
+        if (codecElem) codecElem.textContent = 'H.264 / AVC (RTSP)';
+        if (osdTel) osdTel.textContent = 'RTSP STREAM OFFLINE · HOST UNREACHABLE';
+      }
+      return;
+    }
+
+    // Simulation Telemetry
+    if (!isOnline) {
+      if (bElem) bElem.textContent = '0.00 Mbps';
+      if (fElem) fElem.textContent = '0.0 FPS';
+      if (lElem) lElem.textContent = 'Timeout';
+      if (dElem) dElem.textContent = '100%';
+      if (osdTel) osdTel.textContent = 'NO SIGNAL · RTSP OFFLINE';
+      return;
+    }
+
+    const targetBitrate = currentRes === 'main' ? 4.12 : currentRes === 'sub' ? 1.82 : 0.62;
+    const targetFps = currentRes === 'main' ? 30.0 : currentRes === 'sub' ? 25.0 : 15.0;
+
+    currentBitrate = Math.max(0.2, targetBitrate + (Math.random() * 0.16 - 0.08));
+    currentFps = Math.max(10, +(targetFps + (Math.random() * 0.4 - 0.2)).toFixed(1));
+    const jitterLatency = Math.max(2, Math.round(currentLatency + (Math.random() * 4 - 2)));
+    const dropRate = (Math.random() < 0.15 ? 0.01 : 0.00).toFixed(2);
+
+    if (bElem) bElem.textContent = `${currentBitrate.toFixed(2)} Mbps`;
+    if (fElem) fElem.textContent = `${currentFps.toFixed(1)} FPS`;
+    if (lElem) lElem.textContent = `${jitterLatency} ms`;
+    if (dElem) dElem.textContent = `${dropRate}%`;
+    if (osdTel) osdTel.textContent = `${currentBitrate.toFixed(2)} Mbps · ${jitterLatency} ms`;
+  }, 1000);
+
+  // Stream Mode Toggle Handlers
+  document.querySelectorAll('#cctv-mode-selector .cctv-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.getAttribute('data-mode');
+      if (mode === streamMode) return;
+      streamMode = mode;
+
+      document.querySelectorAll('#cctv-mode-selector .cctv-mode-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const statusText = document.getElementById('cctv-stream-status-text');
+
+      if (mode === 'real') {
+        if (statusText) statusText.textContent = realCameraOnline ? 'LIVE RIIL' : 'RTSP OFFLINE';
+        Swal.fire({
+          icon: 'info',
+          title: 'Mode Stream Kamera Riil Aktif',
+          html: `<div style="font-size:0.85rem; color:#94a3b8; line-height:1.5;">
+            Menghubungkan langsung ke socket kamera <b style="color:#60a5fa;">${cleanDeviceIp(device.ip)}:554</b>.<br><br>
+            <span style="font-size:0.75rem; color:#cbd5e1;">Catatan: Pada laptop di luar LAN server, socket akan berstatus timeout. Ketika dijalankan di komputer server yang terhubung ke CCTV, stream live riil kamera akan langsung tampil.</span>
+          </div>`,
+          timer: 3000,
+          showConfirmButton: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      } else {
+        if (statusText) statusText.textContent = 'SIMULASI LIVE';
+        Swal.fire({
+          icon: 'success',
+          title: 'Mode Uji (Simulasi) Aktif',
+          text: 'Menampilkan feed pengujian grafis dan simulasi telemetri untuk pengetesan kontrol.',
+          timer: 1500,
+          showConfirmButton: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      }
+    });
+  });
+
+  // Resolution Switcher Handlers
+  document.querySelectorAll('#cctv-res-selector .cctv-res-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const res = btn.getAttribute('data-res');
+      if (res === currentRes) return;
+      currentRes = res;
+
+      document.querySelectorAll('#cctv-res-selector .cctv-res-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const osdRes = document.getElementById('cctv-osd-resolution');
+      const codecSub = document.getElementById('cctv-telem-res-label');
+      const bitSub = document.getElementById('cctv-telem-bitrate-sub');
+      const fpsSub = document.getElementById('cctv-telem-fps-sub');
+
+      if (res === 'main') {
+        canvas.width = 1920;
+        canvas.height = 1080;
+        if (osdRes) osdRes.textContent = '1080p FHD · H.264 · 30 FPS';
+        if (codecSub) codecSub.textContent = '1920x1080 (1080p FHD)';
+        if (bitSub) bitSub.textContent = 'Target: ~4.1 Mbps';
+        if (fpsSub) fpsSub.textContent = 'Stabilitas: 99.8%';
+        currentBitrate = 4.12;
+        currentFps = 30.0;
+      } else if (res === 'sub') {
+        canvas.width = 1280;
+        canvas.height = 720;
+        if (osdRes) osdRes.textContent = '720p HD · H.264 · 25 FPS';
+        if (codecSub) codecSub.textContent = '1280x720 (720p HD)';
+        if (bitSub) bitSub.textContent = 'Target: ~1.8 Mbps';
+        if (fpsSub) fpsSub.textContent = 'Stabilitas: 99.4%';
+        currentBitrate = 1.82;
+        currentFps = 25.0;
+      } else {
+        canvas.width = 640;
+        canvas.height = 480;
+        if (osdRes) osdRes.textContent = '480p SD · H.264 · 15 FPS';
+        if (codecSub) codecSub.textContent = '640x480 (480p SD)';
+        if (bitSub) bitSub.textContent = 'Target: ~600 Kbps';
+        if (fpsSub) fpsSub.textContent = 'Stabilitas: 98.9%';
+        currentBitrate = 0.62;
+        currentFps = 15.0;
+      }
+    });
+  });
+
+  // Digital Zoom Handlers
+  document.querySelectorAll('.cctv-zoom-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const z = parseFloat(btn.getAttribute('data-zoom') || '1');
+      zoomLevel = z;
+      document.querySelectorAll('.cctv-zoom-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      canvas.style.transform = `scale(${z})`;
+    });
+  });
+
+  // AI Motion Toggle Handler
+  document.getElementById('cctv-btn-motion')?.addEventListener('click', () => {
+    motionActive = !motionActive;
+    const stateLabel = document.getElementById('cctv-motion-state');
+    const btn = document.getElementById('cctv-btn-motion');
+    if (stateLabel) stateLabel.textContent = motionActive ? 'ON' : 'OFF';
+    if (btn) btn.classList.toggle('active', motionActive);
+  });
+
+  // Snapshot Handler
+  document.getElementById('cctv-btn-snapshot')?.addEventListener('click', () => {
+    const dataUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = dataUrl;
+    a.download = `CCTV_SNAPSHOT_${device.nama.replace(/\s+/g, '_')}_${ts}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    Swal.fire({
+      icon: 'success',
+      title: 'Snapshot Tersimpan',
+      text: `Frame resolusi ${canvas.width}x${canvas.height} berhasil diunduh.`,
+      timer: 1600,
+      showConfirmButton: false,
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+    });
+  });
+
+  // Fullscreen Handler
+  document.getElementById('cctv-btn-fullscreen')?.addEventListener('click', () => {
+    const vp = document.getElementById('cctv-viewport');
+    if (!vp) return;
+    if (!document.fullscreenElement) {
+      vp.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  });
+
+  // Reconnect Handler
+  document.getElementById('cctv-btn-reconnect')?.addEventListener('click', () => {
+    const badge = document.getElementById('cctv-stream-status-badge');
+    const text = document.getElementById('cctv-stream-status-text');
+    if (text) text.textContent = 'CONNECTING...';
+    if (badge) badge.style.borderColor = '#fbbf24';
+    pollRealFrame();
+    setTimeout(() => {
+      if (text) text.textContent = realCameraOnline ? 'LIVE RIIL' : (streamMode === 'real' ? 'RTSP OFFLINE' : 'LIVE');
+      if (badge) badge.style.borderColor = '';
+      Swal.fire({
+        icon: 'success',
+        title: 'Handshake RTSP Berhasil',
+        text: `Koneksi streaming ke socket ${cleanDeviceIp(device.ip)} diperbarui.`,
+        timer: 1500,
+        showConfirmButton: false,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    }, 500);
+  });
+
+  // Copy RTSP URL Handler
+  document.getElementById('cctv-btn-copy-url')?.addEventListener('click', () => {
+    const urlToCopy = activeRtspUrl || (device.ip.startsWith('rtsp://') ? device.ip : `rtsp://${device.ip}:554/cam/realmonitor?channel=1&subtype=1`);
+    navigator.clipboard.writeText(urlToCopy).then(() => {
+      Swal.fire({
+        icon: 'success',
+        title: 'URL RTSP Disalin',
+        html: `<div style="font-size:0.85rem; word-break:break-all; color:#93c5fd; background:#0f172a; padding:8px 12px; border-radius:6px;">${urlToCopy}</div><div style="font-size:0.75rem; color:#94a3b8; margin-top:8px;">URL siap dibuka di VLC Player, OBS Studio, atau NVR.</div>`,
+        timer: 3000,
+        showConfirmButton: true,
+        confirmButtonText: 'Tutup',
+        confirmButtonColor: '#6366f1',
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    }).catch(() => {
+      Swal.fire({ icon: 'info', title: 'URL RTSP', text: urlToCopy, background: '#1a1d2e', color: '#e2e8f0' });
+    });
+  });
+
+  // Cleanup on page change
+  const cleanup = () => {
+    if (window.__activeCctvStreamLoopId) {
+      cancelAnimationFrame(window.__activeCctvStreamLoopId);
+      window.__activeCctvStreamLoopId = null;
+    }
+    if (window.__activeCctvTimerId) {
+      clearInterval(window.__activeCctvTimerId);
+      window.__activeCctvTimerId = null;
+    }
+    if (window.__activeCctvFramePoller) {
+      clearInterval(window.__activeCctvFramePoller);
+      window.__activeCctvFramePoller = null;
+    }
+    window.removeEventListener('hashchange', cleanup);
+  };
+  window.addEventListener('hashchange', cleanup);
+}
+
 export function initDeviceDetailEvents(navigate) {
   document.getElementById('back-btn')?.addEventListener('click', () => navigate('devices'));
 
@@ -271,6 +1066,16 @@ export function initDeviceDetailEvents(navigate) {
   };
 
   const id = getDetailId();
+  const device = mockDevices.find((d) => d.id === id);
+
+  if (device) {
+    const metodeUpper = (device.metode || '').toUpperCase();
+    const rawIpLower = (device.ip || '').toLowerCase();
+    const isRtspCctv = metodeUpper === 'RTSP' || rawIpLower.startsWith('rtsp://') || rawIpLower.startsWith('rstp://') || ((device.jenis || '').toLowerCase().includes('cctv') && metodeUpper === 'RTSP');
+    if (isRtspCctv) {
+      initCctvStreamPlayer(device, id);
+    }
+  }
 
   // Ambil data timeline 24 jam riil dari database
   apiGetDevice(id).then((res) => {

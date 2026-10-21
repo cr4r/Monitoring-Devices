@@ -172,7 +172,7 @@ export function initLoginEvents(navigate) {
       avatar: 'GP',
       is_preview: true,
     });
-    localStorage.removeItem('devwatch_token');
+    localStorage.setItem('devwatch_token', 'preview_demo_token');
     Swal.fire({
       icon: 'info',
       title: 'Mode Preview Aktif',
