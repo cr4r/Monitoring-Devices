@@ -12,6 +12,38 @@ import { pingHost } from './pingService.js';
 import { config } from '../config.js';
 
 /**
+ * Parse RTSP URL lengkap menjadi komponen {host, port, username, password, path}
+ * Mendukung format: rtsp://user:pass@host:port/path
+ * Juga mendukung IP biasa (tanpa scheme)
+ */
+export function parseRtspUrl(ipOrUrl) {
+  const str = String(ipOrUrl || '').trim();
+  // Jika bukan URL (tidak ada ://), kembalikan sebagai host biasa
+  if (!str.includes('://')) {
+    return { host: str, port: 554, username: null, password: null, path: '/' };
+  }
+
+  try {
+    // Tambahkan scheme jika perlu agar URL bisa di-parse
+    const u = new URL(str.startsWith('rtsp://') ? str.replace('rtsp://', 'http://') : str);
+    return {
+      host: u.hostname,
+      port: parseInt(u.port, 10) || 554,
+      username: u.username || null,
+      password: u.password || null,
+      path: u.pathname + u.search || '/',
+    };
+  } catch {
+    // Fallback: coba ekstrak IP manual
+    const match = str.match(/[@:]([\d.]+):(\d+)/);
+    if (match) {
+      return { host: match[1], port: parseInt(match[2], 10) || 554, username: null, password: null, path: '/' };
+    }
+    return { host: str, port: 554, username: null, password: null, path: '/' };
+  }
+}
+
+/**
  * Uji port TCP generik
  */
 export function checkTcpPort(host, port, timeoutMs = config.pingTimeoutMs) {
@@ -64,7 +96,7 @@ export function checkTcpPort(host, port, timeoutMs = config.pingTimeoutMs) {
 /**
  * Pengecekan Stream RTSP dengan jabat tangan protokol OPTIONS RTSP/1.0
  */
-export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeoutMs) {
+export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeoutMs, username = null, password = null, rtspPath = null) {
   return new Promise((resolve) => {
     const startTime = Date.now();
     const socket = new net.Socket();
@@ -82,16 +114,25 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     socket.setTimeout(timeoutMs);
 
     socket.on('connect', () => {
-      // Kirim jabat tangan OPTIONS standar RTSP
-      const rtspCmd =
-        `OPTIONS rtsp://${host}:${port}/Streaming/Channels/101 RTSP/1.0\r\n` +
-        `CSeq: 1\r\n` +
-        `User-Agent: MonDev-StreamMonitor/1.0\r\n` +
-        `\r\n`;
+      // Susun RTSP OPTIONS request
+      const streamPath = rtspPath || `/Streaming/Channels/101`;
+      // Jika ada credential, gunakan URL dengan auth
+      const rtspUrl = (username && password)
+        ? `rtsp://${username}:${password}@${host}:${port}${streamPath}`
+        : `rtsp://${host}:${port}${streamPath}`;
+
+      let rtspCmd = `OPTIONS ${rtspUrl} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: MonDev-StreamMonitor/1.0\r\n`;
+
+      // Tambahkan Basic Auth header jika ada credential
+      if (username && password) {
+        const cred = Buffer.from(`${username}:${password}`).toString('base64');
+        rtspCmd += `Authorization: Basic ${cred}\r\n`;
+      }
+      rtspCmd += `\r\n`;
       socket.write(rtspCmd);
 
       // Jika TCP berhasil terhubung, device sudah pasti online meskipun tidak ada data RTSP
-      // Tunggu data dulu — jika tidak ada data dalam 1.5 detik, resolve sebagai online (port open)
+      // Tunggu data — jika tidak ada data dalam 1.5 detik, resolve sebagai online (port open)
       setTimeout(() => {
         if (!resolved) {
           const duration = Date.now() - startTime;
@@ -108,7 +149,6 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     socket.on('data', (chunk) => {
       receivedData += chunk.toString();
       // Respons valid: format RTSP, HTTP, atau data apapun dari port 554
-      // Beberapa kamera merespons dengan HTTP 401, 200, atau format proprietary
       const hasValidResponse =
         receivedData.includes('RTSP/1.0') ||
         receivedData.includes('CSeq') ||
@@ -301,12 +341,19 @@ export async function checkOnvifDevice(device, timeoutMs = config.pingTimeoutMs)
  */
 export async function probeDevice(device, timeoutMs = config.pingTimeoutMs) {
   const metode = (device.metode || 'PING').toUpperCase();
-  const host = device.ip;
 
   if (metode === 'RTSP') {
-    const port = device.port || 554;
-    const rtspRes = await checkRtspStream(host, port, timeoutMs);
+    // Parse RTSP URL jika device.ip berformat URL lengkap (rtsp://user:pass@host:port/path)
+    const parsed = parseRtspUrl(device.ip);
+    const host = parsed.host;
+    const port = parsed.port || device.port || 554;
+    const username = parsed.username || device.username || null;
+    const password = parsed.password || device.password_encrypted || null;
+    const rtspPath = parsed.path !== '/' ? parsed.path : null;
+
+    const rtspRes = await checkRtspStream(host, port, timeoutMs, username, password, rtspPath);
     if (rtspRes.alive) return rtspRes;
+
     // Fallback ke ICMP jika stream ditolak tapi IP hidup
     const pingRes = await pingHost(host, timeoutMs);
     if (pingRes.alive) {
@@ -318,6 +365,8 @@ export async function probeDevice(device, timeoutMs = config.pingTimeoutMs) {
     }
     return rtspRes;
   }
+
+  const host = device.ip;
 
   if (metode === 'ISAPI') {
     return await checkIsapiDevice(device, timeoutMs);

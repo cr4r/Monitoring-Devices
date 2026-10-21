@@ -4,7 +4,14 @@
 // ================================================================
 
 const TOKEN_KEY = 'devwatch_token';
+const SESSION_KEY = 'devwatch_session';
 let wsInstance = null;
+
+// Bersihkan sesi lokal tanpa import circular (main.js)
+function _clearLocalSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch {}
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || '';
@@ -40,9 +47,8 @@ export async function request(endpoint, options = {}) {
   });
 
   if (res.status === 401 && !endpoint.includes('/auth/login')) {
-    // Sesi kedaluwarsa -> bersihkan sesi & arahkan ke login
-    localStorage.removeItem('devwatch_session');
-    setToken(null);
+    // Sesi kedaluwarsa — bersihkan sesi lokal & arahkan ke login
+    _clearLocalSession();
     if (!window.location.hash.includes('login')) {
       window.location.hash = '#/login';
     }

@@ -77,6 +77,75 @@ export function logout() {
   window.dispatchEvent(new CustomEvent('devwatch:session_change', { detail: null }));
 }
 
+// ---- PROACTIVE SESSION VALIDATOR ----
+let _sessionCheckInterval = null;
+
+/**
+ * Validasi token ke server. Jika 401/gagal, logout dan redirect ke login.
+ * Dipanggil saat boot dan secara berkala.
+ */
+export async function validateServerSession() {
+  const session = getSession();
+  if (!session) return; // Tidak login, tidak perlu cek
+
+  try {
+    const token = localStorage.getItem('devwatch_token');
+    if (!token) {
+      logout();
+      navigate('login');
+      return;
+    }
+
+    const res = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res.status === 401 || res.status === 403) {
+      // Token expired atau invalid di server
+      logout();
+      // Tampilkan notifikasi sesi berakhir
+      if (!window.location.hash.includes('login')) {
+        window.location.hash = '#/login';
+        // Toast notifikasi (jika Swal tersedia)
+        try {
+          const { default: Swal } = await import('sweetalert2');
+          Swal.fire({
+            toast: true,
+            icon: 'warning',
+            title: 'Sesi Berakhir',
+            text: 'Silakan login kembali.',
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3500,
+            background: '#1a1d2e',
+            color: '#e2e8f0',
+          });
+        } catch { /* Swal belum ready */ }
+      }
+    }
+  } catch {
+    // Jaringan error — jangan logout, mungkin server sedang restart
+  }
+}
+
+/**
+ * Mulai periodic session check tiap N menit.
+ * Berhenti otomatis jika user logout.
+ */
+export function startSessionWatcher(intervalMinutes = 5) {
+  if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
+  _sessionCheckInterval = setInterval(() => {
+    validateServerSession();
+  }, intervalMinutes * 60 * 1000);
+}
+
+export function stopSessionWatcher() {
+  if (_sessionCheckInterval) {
+    clearInterval(_sessionCheckInterval);
+    _sessionCheckInterval = null;
+  }
+}
+
 // ---- PAGE REGISTRY ----
 const pages = {
   setup: { render: renderSetup, init: initSetupEvents },
@@ -147,6 +216,14 @@ async function handleRoute() {
     return;
   }
 
+  // Validasi token ke server sebelum render halaman protected
+  // Mencegah user berada di halaman protected dengan sesi expired
+  if (isLoggedIn && route !== 'login') {
+    await validateServerSession();
+    // Cek ulang setelah validasi — mungkin sudah di-logout oleh validateServerSession
+    if (!getSession()) return;
+  }
+
   renderPage(route, params);
 }
 
@@ -188,8 +265,24 @@ function renderPage(route, params) {
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('load', handleRoute);
 
+// Stop session watcher saat user logout
+window.addEventListener('devwatch:session_change', (e) => {
+  if (!e.detail) {
+    // User logged out
+    stopSessionWatcher();
+  } else {
+    // User logged in — mulai periodic session check tiap 5 menit
+    startSessionWatcher(5);
+  }
+});
+
 // Handle initial empty hash
 if (!location.hash || location.hash === '#' || location.hash === '#/') {
   const session = getSession();
   location.hash = session ? '#/dashboard' : '#/login';
+}
+
+// Mulai session watcher jika sudah login saat app pertama kali dibuka
+if (getSession()) {
+  startSessionWatcher(5);
 }
