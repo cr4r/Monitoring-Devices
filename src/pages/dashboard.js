@@ -518,7 +518,7 @@ export function initDashboardEvents(navigate) {
       const isOnline = Boolean(pingData.alive || pingData.status === 'online');
       const ms = pingData.responseTime ?? pingData.time;
       const finalStatus = isOnline ? 'online' : 'offline';
-      updateDeviceStatus(id, finalStatus);
+      updateDeviceStatus(id, finalStatus, null, ms);
       device.responseTime = ms;
       device.status = finalStatus;
 
