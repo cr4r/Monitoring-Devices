@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockDevices, updateDeviceStatus, syncDevicesFromApi } from '../data/mock-devices.js';
+import { mockDevices, updateDeviceStatus, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
 import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice, apiGetIsapiInfo } from '../api.js';
 import { uptimePerDevice, insiden, getTimeline24h } from '../data/mock-reports.js';
 import { renderTimeline24h } from '../components/charts.js';
@@ -87,7 +87,7 @@ export function renderDeviceDetail(params = {}) {
               </div>
             </div>
             <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:6px; font-size:0.82rem; color:var(--color-muted);">
-              <span>🌐 <span class="ip-text">${device.ip}</span></span>
+              <span>🌐 <span class="ip-text" title="${device.ip}">${cleanDeviceIp(device.ip)}</span></span>
               <span>🔌 Metode: <b style="color:var(--color-text-secondary);">${(device.metode || 'ping').toUpperCase()}</b></span>
               ${device.port ? `<span>🔢 Port: <b style="color:var(--color-text-secondary);">${device.port}</b></span>` : ''}
               <span>⏱️ Interval: <b style="color:var(--color-text-secondary);">${device.interval || 60} detik</b></span>
@@ -166,8 +166,8 @@ export function renderDeviceDetail(params = {}) {
           <div class="section-title" style="margin-bottom:12px;">ℹ️ Informasi Device</div>
           <div style="display:flex; flex-direction:column; gap:8px; font-size:0.85rem;">
             ${[
-              ['Jenis', device.jenis === 'cctv' ? '📷 CCTV Hikvision' : '💻 Komputer Kantor'],
-              ['IP Address', `<span class="ip-text">${device.ip}</span>`],
+              ['Jenis', device.jenis === 'cctv' ? '📷 CCTV Hikvision' : (device.jenis || '💻 Komputer Kantor')],
+              ['IP Address', `<span class="ip-text" title="${device.ip}">${cleanDeviceIp(device.ip)}</span>`],
               ['Hostname', device.hostname || '—'],
               ['Metode Cek', device.metode.toUpperCase()],
               ['Port', device.port || '—'],
@@ -189,7 +189,7 @@ export function renderDeviceDetail(params = {}) {
                 📹 Status Protokol Kamera (${(device.metode || 'ISAPI').toUpperCase()})
               </div>
               <div id="isapi-info-content" style="font-size:0.78rem; color:var(--color-muted);">
-                Memuat detail ISAPI / ONVIF dari perangkat...
+                Memuat status protokol...
               </div>
             </div>
           ` : ''}
@@ -290,29 +290,47 @@ export function initDeviceDetailEvents(navigate) {
     renderTimeline24h('detail-timeline-chart', timelineData);
   });
 
-  // Ambil metadata ISAPI/ONVIF jika perangkat kamera
+  // Ambil metadata ISAPI/ONVIF jika perangkat kamera, atau tampilkan RTSP stream status
   const isapiPanel = document.getElementById('isapi-info-content');
-  if (isapiPanel) {
-    apiGetIsapiInfo(id).then((res) => {
-      const d = res?.data;
-      if (d?.supported && d?.metadata) {
-        const m = d.metadata;
-        isapiPanel.innerHTML = `
+  if (isapiPanel && device) {
+    const metodeUpper = (device.metode || 'PING').toUpperCase();
+    if (metodeUpper === 'RTSP') {
+      const isOnline = device.status === 'online';
+      isapiPanel.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:8px;">
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; color:var(--color-text);">
-            <div><span style="color:var(--color-muted);">Model:</span> <b>${m.model || 'Hikvision CCTV'}</b></div>
-            <div><span style="color:var(--color-muted);">Firmware:</span> <b>${m.firmwareVersion || 'ISAPI v2.0'}</b></div>
-            <div><span style="color:var(--color-muted);">Serial:</span> <b>${m.serialNumber || '—'}</b></div>
-            <div><span style="color:var(--color-muted);">Status ISAPI:</span> <span class="badge badge-online">Aktif</span></div>
+            <div><span style="color:var(--color-muted);">Protokol:</span> <b>RTSP/1.0</b></div>
+            <div><span style="color:var(--color-muted);">Port Default:</span> <b>${device.port || 554}</b></div>
+            <div><span style="color:var(--color-muted);">Target Host:</span> <b class="ip-text">${cleanDeviceIp(device.ip)}</b></div>
+            <div><span style="color:var(--color-muted);">Status Stream:</span> ${isOnline ? '<span class="badge badge-online">🟢 Online</span>' : '<span class="badge badge-offline">🔴 Offline</span>'}</div>
           </div>
-        `;
-      } else if (d?.supported) {
-        isapiPanel.innerHTML = `<span style="color:var(--color-online);">✅ Endpoint protokol aktif merespons permintaan. (${d.message || 'Challenge 401 OK'})</span>`;
-      } else {
-        isapiPanel.innerHTML = `<span style="color:var(--color-muted);">${d?.message || 'Protokol tidak merespons.'}</span>`;
-      }
-    }).catch(() => {
-      if (isapiPanel) isapiPanel.innerHTML = '<span style="color:var(--color-muted);">Informasi protokol belum tersedia.</span>';
-    });
+          <div style="font-size:0.75rem; color:var(--color-muted); line-height:1.5; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
+            📡 Perangkat ini menggunakan protokol <b>RTSP (Real-Time Streaming Protocol)</b>. Pemantauan memvalidasi stream port 554 dan respons transmisi video.
+          </div>
+        </div>
+      `;
+    } else {
+      apiGetIsapiInfo(id).then((res) => {
+        const d = res?.data;
+        if (d?.supported && d?.metadata) {
+          const m = d.metadata;
+          isapiPanel.innerHTML = `
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; color:var(--color-text);">
+              <div><span style="color:var(--color-muted);">Model:</span> <b>${m.model || 'Hikvision CCTV'}</b></div>
+              <div><span style="color:var(--color-muted);">Firmware:</span> <b>${m.firmwareVersion || 'ISAPI v2.0'}</b></div>
+              <div><span style="color:var(--color-muted);">Serial:</span> <b>${m.serialNumber || '—'}</b></div>
+              <div><span style="color:var(--color-muted);">Status ISAPI:</span> <span class="badge badge-online">Aktif</span></div>
+            </div>
+          `;
+        } else if (d?.supported) {
+          isapiPanel.innerHTML = `<span style="color:var(--color-online);">✅ Endpoint protokol aktif merespons permintaan. (${d.message || 'Challenge 401 OK'})</span>`;
+        } else {
+          isapiPanel.innerHTML = `<span style="color:var(--color-muted);">${d?.message || 'Protokol tidak merespons.'}</span>`;
+        }
+      }).catch(() => {
+        if (isapiPanel) isapiPanel.innerHTML = '<span style="color:var(--color-muted);">Informasi protokol belum tersedia.</span>';
+      });
+    }
   }
 
   // Ping

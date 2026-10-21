@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi } from '../data/mock-devices.js';
+import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
 import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice } from '../api.js';
 import { renderTimeline24h, renderAggregateTimeline, destroyAllCharts } from '../components/charts.js';
 import { getTimeline24h } from '../data/mock-reports.js';
@@ -192,7 +192,8 @@ export function renderDashboard() {
                     ${mockDevices.length > 0 ? mockDevices.map((d) => {
     const icon = d.status === 'online' ? '🟢' : d.status === 'maintenance' ? '🟡' : '🔴';
     const statusText = d.status === 'online' ? 'Online' : d.status === 'maintenance' ? 'Maintenance' : 'Offline';
-    return `<option value="${d.id}">${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+    const displayIp = cleanDeviceIp(d.ip);
+    return `<option value="${d.id}">${icon} ${d.nama} (${displayIp}) — ${statusText}</option>`;
   }).join('') : '<option value="">(Belum ada perangkat terdaftar)</option>'}
                   </select>
                 </div>
@@ -271,7 +272,7 @@ function renderDeviceCards(filtered = null) {
           <div class="device-card-icon ${d.jenis}">${icon}</div>
           <div style="flex:1; min-width:0;">
             <div class="device-card-name truncate">${d.nama}</div>
-            <div class="device-card-ip">${d.ip}</div>
+            <div class="device-card-ip" title="${d.ip}">${cleanDeviceIp(d.ip)}</div>
           </div>
           <div class="badge badge-${d.status || 'offline'}" style="flex-shrink:0;">
             <span class="status-dot ${d.status || 'offline'}"></span>
@@ -439,7 +440,8 @@ export function initDashboardEvents(navigate) {
       const icon = isOnline ? '🟢' : isMaint ? '🟡' : '🔴';
       const statusText = isOnline ? 'Online' : isMaint ? 'Maintenance' : 'Offline';
       const isSelected = String(d.id) === currentVal;
-      return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+      const displayIp = cleanDeviceIp(d.ip);
+      return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${displayIp}) — ${statusText}</option>`;
     }).join('');
 
     if (!select.value && mockDevices.length > 0) {
@@ -681,11 +683,12 @@ function startCountdownTimers() {
 // ---- NETWORK MAP HELPERS & TOPOLOGY LAYOUT ----
 function getSubnetPrefix(ip) {
   if (!ip) return '';
-  const parts = String(ip).trim().split('.');
+  const clean = cleanDeviceIp(ip);
+  const parts = String(clean).trim().split('.');
   if (parts.length >= 3) {
     return parts.slice(0, 3).join('.');
   }
-  return String(ip).trim();
+  return String(clean).trim();
 }
 
 function getNodeIcon(jenis) {
@@ -1032,12 +1035,18 @@ function initNetworkMap() {
         const parentSub = parentDev ? getSubnetPrefix(parentDev.ip) : null;
         const isDiffSub = parentDev && parentSub && devSub !== parentSub;
 
+        const displayIp = cleanDeviceIp(d.ip);
+        const isRtsp = String(d.ip || '').includes('rtsp://') || String(d.metode || '').toUpperCase() === 'RTSP';
+
         tooltip.innerHTML = `
           <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
             <span>${getNodeIcon(d.jenis)}</span>
             <span>${d.nama}</span>
           </div>
-          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">${d.ip} <span style="color:#64748b;">(${devSub}.x)</span></div>
+          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">
+            ${displayIp} <span style="color:#64748b;">(${devSub}.x)</span>
+            ${isRtsp ? '<span style="font-size:0.65rem; background:rgba(99,102,241,0.25); color:#a5b4fc; padding:1px 5px; border-radius:3px; margin-left:4px;">📹 RTSP</span>' : ''}
+          </div>
           <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
             <span style="color:${color}; font-weight:700;">● ${d.status.toUpperCase()}</span>
             ${d.responseTime !== null && d.responseTime !== undefined ? `<span style="color:#22c55e;">${d.responseTime}ms</span>` : ''}
@@ -1355,7 +1364,7 @@ function drawMap(ctx, w, h) {
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '9px monospace';
-    ctx.fillText(node.ip, node.x, node.y + 12);
+    ctx.fillText(cleanDeviceIp(node.ip), node.x, node.y + 12);
 
     // Latency badge pada router & switch (Backbone / Infrastructure)
     if (isOnline && latencyVal !== null) {
@@ -1438,10 +1447,10 @@ function drawMap(ctx, w, h) {
     const shortName = d.nama.length > 13 ? d.nama.substring(0, 13) + '…' : d.nama;
     ctx.fillText(shortName, d.mapPos.x, d.mapPos.y + 26);
 
-    // IP label
+    // IP label (gunakan clean IP agar URL RTSP panjang tidak merusak canvas)
     ctx.fillStyle = isLight ? '#475569' : '#94a3b8';
     ctx.font = '8.5px monospace';
-    ctx.fillText(d.ip, d.mapPos.x, d.mapPos.y + 36);
+    ctx.fillText(cleanDeviceIp(d.ip), d.mapPos.x, d.mapPos.y + 36);
 
     // Latency badge if online (Router/Switch get dedicated prominent badge, others get standard tag)
     const isRouterOrSwitch = ['router', 'switch', 'gateway', 'hub'].some((k) => String(d.jenis || '').toLowerCase().includes(k));

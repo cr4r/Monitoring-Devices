@@ -73,12 +73,22 @@ app.use('/api/settings', settingsRoutes);
 
 // Sajikan Berkas Statis Frontend (Produksi / Windows Service)
 const distPath = path.resolve(__dirname, '../dist');
+const publicImagesPath = path.resolve(__dirname, '../public/images');
+const rootImagesPath = path.resolve(__dirname, '../images');
+
+// Sajikan Berkas Statis Gambar Dokumentasi & Panduan
+if (fs.existsSync(publicImagesPath)) {
+  app.use('/images', express.static(publicImagesPath));
+} else if (fs.existsSync(rootImagesPath)) {
+  app.use('/images', express.static(rootImagesPath));
+}
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 
   // SPA Fallback: arahkan semua rute non-API ke dist/index.html (kompatibel Express 5)
   app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/ws') && !req.path.startsWith('/images')) {
       return res.sendFile(path.join(distPath, 'index.html'));
     }
     next();

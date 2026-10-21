@@ -54,6 +54,20 @@ export function addDevice(device) {
   return newDev;
 }
 
+export function cleanDeviceIp(rawIp) {
+  if (!rawIp) return '';
+  const s = String(rawIp).trim();
+  if (s.includes('://') || s.includes('@')) {
+    const ipMatch = s.match(/@([a-zA-Z0-9.\-_]+)(?::\d+)?/);
+    if (ipMatch) return ipMatch[1];
+    try {
+      const u = new URL(s.startsWith('rtsp://') ? s.replace('rtsp://', 'http://') : s);
+      return u.hostname || s;
+    } catch {}
+  }
+  return s;
+}
+
 export function deleteDevice(id) {
   mockDevices = mockDevices.filter((d) => d.id !== id);
 }

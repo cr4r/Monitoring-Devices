@@ -4,6 +4,7 @@ import { formatDateWithTz } from '../settingsManager.js';
 import { exportLogsPdf } from '../services/pdfService.js';
 import { getSession } from '../main.js';
 import { getDemoLogs } from '../data/demoDevices.js';
+import { cleanDeviceIp } from '../data/mock-devices.js';
 
 let activeTab = 'status';
 let logFilters = { search: '', dateFrom: '', dateTo: '', tipe: 'all', device: 'all', user: 'all' };
@@ -157,19 +158,26 @@ export async function fetchLiveLogs() {
     if (res && res.data) {
       backendLogs = res.data.map((r) => {
         if (activeTab === 'status') {
+          const isOnline = String(r.status_baru || '').toLowerCase() === 'online';
+          const isMaint = String(r.status_baru || '').toLowerCase() === 'maintenance';
+          const respTime = r.response_time && r.response_time !== '-'
+            ? r.response_time
+            : (isOnline ? 'OK' : 'Timeout');
+
           return {
             id: r.id,
             waktu: r.waktu,
             device: r.device_name || 'Device',
             ip: r.device_ip || '',
+            cleanIp: cleanDeviceIp(r.device_ip),
             deviceId: r.device_id,
             deviceCreatedAt: r.device_created_at,
-            statusSebelum: r.status_lama || 'online',
-            statusBaru: r.status_baru || 'offline',
-            metode: 'Probe',
-            responseTime: r.status_baru === 'online' ? 'OK' : 'Timeout',
+            statusSebelum: (r.status_sebelumnya || (isOnline ? 'offline' : 'online')).toLowerCase(),
+            statusBaru: isOnline ? 'online' : (isMaint ? 'maintenance' : 'offline'),
+            metode: (r.metode || 'PING').toUpperCase(),
+            responseTime: respTime,
             pesan: r.pesan_log,
-            tipe: r.tipe_perubahan || r.status_baru,
+            tipe: isOnline ? 'online' : (isMaint ? 'maintenance' : 'offline'),
           };
         } else if (activeTab === 'aktivitas') {
           return {
@@ -189,7 +197,8 @@ export async function fetchLiveLogs() {
             waktu: r.waktu,
             user: r.user_nama || 'Admin',
             device: r.device_nama || 'Sistem',
-            parameter: r.aksi || 'Konfigurasi',
+            aksi: r.aksi || 'Ubah Konfigurasi',
+            detail: r.detail || '',
             nilaiLama: r.nilai_lama || '-',
             nilaiBaru: r.nilai_baru || '-',
             tipe: 'maintenance',
@@ -429,7 +438,7 @@ function renderLogTable() {
                   <span>${l.device}</span>
                   ${l.deviceId ? '' : '<span style="font-size:0.65rem; background:rgba(234,179,8,0.2); color:var(--color-maintenance); padding:1px 5px; border-radius:4px; font-weight:700;">Arsip</span>'}
                 </div>
-                <div class="ip-text" style="margin-top:2px;">${l.ip}</div>
+                <div class="ip-text" style="margin-top:2px;" title="${l.ip}">${l.cleanIp || cleanDeviceIp(l.ip)}</div>
                 <div style="font-size:0.7rem; color:var(--color-muted); margin-top:3px; display:flex; align-items:center; gap:4px;">
                   <span>📅 Dibuat:</span>
                   <span style="font-family:var(--font-mono); color:var(--color-text);">${l.deviceCreatedAt ? formatDateWithTz(l.deviceCreatedAt) : 'Awal Sistem'}</span>
@@ -438,7 +447,7 @@ function renderLogTable() {
               <td class="log-entry-msg">${l.pesan}</td>
               <td><span class="chip">${l.metode}</span></td>
               <td>
-                <span style="font-family:var(--font-mono); font-size:0.82rem; color:${l.responseTime === 'Timeout' ? 'var(--color-offline)' : 'var(--color-online)'};">
+                <span style="font-family:var(--font-mono); font-size:0.82rem; color:${String(l.responseTime).toLowerCase().includes('timeout') ? 'var(--color-offline)' : 'var(--color-online)'}; font-weight:600;">
                   ${l.responseTime}
                 </span>
               </td>
@@ -496,14 +505,17 @@ function renderLogTable() {
         </thead>
         <tbody>
           ${paged.length === 0 ? `<tr><td colspan="5">${emptyLog()}</td></tr>` : paged.map((l) => `
-            <tr>
+            <tr class="clickable-config-log-row" onclick="window.showConfigLogDetail(${l.id})" style="cursor:pointer;" title="Klik untuk melihat detail perubahan">
               <td style="white-space:nowrap; font-size:0.78rem; color:var(--color-muted); font-family:var(--font-mono);">
                 ${formatDateWithTz(l.waktu)}
               </td>
               <td style="font-size:0.85rem; font-weight:600; color:var(--color-text);">${l.user}</td>
-              <td><span class="chip">${l.aksi}</span></td>
+              <td><span class="chip" style="font-weight:600;">${l.aksi}</span></td>
               <td>${l.device ? `<span class="ip-text">${l.device}</span>` : '<span style="color:var(--color-muted);">Sistem</span>'}</td>
-              <td class="log-entry-msg">${l.pesan}</td>
+              <td class="log-entry-msg" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span>${l.pesan}</span>
+                <span style="font-size:0.75rem; color:var(--color-accent); white-space:nowrap; font-weight:600;">🔍 Detail</span>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -719,4 +731,49 @@ function bindLogRowsSelect() {
     bindLogRowsSelect();
   });
 }
+
+// Modal Pop-up Penjelasan Detail Log Konfigurasi
+window.showConfigLogDetail = (logId) => {
+  const l = backendLogs.find((item) => item.id === logId);
+  if (!l) return;
+
+  Swal.fire({
+    title: '⚙️ Detail Perubahan Konfigurasi',
+    html: `
+      <div style="text-align:left; font-size:0.86rem; display:flex; flex-direction:column; gap:12px; padding:6px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+          <span style="color:var(--color-muted);">Aksi Sistem</span>
+          <span class="chip" style="font-weight:700; font-size:0.82rem; color:var(--color-accent);">${l.aksi}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="color:var(--color-muted);">Pengguna (Operator)</span>
+          <span style="font-weight:600; color:var(--color-text);">${l.user}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="color:var(--color-muted);">Device / Modul Terkait</span>
+          <span style="font-weight:600; color:var(--color-text);">${l.device || 'Sistem Terpusat'}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="color:var(--color-muted);">Waktu Eksekusi</span>
+          <span style="font-family:var(--font-mono); color:var(--color-text);">${formatDateWithTz(l.waktu)}</span>
+        </div>
+        <div style="margin-top:6px;">
+          <span style="color:var(--color-muted); display:block; margin-bottom:6px; font-weight:600;">📝 Rincian Lengkap:</span>
+          <div style="background:rgba(255,255,255,0.04); border:1px solid var(--border-color); border-radius:8px; padding:12px; font-size:0.85rem; line-height:1.6; color:var(--color-heading); word-break:break-word;">
+            ${l.pesan}
+          </div>
+        </div>
+        <div style="padding:8px 10px; background:rgba(99,102,241,0.08); border-radius:6px; font-size:0.75rem; color:#818cf8;">
+          💡 Seluruh aktivitas perubahan konfigurasi tercatat secara permanen di basis data audit SQLite.
+        </div>
+      </div>
+    `,
+    confirmButtonText: 'Tutup',
+    confirmButtonColor: '#6366f1',
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+    width: 520,
+  });
+};
+
 

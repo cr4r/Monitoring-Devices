@@ -5,7 +5,7 @@
 
 import Swal from 'sweetalert2';
 import Papa from 'papaparse';
-import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi } from '../data/mock-devices.js';
+import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
 import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiTestConnection, apiImportCsv, apiBulkDeleteDevices } from '../api.js';
 import { getSession } from '../main.js';
 import { getAppSetting } from '../settingsManager.js';
@@ -166,7 +166,7 @@ function renderDevicesTable(canEdit, isAdmin) {
             </div>
           </div>
         </td>
-        <td><span class="ip-text">${d.ip}</span></td>
+        <td><span class="ip-text" title="${d.ip}">${cleanDeviceIp(d.ip)}</span></td>
         <td>${getDeviceTypeBadge(d.jenis)}</td>
         <td>${methodBadge(d.metode)}</td>
         <td style="color:var(--color-text-secondary);">${d.interval}d</td>
