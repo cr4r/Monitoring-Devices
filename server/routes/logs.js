@@ -14,17 +14,17 @@ router.get('/devices', authenticateToken, (req, res) => {
   const devices = query(`
     SELECT 
       l.device_id,
-      l.device_name,
-      l.device_ip,
-      l.device_created_at,
+      COALESCE(d.nama, l.device_name) as device_name,
+      COALESCE(d.ip, l.device_ip) as device_ip,
+      COALESCE(d.created_at, l.device_created_at) as device_created_at,
       CASE WHEN d.id IS NOT NULL THEN 1 ELSE 0 END as is_active,
       MIN(l.waktu) as log_pertama,
       MAX(l.waktu) as log_terakhir,
       COUNT(l.id) as total_log
     FROM device_status_logs l
     LEFT JOIN devices d ON d.id = l.device_id
-    GROUP BY l.device_name, l.device_ip, coalesce(l.device_created_at, '')
-    ORDER BY is_active DESC, l.device_name ASC
+    GROUP BY l.device_id
+    ORDER BY is_active DESC, device_name ASC
   `);
   res.json({ success: true, data: devices });
 });

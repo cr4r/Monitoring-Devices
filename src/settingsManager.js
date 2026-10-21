@@ -56,8 +56,13 @@ export function applySystemSettings(newSettings = {}) {
   // 1. Terapkan bahasa ke i18n
   setLanguage(lang);
 
-  // 2. Terapkan tema sistem
-  applyTheme(theme, true);
+  // 2. Terapkan tema sistem — JANGAN override preferensi user dari localStorage
+  // Jika user sudah pernah set tema (ada key di localStorage), hormati pilihan user
+  // Hanya apply tema dari DB jika user belum pernah set preferensi sendiri
+  const hasUserThemePref = !!localStorage.getItem('devwatch_theme');
+  if (!hasUserThemePref) {
+    applyTheme(theme, false);
+  }
 
   // 3. Ubah document.title browser
   if (typeof document !== 'undefined') {

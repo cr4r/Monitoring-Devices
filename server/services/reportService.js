@@ -149,7 +149,8 @@ export function getWeeklyReport(reportId = null) {
     const dayIncidents = incidents.filter((_, i) => i % 7 === idx).length;
     return {
       hari: day,
-      uptimePct: +(actualUptimePct - (dayIncidents > 0 ? 0.4 * dayIncidents : -0.1)).toFixed(1),
+      // Cap ke [0, 100]; kurangi 0.4 per insiden di hari itu, tapi jangan pernah >100
+      uptimePct: +Math.min(100, Math.max(0, actualUptimePct - (dayIncidents > 0 ? 0.4 * dayIncidents : 0))).toFixed(1),
       insidenCount: dayIncidents,
     };
   });
@@ -174,7 +175,8 @@ export function getWeeklyReport(reportId = null) {
       nama: d.nama,
       ip: d.ip,
       sla: d.target_sla,
-      uptime: +(d.target_sla + (d.status === 'online' ? 0.2 : -1.5)).toFixed(1),
+      // Tidak tambahkan bonus palsu — uptime = target_sla jika online, dikurangi 1.5 jika offline
+      uptime: +Math.min(100, Math.max(0, d.target_sla + (d.status === 'online' ? 0 : -1.5))).toFixed(1),
       status: d.status,
     })),
   };

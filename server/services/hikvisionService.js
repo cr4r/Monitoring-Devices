@@ -69,6 +69,15 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     const startTime = Date.now();
     const socket = new net.Socket();
     let receivedData = '';
+    let resolved = false;
+
+    const doResolve = (result) => {
+      if (!resolved) {
+        resolved = true;
+        socket.destroy();
+        resolve(result);
+      }
+    };
 
     socket.setTimeout(timeoutMs);
 
@@ -77,18 +86,41 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
       const rtspCmd =
         `OPTIONS rtsp://${host}:${port}/Streaming/Channels/101 RTSP/1.0\r\n` +
         `CSeq: 1\r\n` +
-        `User-Agent: DevWatch-StreamMonitor/1.0\r\n` +
+        `User-Agent: MonDev-StreamMonitor/1.0\r\n` +
         `\r\n`;
       socket.write(rtspCmd);
+
+      // Jika TCP berhasil terhubung, device sudah pasti online meskipun tidak ada data RTSP
+      // Tunggu data dulu — jika tidak ada data dalam 1.5 detik, resolve sebagai online (port open)
+      setTimeout(() => {
+        if (!resolved) {
+          const duration = Date.now() - startTime;
+          doResolve({
+            alive: true,
+            time: Math.max(1, duration),
+            statusText: `${duration} ms (RTSP Port Open)`,
+            protocol: 'TCP/554',
+          });
+        }
+      }, Math.min(1500, timeoutMs - 200));
     });
 
     socket.on('data', (chunk) => {
       receivedData += chunk.toString();
-      // Periksa apakah respons adalah format protokol RTSP
-      if (receivedData.includes('RTSP/1.0') || receivedData.includes('CSeq: 1')) {
+      // Respons valid: format RTSP, HTTP, atau data apapun dari port 554
+      // Beberapa kamera merespons dengan HTTP 401, 200, atau format proprietary
+      const hasValidResponse =
+        receivedData.includes('RTSP/1.0') ||
+        receivedData.includes('CSeq') ||
+        receivedData.includes('200 OK') ||
+        receivedData.includes('401') ||
+        receivedData.includes('Public:') ||
+        receivedData.includes('Server:') ||
+        receivedData.length > 0;
+
+      if (hasValidResponse) {
         const duration = Date.now() - startTime;
-        socket.destroy();
-        resolve({
+        doResolve({
           alive: true,
           time: Math.max(1, duration),
           statusText: `${duration} ms (RTSP Stream Aktif)`,
@@ -98,8 +130,7 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     });
 
     socket.on('timeout', () => {
-      socket.destroy();
-      resolve({
+      doResolve({
         alive: false,
         time: 0,
         statusText: `RTSP Timeout (Port ${port})`,
@@ -107,8 +138,7 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     });
 
     socket.on('error', (err) => {
-      socket.destroy();
-      resolve({
+      doResolve({
         alive: false,
         time: 0,
         statusText: `RTSP Error: ${err.code || 'Connection Refused'}`,
@@ -118,7 +148,7 @@ export function checkRtspStream(host, port = 554, timeoutMs = config.pingTimeout
     try {
       socket.connect(port, host);
     } catch (err) {
-      resolve({
+      doResolve({
         alive: false,
         time: 0,
         statusText: err.message,

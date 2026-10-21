@@ -19,5 +19,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-html2canvas': ['html2canvas'],
+          'vendor-swal': ['sweetalert2'],
+          'vendor-papa': ['papaparse'],
+        },
+      },
+    },
   },
 });

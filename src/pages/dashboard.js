@@ -52,7 +52,6 @@ export function renderDashboard() {
           <div class="stat-info">
             <div class="stat-value" id="stat-total-val">${counts.total}</div>
             <div class="stat-label">Total Device</div>
-            <div class="stat-sub">PC + CCTV</div>
           </div>
         </div>
         <div class="stat-card online-stat">
@@ -191,10 +190,10 @@ export function renderDashboard() {
                   <label class="form-label" style="margin:0; font-size:0.8rem;">Pilih Perangkat:</label>
                   <select class="form-control timeline-device-select" id="timeline-device-select" style="width:auto; min-width:240px; font-size:0.82rem; padding:4px 10px;">
                     ${mockDevices.length > 0 ? mockDevices.map((d) => {
-                      const icon = d.status === 'online' ? '🟢' : d.status === 'maintenance' ? '🟡' : '🔴';
-                      const statusText = d.status === 'online' ? 'Online' : d.status === 'maintenance' ? 'Maintenance' : 'Offline';
-                      return `<option value="${d.id}">${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
-                    }).join('') : '<option value="">(Belum ada perangkat terdaftar)</option>'}
+    const icon = d.status === 'online' ? '🟢' : d.status === 'maintenance' ? '🟡' : '🔴';
+    const statusText = d.status === 'online' ? 'Online' : d.status === 'maintenance' ? 'Maintenance' : 'Offline';
+    return `<option value="${d.id}">${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+  }).join('') : '<option value="">(Belum ada perangkat terdaftar)</option>'}
                   </select>
                 </div>
               </div>
@@ -716,10 +715,12 @@ function computeMapLayout(w, h, force = false) {
     id: primaryRouter ? `__real_${primaryRouter.id}` : '__gw__',
     type: 'gateway',
     isReal: !!primaryRouter,
+    isVirtual: !primaryRouter,
     realId: primaryRouter ? primaryRouter.id : null,
-    nama: primaryRouter ? primaryRouter.nama : 'Gateway Router (Virtual)',
-    ip: primaryRouter ? primaryRouter.ip : '192.168.1.1',
-    status: primaryRouter ? primaryRouter.status : 'online',
+    nama: primaryRouter ? primaryRouter.nama : 'Gateway (Belum Dikonfigurasi)',
+    ip: primaryRouter ? primaryRouter.ip : '—',
+    // Status virtual bukan 'online' — gunakan 'unknown' agar tidak misleading
+    status: primaryRouter ? primaryRouter.status : 'unknown',
     icon: '🌐',
     x: gwPos.x,
     y: gwPos.y,
@@ -1055,7 +1056,8 @@ function initNetworkMap() {
         const realDev = v.realId ? mockDevices.find((d) => d.id === v.realId) : null;
         const isOnline = realDev ? realDev.status === 'online' : v.status === 'online';
         const rawLatency = realDev ? (realDev.responseTime ?? realDev.response_time_ms) : null;
-        const latencyVal = (rawLatency !== null && rawLatency !== undefined && rawLatency > 0) ? rawLatency : (isOnline ? (v.type === 'gateway' ? 1 : 2) : null);
+        // Tidak gunakan nilai latency palsu — hanya tampilkan jika ada data riil
+        const latencyVal = (rawLatency !== null && rawLatency !== undefined && rawLatency > 0) ? rawLatency : null;
         const st = realDev ? realDev.status : v.status;
         const color = st === 'online' ? '#22c55e' : (st === 'offline' ? '#ef4444' : '#eab308');
 
@@ -1348,7 +1350,8 @@ function drawMap(ctx, w, h) {
     const realDev = node.realId ? mockDevices.find((d) => d.id === node.realId) : null;
     const isOnline = realDev ? realDev.status === 'online' : node.status === 'online';
     const rawLatency = realDev ? (realDev.responseTime ?? realDev.response_time_ms) : null;
-    const latencyVal = (rawLatency !== null && rawLatency !== undefined && rawLatency > 0) ? rawLatency : (isOnline ? (node.type === 'gateway' ? 1 : 2) : null);
+    // Tidak gunakan nilai latency palsu — hanya tampilkan jika ada data riil dari monitoring
+    const latencyVal = (rawLatency !== null && rawLatency !== undefined && rawLatency > 0) ? rawLatency : null;
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '9px monospace';
@@ -1673,7 +1676,7 @@ function initTimeline() {
         renderTimeline24h('timeline-chart', mapped);
         return;
       }
-    } catch {}
+    } catch { }
 
     const data = getTimeline24h(parseInt(deviceId));
     renderTimeline24h('timeline-chart', data);

@@ -496,9 +496,9 @@ router.post('/:id/maintenance', authenticateToken, requireRole(['admin', 'teknis
 
     const logMsg = `${dev.nama} (${dev.ip}) masuk mode Maintenance oleh ${req.user.nama}. Alasan: ${reason}. Estimasi: ${minutes} menit.`;
     run(
-      `INSERT INTO device_status_logs (device_id, device_name, device_ip, status_sebelumnya, status_baru, metode, response_time, pesan_log)
-       VALUES (?, ?, ?, ?, 'Maintenance', 'Manual', '-', ?)`,
-      [dev.id, dev.nama, dev.ip, dev.status, logMsg]
+      `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+       VALUES (?, ?, ?, ?, ?, 'Maintenance', 'Manual', '-', ?)`,
+      [dev.id, dev.nama, dev.ip, dev.created_at, dev.status, logMsg]
     );
 
     run(
@@ -529,9 +529,9 @@ router.post('/:id/maintenance', authenticateToken, requireRole(['admin', 'teknis
 
   const logFinish = `Mode pemeliharaan untuk ${dev.nama} selesai oleh ${req.user.nama}. Perangkat kembali aktif dipantau.`;
   run(
-    `INSERT INTO device_status_logs (device_id, device_name, device_ip, status_sebelumnya, status_baru, metode, response_time, pesan_log)
-     VALUES (?, ?, ?, 'Maintenance', 'Online', 'Manual', '-', ?)`,
-    [dev.id, dev.nama, dev.ip, logFinish]
+    `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+     VALUES (?, ?, ?, ?, 'Maintenance', 'Online', 'Manual', '-', ?)`,
+    [dev.id, dev.nama, dev.ip, dev.created_at, logFinish]
   );
 
   broadcast('maintenance_update', { id: dev.id, status: 'online' });

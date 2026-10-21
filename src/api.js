@@ -155,7 +155,11 @@ export async function apiImportCsv(devices) {
 
 // ---- LOGS ----
 export async function apiGetLogs(params = {}) {
-  const query = new URLSearchParams(params).toString();
+  // Hapus key undefined/null/empty agar tidak terkirim sebagai string "undefined" ke server
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  );
+  const query = new URLSearchParams(clean).toString();
   return request(`/logs${query ? `?${query}` : ''}`);
 }
 
