@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
+import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi, cleanDeviceIp, parseSqliteUtc, formatTimeAgo } from '../data/mock-devices.js';
 import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice, apiPingAllDevices } from '../api.js';
 import { renderTimeline24h, renderAggregateTimeline, destroyAllCharts } from '../components/charts.js';
 import { getTimeline24h } from '../data/mock-reports.js';
@@ -275,13 +275,13 @@ function renderDeviceCards(filtered = null) {
     const statusLabel = { online: '🟢 Online', offline: '🔴 Offline', maintenance: '🟡 Maintenance' }[d.status];
     const icon = getNodeIcon(d.jenis);
 
-    const lastChecked = d.lastChecked
-      ? formatTimeAgo(d.lastChecked)
-      : 'Belum dicek';
+    const checkDate = d.lastChecked ? parseSqliteUtc(d.lastChecked) : null;
+    const lastChecked = d.lastChecked ? formatTimeAgo(d.lastChecked) : 'Belum dicek';
+    const exactCheck = checkDate ? checkDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Belum pernah dicek';
 
-    const lastOnline = d.lastOnline
-      ? formatTimeAgo(d.lastOnline)
-      : 'Tidak diketahui';
+    const onlineDate = d.lastOnline ? parseSqliteUtc(d.lastOnline) : null;
+    const lastOnline = d.lastOnline ? formatTimeAgo(d.lastOnline) : 'Tidak diketahui';
+    const exactOnline = onlineDate ? onlineDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Tidak diketahui';
 
     const countdownHtml = d.status === 'maintenance' && d.maintenanceInfo
       ? `<div class="maintenance-countdown">⏱️ <span class="countdown-timer" data-end="${d.maintenanceInfo.estimasiSelesai}">Menghitung...</span></div>`
@@ -312,11 +312,11 @@ function renderDeviceCards(filtered = null) {
           </div>
           <div class="device-card-meta-row">
             <span class="device-card-meta-label">⏱️ Last Check:</span>
-            <span>${lastChecked}</span>
+            <span title="${exactCheck}" style="cursor:help; font-weight:600; color:var(--color-heading);">${lastChecked}</span>
           </div>
           <div class="device-card-meta-row">
             <span class="device-card-meta-label">🟢 Last Online:</span>
-            <span>${d.status === 'online' ? 'Sekarang' : lastOnline}</span>
+            <span title="${exactOnline}" style="cursor:help;">${d.status === 'online' ? 'Sekarang' : lastOnline}</span>
           </div>
           ${d.status === 'online' ? `
           <div class="device-card-meta-row">
@@ -1127,6 +1127,10 @@ function showDeviceMapModal(d) {
           <span style="color:#94a3b8;">Terakhir Online</span>
           <span style="color:#94a3b8;">${d.status === 'online' ? 'Saat Ini' : formatTimeAgo(d.lastOnline)}</span>
         </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:#94a3b8;">Terakhir Dicek (Ping)</span>
+          <span style="color:#38bdf8; font-weight:600;">${d.lastChecked ? formatTimeAgo(d.lastChecked) : 'Belum pernah'}</span>
+        </div>
       </div>
       <div style="display:flex; gap:8px; margin-top:16px;">
         <button id="modal-ping-btn" class="btn btn-secondary btn-sm" style="flex:1;">📡 Probe</button>
@@ -1417,6 +1421,118 @@ function initNetworkMap() {
   canvas.addEventListener('mouseleave', () => {
     endDrag();
     if (tooltip) tooltip.style.display = 'none';
+  });
+
+  // Touch interaction untuk perangkat mobile (Drag Node, Pan Canvas, Pinch Zoom & Tap Info)
+  let touchStartDist = 0;
+  let touchStartScale = 1;
+  let touchStartMid = { x: 0, y: 0 };
+  let touchMoved = false;
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const { mouseX, mouseY, vx, vy } = getCanvasMouseCoords(t, canvas);
+      dragStartMouse = { x: mouseX, y: mouseY };
+      lastMouse = { x: mouseX, y: mouseY };
+      isNodeMoved = false;
+      touchMoved = false;
+      const hit = findNodeAt(vx, vy);
+      if (hit) {
+        draggedNode = hit;
+      } else {
+        isDragging = true;
+      }
+    } else if (e.touches.length === 2) {
+      draggedNode = null;
+      isDragging = false;
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      touchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      touchStartScale = mapTransform.scale;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / (rect.width || 1);
+      const scaleY = canvas.height / (rect.height || 1);
+      touchStartMid = {
+        x: ((t1.clientX + t2.clientX) / 2 - rect.left) * scaleX,
+        y: ((t1.clientY + t2.clientY) / 2 - rect.top) * scaleY,
+      };
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const { mouseX, mouseY } = getCanvasMouseCoords(t, canvas);
+      const dist = Math.hypot(mouseX - dragStartMouse.x, mouseY - dragStartMouse.y);
+      if (dist > 6) {
+        isNodeMoved = true;
+        touchMoved = true;
+      }
+
+      if (draggedNode) {
+        const dx = (mouseX - lastMouse.x) / mapTransform.scale;
+        const dy = (mouseY - lastMouse.y) / mapTransform.scale;
+        if (draggedNode.type === 'device') {
+          draggedNode.data.mapPos.x += dx;
+          draggedNode.data.mapPos.y += dy;
+          customNodePositions[draggedNode.data.id] = { ...draggedNode.data.mapPos };
+        } else if (draggedNode.type === 'wan') {
+          draggedNode.data.x += dx;
+          draggedNode.data.y += dy;
+        }
+        lastMouse = { x: mouseX, y: mouseY };
+        if (tooltip) tooltip.style.display = 'none';
+        return;
+      }
+
+      if (isDragging) {
+        mapTransform.x += mouseX - lastMouse.x;
+        mapTransform.y += mouseY - lastMouse.y;
+        lastMouse = { x: mouseX, y: mouseY };
+        if (tooltip) tooltip.style.display = 'none';
+        return;
+      }
+    } else if (e.touches.length === 2 && touchStartDist > 0) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const factor = currentDist / touchStartDist;
+      const newScale = Math.max(0.18, Math.min(3.0, touchStartScale * factor));
+      mapTransform.x = touchStartMid.x - (touchStartMid.x - mapTransform.x) * (newScale / mapTransform.scale);
+      mapTransform.y = touchStartMid.y - (touchStartMid.y - mapTransform.y) * (newScale / mapTransform.scale);
+      mapTransform.scale = newScale;
+      if (tooltip) tooltip.style.display = 'none';
+    }
+  }, { passive: false });
+
+  const endTouch = (e) => {
+    if (e.touches.length === 0) {
+      if (draggedNode && !touchMoved) {
+        if (draggedNode.type === 'device') {
+          showDeviceMapModal(draggedNode.data);
+        } else if (draggedNode.type === 'wan') {
+          showWanCloudModal(draggedNode.data);
+        }
+      }
+      draggedNode = null;
+      isDragging = false;
+      touchStartDist = 0;
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const { mouseX, mouseY } = getCanvasMouseCoords(t, canvas);
+      lastMouse = { x: mouseX, y: mouseY };
+      dragStartMouse = { x: mouseX, y: mouseY };
+      touchStartDist = 0;
+    }
+  };
+
+  canvas.addEventListener('touchend', endTouch);
+  canvas.addEventListener('touchcancel', () => {
+    draggedNode = null;
+    isDragging = false;
+    touchStartDist = 0;
   });
 
   // Wheel zoom interaktif berpusat kursor
@@ -2048,15 +2164,4 @@ function initTimeline() {
   } else {
     renderTimeline24h('timeline-chart', []);
   }
-}
-
-// Format relative time
-function formatTimeAgo(isoString) {
-  const diff = new Date() - new Date(isoString);
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Baru saja';
-  if (mins < 60) return `${mins} menit lalu`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} jam lalu`;
-  return `${Math.floor(hours / 24)} hari lalu`;
 }

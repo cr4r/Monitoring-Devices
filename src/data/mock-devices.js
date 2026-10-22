@@ -9,6 +9,30 @@ if (initialSession?.is_preview) {
   mockDevices = getDemoDevices();
 }
 
+export function parseSqliteUtc(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + (s.endsWith('Z') ? '' : 'Z');
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export function formatTimeAgo(isoOrUtcString) {
+  if (!isoOrUtcString) return 'Belum dicek';
+  const d = parseSqliteUtc(isoOrUtcString);
+  if (!d) return 'Belum dicek';
+  const now = new Date();
+  const diffMs = Math.max(0, now - d);
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 45) return 'Baru saja';
+  const mins = Math.floor(diffSec / 60);
+  if (mins < 60) return `${mins} mnt lalu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} jam lalu`;
+  const days = Math.floor(hours / 24);
+  return `${days} hari lalu`;
+}
+
 // Helpers
 export function getDeviceById(id) {
   return mockDevices.find((d) => d.id === id) || null;
@@ -142,8 +166,8 @@ export async function syncDevicesFromApi() {
             deskripsi: dbDev.deskripsi || '',
             status: rawStatus === 'online' ? 'online' : (rawStatus === 'maintenance' ? 'maintenance' : 'offline'),
             responseTime: dbDev.response_time_ms || 0,
-            lastChecked: dbDev.last_check || new Date().toISOString(),
-            lastOnline: dbDev.last_seen_online || new Date().toISOString(),
+            lastChecked: dbDev.last_check || null,
+            lastOnline: dbDev.last_seen_online || null,
             uptime24h: dbDev.target_sla || 99.0,
             active: dbDev.is_active === 1,
             created_at: dbDev.created_at || new Date().toISOString(),
@@ -196,6 +220,10 @@ if (typeof window !== 'undefined') {
       if (dev) {
         dev.responseTime = e.detail.responseTime;
         dev.status = e.detail.status;
+        dev.lastChecked = new Date().toISOString();
+        if (e.detail.status === 'online') {
+          dev.lastOnline = new Date().toISOString();
+        }
       }
     }
   });

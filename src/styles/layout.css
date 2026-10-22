@@ -506,6 +506,72 @@
   }
 }
 
+/* ---- LIGHT THEME SIDEBAR FOOTER & TELEMETRY ---- */
+[data-theme="light"] .sidebar-footer {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.95) 100%);
+  border-top-color: rgba(226, 232, 240, 0.8);
+}
+
+[data-theme="light"] .sidebar-telemetry-card {
+  background: #ffffff;
+  border-color: rgba(226, 232, 240, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .sidebar-telemetry-card:hover {
+  background: #ffffff;
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+
+[data-theme="light"] .telemetry-title {
+  color: #475569;
+}
+
+[data-theme="light"] .telemetry-stat {
+  color: #0f172a;
+}
+
+[data-theme="light"] .telemetry-progress-bg {
+  background: #e2e8f0;
+}
+
+[data-theme="light"] .telemetry-ws-pill.connected {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="light"] .sidebar-user-card {
+  background: #ffffff;
+  border-color: rgba(226, 232, 240, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .sidebar-user-card:hover {
+  background: #ffffff;
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+[data-theme="light"] .sidebar-user-name {
+  color: #0f172a;
+}
+
+[data-theme="light"] .sidebar-user-role {
+  color: #64748b;
+}
+
+[data-theme="light"] .toolbelt-btn {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+[data-theme="light"] .toolbelt-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
 /* ---- TOPBAR ---- */
 .topbar {
   height: var(--topbar-height);
@@ -786,16 +852,66 @@
 }
 
 @media (max-width: 768px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .topbar {
+    padding: 0 12px;
+    height: 56px;
+  }
+
+  .topbar-left {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .topbar-title {
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+  }
+
+  .topbar-breadcrumb {
+    display: none !important;
+  }
+
+  .topbar-right {
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  .topbar-time {
+    display: none !important;
+  }
+
+  #user-btn .text-sm,
+  #user-btn span:last-child {
+    display: none !important;
+  }
+
+  #user-btn {
+    padding: 4px;
+    gap: 0;
+  }
+
+  #theme-toggle-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  #notif-btn {
+    width: 32px;
+    height: 32px;
   }
 
   .main-content {
+    margin-top: 56px;
+    min-height: calc(100vh - 56px);
     padding: var(--spacing-md);
   }
 
-  .topbar {
-    padding: 0 var(--spacing-md);
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .two-col {
@@ -816,6 +932,35 @@
 
   .page-title {
     font-size: 1.3rem;
+  }
+
+  /* Network visual topology map mobile layout */
+  .network-map-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .map-toolbar-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    width: 100%;
+    gap: 6px;
+  }
+
+  .map-toolbar-group .btn {
+    flex: 1 1 auto;
+    font-size: 0.75rem;
+    padding: 6px 8px;
+  }
+
+  .map-search-box {
+    width: 100%;
+  }
+
+  .map-search-box input {
+    width: 100% !important;
   }
 }
 

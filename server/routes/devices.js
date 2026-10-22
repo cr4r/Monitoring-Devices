@@ -882,7 +882,7 @@ router.post('/:id/maintenance', authenticateToken, requireRole(['admin', 'teknis
 
 // POST /api/devices/import-csv — Impor massal perangkat dari CSV
 router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']), (req, res) => {
-  const { devices = [] } = req.body;
+  const { devices = [], mode = 'replace' } = req.body;
 
   if (!Array.isArray(devices) || devices.length === 0) {
     return res.status(400).json({ success: false, message: 'Data CSV kosong atau tidak valid.' });
@@ -899,6 +899,7 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
   });
 
   let imported = 0;
+  let updated = 0;
   let skipped = 0;
   const pendingParents = [];
 
@@ -921,33 +922,58 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
       const lokasiClean = (d.lokasi && String(d.lokasi).trim()) || 'Kantor';
       const deskripsiClean = d.deskripsi ? String(d.deskripsi).trim() : null;
 
-      const result = run(
-        `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline')`,
-        [
-          namaClean,
-          ipClean,
-          hostnameClean,
-          jenisClean,
-          metodeClean,
-          portClean,
-          intervalClean,
-          grupClean,
-          lokasiClean,
-          deskripsiClean,
-        ]
-      );
+      let targetId = null;
 
-      const newId = Number(result.lastInsertRowid);
-      ipToIdMap.set(ipClean, newId);
-      nameToIdMap.set(namaClean.toLowerCase(), newId);
+      if (mode === 'replace' && (ipToIdMap.has(ipClean) || nameToIdMap.has(namaClean.toLowerCase()))) {
+        targetId = ipToIdMap.get(ipClean) || nameToIdMap.get(namaClean.toLowerCase());
+        run(
+          `UPDATE devices
+           SET nama = ?, ip = ?, hostname = ?, jenis = ?, metode = ?, port = ?, interval_detik = ?, grup = ?, lokasi = ?, deskripsi = ?
+           WHERE id = ?`,
+          [
+            namaClean,
+            ipClean,
+            hostnameClean,
+            jenisClean,
+            metodeClean,
+            portClean,
+            intervalClean,
+            grupClean,
+            lokasiClean,
+            deskripsiClean,
+            targetId,
+          ]
+        );
+        updated++;
+      } else {
+        const result = run(
+          `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline')`,
+          [
+            namaClean,
+            ipClean,
+            hostnameClean,
+            jenisClean,
+            metodeClean,
+            portClean,
+            intervalClean,
+            grupClean,
+            lokasiClean,
+            deskripsiClean,
+          ]
+        );
+
+        targetId = Number(result.lastInsertRowid);
+        imported++;
+      }
+
+      ipToIdMap.set(ipClean, targetId);
+      nameToIdMap.set(namaClean.toLowerCase(), targetId);
 
       const parentRef = d.terhubung_ke || d.terhubungKe || d.parent_ip || d.parent || d.parent_id || d.parentId;
       if (parentRef) {
-        pendingParents.push({ id: newId, parentRef: String(parentRef).trim() });
+        pendingParents.push({ id: targetId, parentRef: String(parentRef).trim() });
       }
-
-      imported++;
     } catch (err) {
       console.warn('Gagal mengimpor baris CSV:', d, err.message);
       skipped++;
@@ -990,17 +1016,18 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
   run(
     `INSERT INTO config_logs (user_id, user_nama, aksi, detail)
      VALUES (?, ?, 'Impor CSV', ?)`,
-    [req.user.id, req.user.nama, `Mengimpor ${imported} perangkat dari berkas CSV (${skipped} dilewati)`]
+    [req.user.id, req.user.nama, `Memproses berkas CSV (${mode}): ${imported} baru, ${updated} diperbarui, ${skipped} dilewati`]
   );
 
-  broadcast('devices_updated', { action: 'import_csv', count: imported });
+  broadcast('devices_updated', { action: 'import_csv', count: imported + updated });
 
   res.json({
     success: true,
-    message: `Berhasil mengimpor ${imported} perangkat ke dalam sistem. ${skipped > 0 ? `(${skipped} dilewati)` : ''}`,
+    message: `Berhasil memproses CSV: ${imported} perangkat baru ditambahkan, ${updated} diperbarui. ${skipped > 0 ? `(${skipped} dilewati)` : ''}`,
     imported,
+    updated,
     skipped,
-    count: imported,
+    count: imported + updated,
   });
 });
 

@@ -301,7 +301,7 @@ export async function apiFinishMaintenance(id) {
   });
 }
 
-export async function apiImportCsv(devices) {
+export async function apiImportCsv(devices, mode = 'replace') {
   if (_isCurrentSessionPreview()) {
     const { mockDevices, addDevice } = await import('./data/mock-devices.js');
 
@@ -355,7 +355,7 @@ export async function apiImportCsv(devices) {
   }
   return request('/devices/import-csv', {
     method: 'POST',
-    body: JSON.stringify({ devices }),
+    body: JSON.stringify({ devices, mode }),
   });
 }
 
@@ -488,9 +488,17 @@ export async function apiUpdateSettings(payload) {
   });
 }
 
-export async function apiTriggerBackup() {
-  return request('/settings/backup', {
+export async function apiTriggerBackup(type = 'full') {
+  return request(`/settings/backup?type=${encodeURIComponent(type)}`, {
     method: 'POST',
+    body: JSON.stringify({ type }),
+  });
+}
+
+export async function apiRestoreBackup(payload) {
+  return request('/settings/restore', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

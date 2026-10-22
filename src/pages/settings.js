@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiCleanLogs, apiGetLogsStats } from '../api.js';
+import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiRestoreBackup, apiCleanLogs, apiGetLogsStats } from '../api.js';
 import { applySystemSettings } from '../settingsManager.js';
 import { applyTheme, getSavedTheme } from '../themeManager.js';
 
@@ -468,7 +468,8 @@ function renderLog() {
 
       <div style="display:flex; justify-content:space-between; margin-top:8px; flex-wrap:wrap; gap:8px;">
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn btn-secondary" id="manual-backup-btn">💾 Backup Sekarang</button>
+          <button class="btn btn-secondary" id="manual-backup-btn">💾 Backup Data</button>
+          <button class="btn btn-secondary" id="restore-backup-btn" style="border-color:rgba(99,102,241,0.4); color:#c7d2fe;">📤 Restore Data</button>
           <button class="btn btn-secondary" id="clean-logs-btn" style="border-color:rgba(239,68,68,0.4); color:#fca5a5;">🧹 Bersihkan Log Lama</button>
         </div>
         <button class="btn btn-primary" id="save-log-btn">💾 Simpan Pengaturan</button>
@@ -717,13 +718,51 @@ function bindSaveButtons() {
     };
   });
 
-  // Manual backup button (Real SQLite backup)
+  // Manual backup button dengan pilihan Log Saja vs Full System
   const manualBackupBtn = document.getElementById('manual-backup-btn');
   if (manualBackupBtn) {
     manualBackupBtn.onclick = async () => {
+      const { value: scope, isConfirmed } = await Swal.fire({
+        title: '💾 Buat Cadangan Sistem',
+        html: `
+          <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
+            <p style="font-size:0.85rem; color:#94a3b8; margin:0;">Pilih cakupan data yang ingin Anda cadangkan:</p>
+
+            <label style="display:flex; align-items:start; gap:10px; padding:12px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); border-radius:8px; cursor:pointer;">
+              <input type="radio" name="swal-backup-scope" value="logs" checked style="margin-top:3px; accent-color:#6366f1;" />
+              <div>
+                <div style="font-weight:700; color:var(--color-heading); font-size:0.88rem;">📋 Backup Log Saja</div>
+                <div style="font-size:0.75rem; color:var(--color-muted);">Riwayat status perangkat, aktivitas pengguna, insiden, dan log konfigurasi (JSON ringkas).</div>
+              </div>
+            </label>
+
+            <label style="display:flex; align-items:start; gap:10px; padding:12px; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:8px; cursor:pointer;">
+              <input type="radio" name="swal-backup-scope" value="full" style="margin-top:3px; accent-color:#22c55e;" />
+              <div>
+                <div style="font-weight:700; color:var(--color-heading); font-size:0.88rem;">💾 Backup Seluruhnya (Full System)</div>
+                <div style="font-size:0.75rem; color:var(--color-muted);">Semua perangkat, topologi, snapshot kamera, akun pengguna, seluruh pengaturan, dan log.</div>
+              </div>
+            </label>
+          </div>
+        `,
+        width: 540,
+        showCancelButton: true,
+        confirmButtonText: '⚡ Buat Cadangan Sekarang',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#6366f1',
+        cancelButtonColor: '#374151',
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+        preConfirm: () => {
+          return document.querySelector('input[name="swal-backup-scope"]:checked')?.value || 'logs';
+        },
+      });
+
+      if (!isConfirmed || !scope) return;
+
       Swal.fire({
-        title: 'Membuat Cadangan Database...',
-        html: '<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div><p style="margin-top:12px; color:#94a3b8;">Melakukan checkpoint WAL dan menyalin database SQLite...</p></div>',
+        title: scope === 'full' ? 'Menyiapkan Cadangan Seluruh Sistem...' : 'Menyiapkan Cadangan Log...',
+        html: '<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div><p style="margin-top:12px; color:#94a3b8;">Menyalin dan mengompresi data cadangan aman...</p></div>',
         showConfirmButton: false,
         allowOutsideClick: false,
         background: '#1a1d2e',
@@ -731,25 +770,26 @@ function bindSaveButtons() {
       });
 
       try {
-        const res = await apiTriggerBackup();
+        const res = await apiTriggerBackup(scope);
         const data = res.data || {};
         const token = localStorage.getItem('token') || '';
-        const downloadUrl = `/api/settings/backup/download?token=${encodeURIComponent(token)}`;
+        const downloadFilename = data.filename || '';
+        const downloadUrl = `/api/settings/backup/download?filename=${encodeURIComponent(downloadFilename)}&token=${encodeURIComponent(token)}`;
 
         Swal.fire({
           icon: 'success',
           title: 'Cadangan Berhasil Dibuat',
           html: `
             <div style="text-align:left; font-size:0.85rem; color:#94a3b8;">
-              <p>Berkas cadangan berhasil disalin secara aman ke server:</p>
+              <p>Berkas cadangan (<b>${scope === 'full' ? 'Seluruh Sistem' : 'Log Sistem'}</b>) berhasil disimpan di server:</p>
               <div style="margin:8px 0; padding:8px 12px; background:rgba(255,255,255,0.05); border-radius:6px; font-family:var(--font-mono); color:#e2e8f0;">
-                <b>${data.filename || 'devwatch-backup.sqlite'}</b> (${data.sizeKb || 0} KB)
+                <b>${data.filename || 'devwatch-backup'}</b> (${data.sizeKb || 0} KB)
               </div>
               <p style="font-size:0.78rem; color:#64748b;">Lokasi: ${data.filepath || 'Folder backups server'}</p>
             </div>
           `,
           showCancelButton: true,
-          confirmButtonText: '📥 Unduh File .sqlite',
+          confirmButtonText: `📥 Unduh Berkas (${data.filename?.endsWith('.json') ? '.json' : '.sqlite'})`,
           cancelButtonText: 'Tutup',
           confirmButtonColor: '#6366f1',
           cancelButtonColor: '#374151',
@@ -764,6 +804,131 @@ function bindSaveButtons() {
         Swal.fire({
           icon: 'error',
           title: 'Gagal Membuat Cadangan',
+          text: err.message,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      }
+    };
+  }
+
+  // Restore backup button (Full system or logs restore)
+  const restoreBackupBtn = document.getElementById('restore-backup-btn');
+  if (restoreBackupBtn) {
+    restoreBackupBtn.onclick = async () => {
+      let selectedFile = null;
+
+      const { isConfirmed } = await Swal.fire({
+        title: '📤 Pulihkan Data Sistem (Restore)',
+        html: `
+          <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
+            <div style="padding:10px 14px; background:rgba(234,179,8,0.12); border:1px solid rgba(234,179,8,0.3); border-radius:8px; font-size:0.8rem; color:#fde047;">
+              ⚠️ <b>Peringatan Keamanan</b>: Memulihkan cadangan akan menyelaraskan data sistem dengan berkas cadangan. Server akan secara otomatis membuat <i>safety checkpoint</i> sebelum pemulihan dijalankan.
+            </div>
+
+            <div class="csv-drop-zone" id="restore-drop-zone" style="cursor:pointer; border:2px dashed rgba(99,102,241,0.4); border-radius:10px; padding:24px 16px; text-align:center; background:rgba(15,23,42,0.4); transition:all 0.2s ease;">
+              <input type="file" id="restore-file-input" accept=".json,.sqlite" style="display:none;" />
+              <div style="font-size:2.2rem; margin-bottom:8px;">📤</div>
+              <div style="font-weight:700; color:var(--color-heading); font-size:0.9rem;" id="restore-file-label">Klik untuk memilih berkas cadangan (.json / .sqlite)</div>
+              <div style="font-size:0.75rem; color:var(--color-muted); margin-top:4px;" id="restore-file-sub">Mendukung file JSON Log atau Database SQLite MonDev</div>
+            </div>
+          </div>
+        `,
+        width: 580,
+        showCancelButton: true,
+        confirmButtonText: '⚡ Mulai Pemulihan (Restore)',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#374151',
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+        didOpen: () => {
+          const dropZone = document.getElementById('restore-drop-zone');
+          const fileInput = document.getElementById('restore-file-input');
+          const label = document.getElementById('restore-file-label');
+          const sub = document.getElementById('restore-file-sub');
+
+          dropZone?.addEventListener('click', () => fileInput?.click());
+          fileInput?.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+              selectedFile = file;
+              if (label) label.textContent = `✓ ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+              if (sub) sub.textContent = 'Berkas siap untuk diproses dan dipulihkan ke server.';
+              if (dropZone) {
+                dropZone.style.borderColor = '#10b981';
+                dropZone.style.background = 'rgba(16, 185, 129, 0.08)';
+              }
+            }
+          });
+        },
+        preConfirm: () => {
+          if (!selectedFile) {
+            Swal.showValidationMessage('Silakan pilih berkas cadangan (.json atau .sqlite) terlebih dahulu.');
+            return false;
+          }
+          return true;
+        },
+      });
+
+      if (!isConfirmed || !selectedFile) return;
+
+      Swal.fire({
+        title: 'Memproses Pemulihan Data...',
+        html: '<div style="text-align:center;"><div class="spinner spinner-lg" style="margin:0 auto;"></div><p style="margin-top:12px; color:#94a3b8;">Menyimpan checkpoint keamanan dan menerapkan data cadangan...</p></div>',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+
+      try {
+        const isJson = selectedFile.name.endsWith('.json');
+        let payload = {};
+
+        if (isJson) {
+          const text = await selectedFile.text();
+          const parsed = JSON.parse(text);
+          payload = { backupData: parsed, filename: selectedFile.name };
+        } else {
+          // File SQLite biner: kirim via base64
+          const arrayBuf = await selectedFile.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuf);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = btoa(binary);
+          payload = { fileBase64: base64, filename: selectedFile.name };
+        }
+
+        const res = await apiRestoreBackup(payload);
+        const restored = res.restored || {};
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Pemulihan Sistem Berhasil',
+          html: `
+            <div style="text-align:left; font-size:0.85rem; color:#94a3b8;">
+              <p>${res.message || 'Data sistem berhasil dipulihkan.'}</p>
+              <div style="margin:10px 0; padding:10px 14px; background:rgba(255,255,255,0.05); border-radius:6px; font-size:0.8rem;">
+                <div>• Perangkat Dipulihkan: <b style="color:#10b981;">${restored.devices ?? (res.type === 'sqlite' ? 'Semua' : 0)}</b></div>
+                <div>• Baris Log Dipulihkan: <b style="color:#6366f1;">${restored.logs ?? (res.type === 'sqlite' ? 'Semua' : 0)}</b></div>
+                <div>• Pengaturan Dipulihkan: <b style="color:#f59e0b;">${restored.settings ?? (res.type === 'sqlite' ? 'Semua' : 0)}</b></div>
+                ${res.safetyCheckpoint ? `<div style="margin-top:6px; font-size:0.75rem; color:#64748b;">Safety Checkpoint: <b>${res.safetyCheckpoint}</b></div>` : ''}
+              </div>
+              <p style="font-size:0.75rem; color:#cbd5e1;">Aplikasi akan memperbarui data tampilan secara otomatis.</p>
+            </div>
+          `,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        }).then(() => {
+          window.location.reload();
+        });
+      } catch (err) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal Memulihkan Cadangan',
           text: err.message,
           background: '#1a1d2e',
           color: '#e2e8f0',

@@ -5,7 +5,7 @@
 
 import Swal from 'sweetalert2';
 import Papa from 'papaparse';
-import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
+import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi, cleanDeviceIp, parseSqliteUtc, formatTimeAgo } from '../data/mock-devices.js';
 import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiTestConnection, apiImportCsv, apiBulkDeleteDevices, apiPingAllDevices } from '../api.js';
 import { getSession } from '../main.js';
 import { getAppSetting } from '../settingsManager.js';
@@ -153,6 +153,10 @@ function renderDevicesTable(canEdit, isAdmin) {
       ${st.charAt(0).toUpperCase() + st.slice(1)}
     </div>`;
 
+    const checkDate = d.lastChecked ? parseSqliteUtc(d.lastChecked) : null;
+    const lastChecked = d.lastChecked ? formatTimeAgo(d.lastChecked) : 'Belum dicek';
+    const exactCheck = checkDate ? checkDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Belum pernah dicek';
+
     return `
       <tr>
         <td style="width:40px; text-align:center;">
@@ -174,6 +178,11 @@ function renderDevicesTable(canEdit, isAdmin) {
         <td>
           <span class="chip">${d.grup}</span>
         </td>
+        <td style="white-space:nowrap;">
+          <span title="${exactCheck}" style="cursor:help; font-size:0.8rem; font-weight:600; color:var(--color-heading);">
+            ⏱️ ${lastChecked}
+          </span>
+        </td>
         <td>${statusBadge}</td>
         <td>
           <div class="action-group">
@@ -192,7 +201,7 @@ function renderDevicesTable(canEdit, isAdmin) {
     `;
   }).join('') : `
     <tr>
-      <td colspan="9">
+      <td colspan="10">
         <div class="empty-state" style="padding:48px 16px;">
           <div class="empty-icon" style="font-size:3rem; margin-bottom:12px;">🖥️</div>
           <div class="empty-title" style="font-size:1.1rem; font-weight:700; color:var(--color-heading);">Belum Ada Perangkat di Database</div>
@@ -231,6 +240,7 @@ function renderDevicesTable(canEdit, isAdmin) {
             <th>Metode</th>
             <th>Interval</th>
             <th>Grup</th>
+            <th>Last Check</th>
             <th>Status</th>
             <th>Aksi</th>
           </tr>
@@ -942,7 +952,7 @@ let parsedCsvDevices = [];
 
 async function showImportCSV(onSave) {
   parsedCsvDevices = [];
-  const { isConfirmed } = await Swal.fire({
+  const { isConfirmed, value: formData } = await Swal.fire({
     title: '📂 Import Device dari CSV',
     html: `
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
@@ -961,6 +971,23 @@ async function showImportCSV(onSave) {
           <div class="csv-drop-icon">📂</div>
           <div style="font-weight:600; color:var(--color-text-secondary);">Klik atau drag & drop file CSV di sini</div>
           <div style="font-size:0.78rem; color:var(--color-muted);">Mendukung koma/titik-koma, auto-detect kolom fleksibel</div>
+        </div>
+
+        <!-- Opsi Strategi Duplikasi -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px;">
+          <div style="font-weight:600; font-size:0.82rem; color:var(--color-heading); margin-bottom:6px;">
+            Strategi Impor Jika Device Sudah Ada (IP / Nama sama):
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px; font-size:0.8rem; color:#cbd5e1;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="radio" name="csv-import-mode" value="replace" checked style="accent-color:#6366f1;" />
+              <span>🔄 <b>Perbarui yang Ada (Replace)</b> — Update informasi perangkat tanpa membuat duplikat</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="radio" name="csv-import-mode" value="duplicate" style="accent-color:#6366f1;" />
+              <span>📋 <b>Buat Duplikat Baru (Duplicate)</b> — Simpan sebagai entri terpisah</span>
+            </label>
+          </div>
         </div>
 
         <div id="csv-preview" style="display:none;">
@@ -985,17 +1012,31 @@ async function showImportCSV(onSave) {
       const fileInput = document.getElementById('csv-file-input');
       fileInput?.addEventListener('change', (e) => handleCSVPreview(e.target.files[0]));
     },
+    preConfirm: () => {
+      const mode = document.querySelector('input[name="csv-import-mode"]:checked')?.value || 'replace';
+      return { mode };
+    },
   });
 
   if (isConfirmed && parsedCsvDevices.length > 0) {
+    const mode = (formData && formData.mode) || 'replace';
     try {
-      const res = await apiImportCsv(parsedCsvDevices);
+      const res = await apiImportCsv(parsedCsvDevices, mode);
       await syncDevicesFromApi();
       onSave?.();
       Swal.fire({
         icon: 'success',
         title: 'Import CSV Berhasil',
-        text: `${res.imported || res.count || parsedCsvDevices.length} perangkat berhasil diimpor dengan hierarki topologi lengkap.`,
+        html: `
+          <div style="font-size:0.85rem; color:#94a3b8;">
+            <p>${res.message || 'Data CSV berhasil diproses.'}</p>
+            <div style="margin-top:10px; display:inline-block; text-align:left; font-size:0.8rem; background:rgba(255,255,255,0.05); padding:8px 14px; border-radius:6px;">
+              <div>• Perangkat Baru: <b style="color:#10b981;">${res.imported || 0}</b></div>
+              <div>• Perangkat Diperbarui: <b style="color:#6366f1;">${res.updated || 0}</b></div>
+              ${res.skipped > 0 ? `<div>• Baris Dilewati: <b style="color:#f59e0b;">${res.skipped}</b></div>` : ''}
+            </div>
+          </div>
+        `,
         background: '#1a1d2e',
         color: '#e2e8f0',
       });

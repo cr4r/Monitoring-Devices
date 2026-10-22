@@ -176,9 +176,9 @@ export function renderDeviceDetail(params = {}) {
               </button>
             </div>
             <div class="cctv-resolution-selector" id="cctv-res-selector">
-              <button class="cctv-res-btn" data-res="main" title="1080p Full HD (30 FPS, ~4.1 Mbps)">🟢 1080p FHD</button>
-              <button class="cctv-res-btn active" data-res="sub" title="720p HD (25 FPS, ~1.8 Mbps)">🟡 720p HD</button>
-              <button class="cctv-res-btn" data-res="mobile" title="480p SD (15 FPS, ~600 Kbps)">⚪ 480p SD</button>
+              <button class="cctv-res-btn active" data-res="main" title="Resolusi Asli Kamera (Native Full HD/2K/4MP)">🟢 Native / Asli</button>
+              <button class="cctv-res-btn" data-res="sub" title="Sub Stream (Lebih ringan & responsif)">🟡 Sub Stream</button>
+              <button class="cctv-res-btn" data-res="mobile" title="Mobile Stream (Hemat bandwidth)">⚪ Mobile</button>
             </div>
           </div>
         </div>
@@ -687,6 +687,7 @@ function initCctvStreamPlayer(device, id) {
     window.__activeCctvTimerId = null;
   }
   if (window.__activeCctvFramePoller) {
+    clearTimeout(window.__activeCctvFramePoller);
     clearInterval(window.__activeCctvFramePoller);
     window.__activeCctvFramePoller = null;
   }
@@ -694,7 +695,7 @@ function initCctvStreamPlayer(device, id) {
   const session = getSession();
   const isPreview = Boolean(session?.is_preview);
   let streamMode = isPreview ? 'sim' : 'real'; // Default 'sim' untuk Mode Preview, 'real' untuk Mode Riil
-  let currentRes = 'sub';
+  let currentRes = 'main';
   let zoomLevel = 1.0;
   let motionActive = true;
   let ticks = 0;
@@ -704,9 +705,12 @@ function initCctvStreamPlayer(device, id) {
   let activeRtspUrl = device.ip;
   const isOnline = (device.status || '').toLowerCase() === 'online';
 
-  // Real Camera Stream State
+  // Real Camera Stream State & Adaptive Double Buffering
   const realImage = new Image();
   let realCameraOnline = false;
+  let hasEverLoadedFrame = false;
+  let consecutiveFailures = 0;
+  let lastSuccessfulFrameTime = 0;
   let realAuthFailed = false;
   let realErrorMessage = '';
   let realFrameCount = 0;
@@ -714,6 +718,8 @@ function initCctvStreamPlayer(device, id) {
   let calculatedRealFps = 0;
   let calculatedRealBitrate = 0;
   let isPollingBusy = false;
+  let isPollerDestroyed = false;
+  const recentFrameTimes = [];
 
   // Request backend profile data
   apiGetRtspStreamInfo(id).then((res) => {
@@ -726,53 +732,101 @@ function initCctvStreamPlayer(device, id) {
 
   const ctx = canvas.getContext('2d');
 
-  // Real Camera Frame Poller
+  function scheduleNextPoll(delayMs = 40) {
+    if (isPollerDestroyed || streamMode !== 'real' || isPreview) return;
+    if (window.__activeCctvFramePoller) clearTimeout(window.__activeCctvFramePoller);
+    window.__activeCctvFramePoller = setTimeout(pollRealFrame, delayMs);
+  }
+
+  // Real Camera Frame Poller dengan Adaptive Self-Scheduling & Double Buffering
   function pollRealFrame() {
-    if (streamMode !== 'real' || isPreview || isPollingBusy) return;
+    if (isPollerDestroyed || streamMode !== 'real' || isPreview || isPollingBusy) return;
     isPollingBusy = true;
-    const ts = Date.now();
-    fetch(`/api/devices/${id}/live-frame?res=${currentRes}&t=${ts}`)
+    const fetchStart = Date.now();
+
+    fetch(`/api/devices/${id}/live-frame?res=${currentRes}&t=${fetchStart}`)
       .then(async (res) => {
         if (res.ok) {
           const blob = await res.blob();
           realByteCount += blob.size;
           realFrameCount++;
+
+          const now = Date.now();
+          recentFrameTimes.push(now);
+          while (recentFrameTimes.length > 8) recentFrameTimes.shift();
+          if (recentFrameTimes.length >= 2) {
+            const timeSpanSec = (now - recentFrameTimes[0]) / 1000;
+            if (timeSpanSec > 0) {
+              calculatedRealFps = Math.round((recentFrameTimes.length - 1) / timeSpanSec);
+            }
+          }
+
           const url = URL.createObjectURL(blob);
           realImage.onload = () => {
             URL.revokeObjectURL(url);
             realCameraOnline = true;
+            hasEverLoadedFrame = true;
+            consecutiveFailures = 0;
+            lastSuccessfulFrameTime = Date.now();
             realAuthFailed = false;
             isPollingBusy = false;
+
+            // Sesuaikan dimensi canvas secara dinamis dengan resolusi asli kamera
+            if (realImage.naturalWidth && realImage.naturalHeight) {
+              if (canvas.width !== realImage.naturalWidth || canvas.height !== realImage.naturalHeight) {
+                canvas.width = realImage.naturalWidth;
+                canvas.height = realImage.naturalHeight;
+              }
+            }
+
+            // Jadwalkan frame berikutnya dengan jeda mikro agar kamera tidak kelebihan beban
+            scheduleNextPoll(30);
           };
           realImage.onerror = () => {
+            URL.revokeObjectURL(url);
             isPollingBusy = false;
+            consecutiveFailures++;
+            if (consecutiveFailures >= 4 && (Date.now() - lastSuccessfulFrameTime > 4000)) {
+              realCameraOnline = false;
+            }
+            scheduleNextPoll(200);
           };
           realImage.src = url;
         } else {
           isPollingBusy = false;
-          realCameraOnline = false;
+          consecutiveFailures++;
+
           if (res.status === 401) {
             realAuthFailed = true;
+            realCameraOnline = false;
             try {
               const errJson = await res.json();
               realErrorMessage = errJson.message || 'Kredensial kamera ditolak (401).';
             } catch {
               realErrorMessage = 'Kredensial kamera ditolak (401).';
             }
+            scheduleNextPoll(1500);
           } else {
-            realAuthFailed = false;
+            // Hanya nyatakan offline jika gagal >= 4 kali berturut-turut atau sudah > 4 detik tanpa frame
+            if (consecutiveFailures >= 4 || !hasEverLoadedFrame || (Date.now() - lastSuccessfulFrameTime > 4500)) {
+              realCameraOnline = false;
+            }
+            scheduleNextPoll(250);
           }
         }
       })
       .catch(() => {
         isPollingBusy = false;
-        realCameraOnline = false;
+        consecutiveFailures++;
+        if (consecutiveFailures >= 4 || !hasEverLoadedFrame || (Date.now() - lastSuccessfulFrameTime > 4500)) {
+          realCameraOnline = false;
+        }
+        scheduleNextPoll(300);
       });
   }
 
-  // Poll real frames every 200ms (~5 FPS snapshot stream optimal for camera DSP)
+  // Jalankan siklus poller pertama
   pollRealFrame();
-  window.__activeCctvFramePoller = setInterval(pollRealFrame, 200);
 
   function renderLoop() {
     ticks++;
@@ -791,9 +845,13 @@ function initCctvStreamPlayer(device, id) {
     }
 
     if (streamMode === 'real') {
-      if (realCameraOnline && realImage.complete && realImage.naturalWidth > 0) {
-        // Render Real Camera Feed
+      const canRenderRealImage = realImage.complete && realImage.naturalWidth > 0 && (realCameraOnline || hasEverLoadedFrame);
+
+      if (canRenderRealImage && !realAuthFailed) {
+        // Render Real Camera Feed dengan double-buffering (tetap gambar frame terakhir saat transient drop)
         ctx.drawImage(realImage, 0, 0, canvas.width, canvas.height);
+
+        const nativeResStr = `${realImage.naturalWidth}x${realImage.naturalHeight} Native`;
 
         // OSD overlay on top of real video
         ctx.fillStyle = '#f8fafc';
@@ -807,11 +865,19 @@ function initCctvStreamPlayer(device, id) {
         ctx.textAlign = 'left';
         ctx.font = '12px monospace';
         ctx.fillStyle = '#38bdf8';
-        ctx.fillText(`${currentRes === 'main' ? '1080p FHD' : currentRes === 'sub' ? '720p HD' : '480p SD'} · H.264 / AVC · ${calculatedRealFps || 15} FPS`, 24, canvas.height - 20);
+        const displayFps = calculatedRealFps > 0 ? calculatedRealFps : (realCameraOnline ? 15 : 0);
+        ctx.fillText(`${nativeResStr} · H.264 / AVC · ${displayFps} FPS`, 24, canvas.height - 20);
 
         ctx.textAlign = 'right';
-        ctx.fillStyle = '#4ade80';
-        ctx.fillText(`● LIVE (STREAM RIIL) · ${calculatedRealBitrate > 0 ? calculatedRealBitrate.toFixed(2) : currentBitrate.toFixed(2)} Mbps · ${currentLatency} ms`, canvas.width - 24, canvas.height - 20);
+        ctx.fillStyle = realCameraOnline ? '#4ade80' : '#f59e0b';
+        const liveStatusText = realCameraOnline ? '● LIVE (STREAM RIIL)' : '▲ REBUFFERING...';
+        ctx.fillText(`${liveStatusText} · ${calculatedRealBitrate > 0 ? calculatedRealBitrate.toFixed(2) : currentBitrate.toFixed(2)} Mbps · ${currentLatency} ms`, canvas.width - 24, canvas.height - 20);
+
+        // Sinkronkan elemen OSD di DOM jika tersedia
+        const osdResElem = document.getElementById('cctv-osd-resolution');
+        if (osdResElem && ticks % 10 === 0) {
+          osdResElem.textContent = `${nativeResStr} · H.264 · ${displayFps} FPS`;
+        }
       } else {
         // Render Real Camera Waiting / Offline Screen
         drawRealCameraOfflineScreen(ctx, canvas.width, canvas.height, {
@@ -854,16 +920,16 @@ function initCctvStreamPlayer(device, id) {
     const codecElem = document.getElementById('cctv-telem-codec');
 
     if (streamMode === 'real') {
-      if (realCameraOnline) {
-        calculatedRealFps = realFrameCount;
+      if (realCameraOnline || hasEverLoadedFrame) {
         calculatedRealBitrate = ((realByteCount * 8) / 1000000);
         realFrameCount = 0;
         realByteCount = 0;
 
+        const fpsVal = calculatedRealFps > 0 ? calculatedRealFps : (realCameraOnline ? 15 : 0);
         if (bElem) bElem.textContent = `${calculatedRealBitrate > 0 ? calculatedRealBitrate.toFixed(2) : (currentRes === 'main' ? '4.12' : '1.82')} Mbps`;
-        if (fElem) fElem.textContent = `${calculatedRealFps > 0 ? calculatedRealFps : (currentRes === 'main' ? 30 : 25)} FPS`;
+        if (fElem) fElem.textContent = `${fpsVal} FPS`;
         if (lElem) lElem.textContent = `${currentLatency} ms`;
-        if (dElem) dElem.textContent = '0.00%';
+        if (dElem) dElem.textContent = consecutiveFailures > 0 ? `${(consecutiveFailures * 2).toFixed(1)}%` : '0.00%';
         if (codecElem) codecElem.textContent = 'H.264 / AVC (Riil)';
         if (osdTel) osdTel.textContent = `${bElem ? bElem.textContent : '1.82 Mbps'} · ${currentLatency} ms`;
       } else {
@@ -959,19 +1025,26 @@ function initCctvStreamPlayer(device, id) {
       const fpsSub = document.getElementById('cctv-telem-fps-sub');
 
       if (res === 'main') {
-        canvas.width = 1920;
-        canvas.height = 1080;
-        if (osdRes) osdRes.textContent = '1080p FHD · H.264 · 30 FPS';
-        if (codecSub) codecSub.textContent = '1920x1080 (1080p FHD)';
+        if (streamMode === 'real' && realImage.naturalWidth && realImage.naturalHeight) {
+          canvas.width = realImage.naturalWidth;
+          canvas.height = realImage.naturalHeight;
+        } else {
+          canvas.width = 1920;
+          canvas.height = 1080;
+        }
+        const wStr = realImage.naturalWidth || 1920;
+        const hStr = realImage.naturalHeight || 1080;
+        if (osdRes) osdRes.textContent = `${wStr}x${hStr} Native · H.264 · 25 FPS`;
+        if (codecSub) codecSub.textContent = `${wStr}x${hStr} (Native Stream)`;
         if (bitSub) bitSub.textContent = 'Target: ~4.1 Mbps';
         if (fpsSub) fpsSub.textContent = 'Stabilitas: 99.8%';
         currentBitrate = 4.12;
-        currentFps = 30.0;
+        currentFps = 25.0;
       } else if (res === 'sub') {
         canvas.width = 1280;
         canvas.height = 720;
-        if (osdRes) osdRes.textContent = '720p HD · H.264 · 25 FPS';
-        if (codecSub) codecSub.textContent = '1280x720 (720p HD)';
+        if (osdRes) osdRes.textContent = '1280x720 HD · H.264 · 25 FPS';
+        if (codecSub) codecSub.textContent = '1280x720 (Sub Stream)';
         if (bitSub) bitSub.textContent = 'Target: ~1.8 Mbps';
         if (fpsSub) fpsSub.textContent = 'Stabilitas: 99.4%';
         currentBitrate = 1.82;
@@ -979,8 +1052,8 @@ function initCctvStreamPlayer(device, id) {
       } else {
         canvas.width = 640;
         canvas.height = 480;
-        if (osdRes) osdRes.textContent = '480p SD · H.264 · 15 FPS';
-        if (codecSub) codecSub.textContent = '640x480 (480p SD)';
+        if (osdRes) osdRes.textContent = '640x480 SD · H.264 · 15 FPS';
+        if (codecSub) codecSub.textContent = '640x480 (Mobile Stream)';
         if (bitSub) bitSub.textContent = 'Target: ~600 Kbps';
         if (fpsSub) fpsSub.textContent = 'Stabilitas: 98.9%';
         currentBitrate = 0.62;

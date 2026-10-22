@@ -39,79 +39,133 @@ export function renderTimeline24h(canvasId, data) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
+  const ctx = canvas.getContext('2d');
   const theme = getChartColors();
   const labels = data.map((d) => d.jam || d.hour);
+
   const values = data.map((d) => {
-    if (d.status === 'online') return d.responseTime || 5;
-    if (d.status === 'maintenance') return 2;
-    if (d.status === 'offline') return 2;
-    return 0.5; // nodata placeholder
+    if (d.status === 'online') return d.responseTime || 2;
+    if (d.status === 'maintenance') return 1;
+    if (d.status === 'offline') return 0;
+    return null;
   });
 
-  const colors = data.map((d) => {
-    if (d.status === 'online') return 'rgba(34, 197, 94, 0.85)';
-    if (d.status === 'maintenance') return 'rgba(234, 179, 8, 0.85)';
-    if (d.status === 'offline') return 'rgba(239, 68, 68, 0.85)';
-    return 'rgba(148, 163, 184, 0.18)'; // nodata: abu-abu transparan
+  const pointBgColors = data.map((d) => {
+    if (d.status === 'online') return '#10b981';
+    if (d.status === 'maintenance') return '#f59e0b';
+    if (d.status === 'offline') return '#ef4444';
+    return 'rgba(148, 163, 184, 0.4)';
   });
+
+  const pointBorderColors = data.map((d) => {
+    if (d.status === 'offline') return '#fee2e2';
+    if (d.status === 'maintenance') return '#fef3c7';
+    return '#ecfdf5';
+  });
+
+  const pointRadii = data.map((d) => {
+    if (d.status === 'offline') return 6;
+    if (d.status === 'maintenance') return 5;
+    if (d.status === 'online') return 3.5;
+    return 2;
+  });
+
+  const pointHoverRadii = data.map((d) => {
+    if (d.status === 'offline') return 8;
+    if (d.status === 'maintenance') return 7;
+    return 6;
+  });
+
+  // Dynamic cyber gradient fill
+  const areaGradient = ctx.createLinearGradient(0, 0, 0, canvas.height || 260);
+  areaGradient.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+  areaGradient.addColorStop(0.65, 'rgba(16, 185, 129, 0.08)');
+  areaGradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
 
   chartInstances[canvasId] = new Chart(canvas, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels,
       datasets: [
         {
-          label: 'Response Time (ms)',
+          label: 'Latency (ms)',
           data: values,
-          backgroundColor: colors,
-          borderColor: colors,
-          borderWidth: 0,
-          borderRadius: 4,
+          borderColor: '#10b981',
+          borderWidth: 2.5,
+          tension: 0.36,
+          fill: true,
+          backgroundColor: areaGradient,
+          pointBackgroundColor: pointBgColors,
+          pointBorderColor: pointBorderColors,
+          pointBorderWidth: 1.5,
+          pointRadius: pointRadii,
+          pointHoverRadius: pointHoverRadii,
+          spanGaps: true,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
           backgroundColor: theme.tooltipBg,
           borderColor: theme.tooltipBorder,
           borderWidth: 1,
+          padding: 10,
+          titleFont: { weight: 'bold', size: 12 },
+          bodyFont: { size: 11 },
           titleColor: theme.tooltipTitle,
           bodyColor: theme.tooltipBody,
           callbacks: {
+            title: (items) => {
+              if (items.length > 0) {
+                return `🕒 Jam ${items[0].label} WIB`;
+              }
+              return '';
+            },
             label: (ctx) => {
               const d = data[ctx.dataIndex];
-              if (d.status === 'nodata' || !d.status) {
+              if (!d || d.status === 'nodata' || !d.status) {
                 return '⚪ Belum Terdaftar (Tidak Ada Data)';
               }
               if (d.status === 'online') {
-                return `🟢 Online — ${d.responseTime || 1} ms`;
+                const rt = d.responseTime || 1;
+                const jitterRating = rt <= 10 ? '⚡ Respons Sangat Cepat' : (rt <= 50 ? '📶 Normal' : '⚠️ Latensi Tinggi');
+                return [`🟢 Online — Latensi: ${rt} ms`, `📊 Kualitas: ${jitterRating}`];
               }
               if (d.status === 'maintenance') {
-                return '🟡 Maintenance';
+                return '🟡 Perangkat Sedang Maintenance';
               }
-              return '🔴 Offline (Tidak Merespons)';
+              return '🔴 Terputus / Offline (RTO / Tidak Merespons)';
             },
           },
         },
       },
       scales: {
         x: {
-          grid: { color: theme.gridColor },
+          grid: { color: theme.gridColor, borderDash: [4, 4] },
           ticks: { color: theme.tickColor, font: { size: 10 } },
         },
         y: {
-          grid: { color: theme.gridColor },
-          ticks: { color: theme.tickColor, font: { size: 10 } },
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: 'ms',
+          grid: { color: theme.gridColor, borderDash: [4, 4] },
+          ticks: {
             color: theme.tickColor,
             font: { size: 10 },
+            callback: (v) => `${v}ms`,
+          },
+          beginAtZero: true,
+          suggestedMax: 10,
+          title: {
+            display: true,
+            text: 'Latency (ms)',
+            color: theme.tickColor,
+            font: { size: 10, weight: 'bold' },
           },
         },
       },
@@ -125,11 +179,26 @@ export function renderAggregateTimeline(canvasId, timelineData, onBarClick = nul
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
+  const ctx = canvas.getContext('2d');
   const theme = getChartColors();
   const labels = timelineData.map((d) => d.hour || d.jam);
   const onlineCounts = timelineData.map((d) => d.online ?? d.uptimePct ?? 0);
   const offlineCounts = timelineData.map((d) => d.offline ?? 0);
   const maintenanceCounts = timelineData.map((d) => d.maintenance ?? 0);
+
+  // Modern vertical gradients for stacked bars
+  const chartHeight = canvas.height || 250;
+  const gradOnline = ctx.createLinearGradient(0, 0, 0, chartHeight);
+  gradOnline.addColorStop(0, 'rgba(16, 185, 129, 0.95)');
+  gradOnline.addColorStop(1, 'rgba(5, 150, 105, 0.7)');
+
+  const gradMaint = ctx.createLinearGradient(0, 0, 0, chartHeight);
+  gradMaint.addColorStop(0, 'rgba(245, 158, 11, 0.95)');
+  gradMaint.addColorStop(1, 'rgba(217, 119, 6, 0.7)');
+
+  const gradOffline = ctx.createLinearGradient(0, 0, 0, chartHeight);
+  gradOffline.addColorStop(0, 'rgba(239, 68, 68, 0.95)');
+  gradOffline.addColorStop(1, 'rgba(185, 28, 28, 0.7)');
 
   chartInstances[canvasId] = new Chart(canvas, {
     type: 'bar',
@@ -139,23 +208,32 @@ export function renderAggregateTimeline(canvasId, timelineData, onBarClick = nul
         {
           label: 'Device Online',
           data: onlineCounts,
-          backgroundColor: 'rgba(34, 197, 94, 0.85)',
-          borderRadius: 4,
+          backgroundColor: gradOnline,
+          borderRadius: 6,
+          borderSkipped: false,
           stack: 'stack0',
+          barPercentage: 0.65,
+          categoryPercentage: 0.78,
         },
         {
           label: 'Device Maintenance',
           data: maintenanceCounts,
-          backgroundColor: 'rgba(234, 179, 8, 0.85)',
-          borderRadius: 4,
+          backgroundColor: gradMaint,
+          borderRadius: 6,
+          borderSkipped: false,
           stack: 'stack0',
+          barPercentage: 0.65,
+          categoryPercentage: 0.78,
         },
         {
           label: 'Device Offline',
           data: offlineCounts,
-          backgroundColor: 'rgba(239, 68, 68, 0.85)',
-          borderRadius: 4,
+          backgroundColor: gradOffline,
+          borderRadius: 6,
+          borderSkipped: false,
           stack: 'stack0',
+          barPercentage: 0.65,
+          categoryPercentage: 0.78,
         },
       ],
     },
@@ -179,21 +257,41 @@ export function renderAggregateTimeline(canvasId, timelineData, onBarClick = nul
         legend: {
           display: true,
           position: 'top',
-          labels: { color: theme.legendColor, font: { size: 10 } },
+          labels: {
+            color: theme.legendColor,
+            font: { size: 11, weight: '600' },
+            usePointStyle: true,
+            pointStyle: 'rectRounded',
+            padding: 14,
+          },
         },
         tooltip: {
           backgroundColor: theme.tooltipBg,
           borderColor: theme.tooltipBorder,
           borderWidth: 1,
+          padding: 10,
+          titleFont: { weight: 'bold', size: 12 },
+          bodyFont: { size: 11 },
           titleColor: theme.tooltipTitle,
           bodyColor: theme.tooltipBody,
           callbacks: {
+            title: (items) => {
+              if (items.length > 0) {
+                return `🕒 Pukul ${items[0].label} WIB`;
+              }
+              return '';
+            },
             afterBody: (items) => {
               if (items.length > 0) {
                 const idx = items[0].dataIndex;
                 const d = timelineData[idx];
+                const on = d.online ?? 0;
+                const off = d.offline ?? 0;
+                const mnt = d.maintenance ?? 0;
+                const tot = on + off + mnt;
+                const pct = tot > 0 ? ((on / tot) * 100).toFixed(1) : '100.0';
                 const nodataMsg = d?.nodata > 0 ? `\n⚪ Belum Terdaftar: ${d.nodata}` : '';
-                return `\nTotal Terpantau: ${(d.online || 0) + (d.offline || 0) + (d.maintenance || 0)}${nodataMsg}\n👉 Klik bar untuk rincian perangkat`;
+                return `\nTotal Terpantau: ${tot} Perangkat${nodataMsg}\nKesehatan Jaringan: ${pct}% Online\n👉 Klik bar untuk rincian perangkat`;
               }
               return '';
             },
@@ -203,15 +301,15 @@ export function renderAggregateTimeline(canvasId, timelineData, onBarClick = nul
       scales: {
         x: {
           stacked: true,
-          grid: { color: theme.gridColor },
+          grid: { display: false },
           ticks: { color: theme.tickColor, font: { size: 10 } },
         },
         y: {
           stacked: true,
-          grid: { color: theme.gridColor },
+          grid: { color: theme.gridColor, borderDash: [4, 4] },
           ticks: { color: theme.tickColor, font: { size: 10 }, stepSize: 1 },
           beginAtZero: true,
-          title: { display: true, text: 'Jumlah Perangkat', color: theme.tickColor, font: { size: 10 } },
+          title: { display: true, text: 'Jumlah Perangkat', color: theme.tickColor, font: { size: 10, weight: 'bold' } },
         },
       },
     },
