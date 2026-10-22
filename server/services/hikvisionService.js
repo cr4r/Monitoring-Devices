@@ -20,7 +20,16 @@ export function parseRtspUrl(ipOrUrl) {
   const str = String(ipOrUrl || '').trim();
   // Jika bukan URL (tidak ada ://), kembalikan sebagai host biasa
   if (!str.includes('://')) {
-    return { host: str, port: 554, username: null, password: null, path: '/' };
+    const cleanHost = str.replace(/[^\w.-]/g, '');
+    return {
+      host: cleanHost,
+      port: 554,
+      username: null,
+      password: null,
+      path: '/',
+      normalizedUrl: `rtsp://${cleanHost}:554/`,
+      sanitizedUrl: `rtsp://${cleanHost}:554/`,
+    };
   }
 
   try {
@@ -30,20 +39,50 @@ export function parseRtspUrl(ipOrUrl) {
       normalized = normalized.replace(/^r[ts]{2}p:\/\//i, 'http://');
     }
     const u = new URL(normalized);
+    const host = u.hostname;
+    const port = parseInt(u.port, 10) || 554;
+    const username = u.username ? decodeURIComponent(u.username) : null;
+    const password = u.password ? decodeURIComponent(u.password) : null;
+    const path = (u.pathname || '/') + (u.search || '');
+
+    const credPart = (username && password) ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@` : '';
+    const normalizedUrl = `rtsp://${credPart}${host}:${port}${path}`;
+    const sanitizedUrl = `rtsp://${host}:${port}${path}`;
+
     return {
-      host: u.hostname,
-      port: parseInt(u.port, 10) || 554,
-      username: u.username ? decodeURIComponent(u.username) : null,
-      password: u.password ? decodeURIComponent(u.password) : null,
-      path: (u.pathname || '/') + (u.search || ''),
+      host,
+      port,
+      username,
+      password,
+      path,
+      normalizedUrl,
+      sanitizedUrl,
     };
   } catch {
     // Fallback: coba ekstrak IP manual
     const match = str.match(/[@:]([\d.]+):(\d+)/);
     if (match) {
-      return { host: match[1], port: parseInt(match[2], 10) || 554, username: null, password: null, path: '/' };
+      const host = match[1];
+      const port = parseInt(match[2], 10) || 554;
+      return {
+        host,
+        port,
+        username: null,
+        password: null,
+        path: '/',
+        normalizedUrl: `rtsp://${host}:${port}/`,
+        sanitizedUrl: `rtsp://${host}:${port}/`,
+      };
     }
-    return { host: str, port: 554, username: null, password: null, path: '/' };
+    return {
+      host: str,
+      port: 554,
+      username: null,
+      password: null,
+      path: '/',
+      normalizedUrl: `rtsp://${str}:554/`,
+      sanitizedUrl: `rtsp://${str}:554/`,
+    };
   }
 }
 

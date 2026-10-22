@@ -591,7 +591,7 @@ function drawRealCameraOfflineScreen(ctx, width, height, state) {
   ctx.fillRect(0, 0, width, height);
 
   // Grid background
-  ctx.strokeStyle = 'rgba(239, 68, 68, 0.12)';
+  ctx.strokeStyle = state.isAuthError ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.12)';
   ctx.lineWidth = 1;
   for (let x = 0; x < width; x += 40) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
@@ -601,24 +601,30 @@ function drawRealCameraOfflineScreen(ctx, width, height, state) {
   }
 
   // Warning card in center
-  const boxW = Math.min(640, width * 0.9);
-  const boxH = 150;
+  const boxW = Math.min(680, width * 0.92);
+  const boxH = 160;
   const boxX = (width - boxW) / 2;
   const boxY = (height - boxH) / 2 - 10;
 
   ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
   ctx.fillRect(boxX, boxY, boxW, boxH);
-  ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+  ctx.strokeStyle = state.isAuthError ? 'rgba(234, 179, 8, 0.7)' : 'rgba(239, 68, 68, 0.6)';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-  ctx.fillStyle = '#ef4444';
+  ctx.fillStyle = state.isAuthError ? '#eab308' : '#ef4444';
   ctx.fillRect(boxX, boxY, 6, boxH);
 
-  ctx.fillStyle = '#f87171';
-  ctx.font = 'bold 16px monospace';
+  ctx.fillStyle = state.isAuthError ? '#facc15' : '#f87171';
+  ctx.font = 'bold 15px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText('📡 MODE STREAM KAMERA RIIL: MENUNGGU KONEKSI RTSP', boxX + 22, boxY + 34);
+  ctx.fillText(
+    state.isAuthError
+      ? '🔐 KREDENSIAL KAMERA TIDAK VALID (401 UNAUTHORIZED)'
+      : '📡 MODE STREAM KAMERA RIIL: MENUNGGU KONEKSI RTSP',
+    boxX + 22,
+    boxY + 34
+  );
 
   ctx.fillStyle = '#e2e8f0';
   ctx.font = '13px monospace';
@@ -626,11 +632,23 @@ function drawRealCameraOfflineScreen(ctx, width, height, state) {
 
   ctx.fillStyle = '#94a3b8';
   ctx.font = '12px monospace';
-  ctx.fillText('Kamera berada di subnet lokal komputer server (10.10.38.192).', boxX + 22, boxY + 88);
+  ctx.fillText(
+    state.isAuthError
+      ? (state.errorMessage || 'Username atau password kamera salah. Periksa kredensial di menu Edit Perangkat.')
+      : `Kamera berada di subnet jaringan server (${state.cleanIp}).`,
+    boxX + 22,
+    boxY + 90
+  );
 
   ctx.fillStyle = '#38bdf8';
   ctx.font = '11px monospace';
-  ctx.fillText('✓ Saat server dijalankan di komputer LAN CCTV, feed live kamera otomatis tampil.', boxX + 22, boxY + 114);
+  ctx.fillText(
+    state.isAuthError
+      ? '💡 Tips: Perbarui URL RTSP dengan password aktif melalui menu Edit Perangkat.'
+      : '✓ Saat server terhubung ke LAN CCTV, feed live kamera otomatis tampil di player ini.',
+    boxX + 22,
+    boxY + 118
+  );
 
   // Watermark OSD
   ctx.fillStyle = '#f8fafc';
@@ -643,8 +661,12 @@ function drawRealCameraOfflineScreen(ctx, width, height, state) {
 
   ctx.textAlign = 'left';
   ctx.font = '12px monospace';
-  ctx.fillStyle = '#ef4444';
-  ctx.fillText('MODE STREAM RIIL AKTIF · SOCKET TIMEOUT DI LAPTOP INI', 24, height - 20);
+  ctx.fillStyle = state.isAuthError ? '#facc15' : '#ef4444';
+  ctx.fillText(
+    state.isAuthError ? 'AUTENTIKASI RTSP/HTTP GAGAL · PERIKSA PASSWORD' : 'MODE STREAM RIIL AKTIF · SOCKET TIMEOUT / OFFLINE',
+    24,
+    height - 20
+  );
 
   ctx.textAlign = 'right';
   ctx.fillStyle = '#94a3b8';
@@ -685,10 +707,13 @@ function initCctvStreamPlayer(device, id) {
   // Real Camera Stream State
   const realImage = new Image();
   let realCameraOnline = false;
+  let realAuthFailed = false;
+  let realErrorMessage = '';
   let realFrameCount = 0;
   let realByteCount = 0;
   let calculatedRealFps = 0;
   let calculatedRealBitrate = 0;
+  let isPollingBusy = false;
 
   // Request backend profile data
   apiGetRtspStreamInfo(id).then((res) => {
@@ -703,7 +728,8 @@ function initCctvStreamPlayer(device, id) {
 
   // Real Camera Frame Poller
   function pollRealFrame() {
-    if (streamMode !== 'real' || isPreview) return;
+    if (streamMode !== 'real' || isPreview || isPollingBusy) return;
+    isPollingBusy = true;
     const ts = Date.now();
     fetch(`/api/devices/${id}/live-frame?res=${currentRes}&t=${ts}`)
       .then(async (res) => {
@@ -715,20 +741,38 @@ function initCctvStreamPlayer(device, id) {
           realImage.onload = () => {
             URL.revokeObjectURL(url);
             realCameraOnline = true;
+            realAuthFailed = false;
+            isPollingBusy = false;
+          };
+          realImage.onerror = () => {
+            isPollingBusy = false;
           };
           realImage.src = url;
         } else {
+          isPollingBusy = false;
           realCameraOnline = false;
+          if (res.status === 401) {
+            realAuthFailed = true;
+            try {
+              const errJson = await res.json();
+              realErrorMessage = errJson.message || 'Kredensial kamera ditolak (401).';
+            } catch {
+              realErrorMessage = 'Kredensial kamera ditolak (401).';
+            }
+          } else {
+            realAuthFailed = false;
+          }
         }
       })
       .catch(() => {
+        isPollingBusy = false;
         realCameraOnline = false;
       });
   }
 
-  // Poll real frames every 150ms (~7 FPS snapshot stream)
+  // Poll real frames every 200ms (~5 FPS snapshot stream optimal for camera DSP)
   pollRealFrame();
-  window.__activeCctvFramePoller = setInterval(pollRealFrame, 150);
+  window.__activeCctvFramePoller = setInterval(pollRealFrame, 200);
 
   function renderLoop() {
     ticks++;
@@ -775,6 +819,8 @@ function initCctvStreamPlayer(device, id) {
           port: device.port || 554,
           currentTimeString: timeStr,
           osdCameraName: `[CAM-0${(device.id % 9) + 1}] ${device.nama.toUpperCase()}`,
+          isAuthError: realAuthFailed,
+          errorMessage: realErrorMessage,
         });
       }
     } else {
@@ -823,10 +869,10 @@ function initCctvStreamPlayer(device, id) {
       } else {
         if (bElem) bElem.textContent = '0.00 Mbps';
         if (fElem) fElem.textContent = '0.0 FPS';
-        if (lElem) lElem.textContent = 'Timeout';
+        if (lElem) lElem.textContent = realAuthFailed ? '401 Auth' : 'Timeout';
         if (dElem) dElem.textContent = '100%';
         if (codecElem) codecElem.textContent = 'H.264 / AVC (RTSP)';
-        if (osdTel) osdTel.textContent = 'RTSP STREAM OFFLINE · HOST UNREACHABLE';
+        if (osdTel) osdTel.textContent = realAuthFailed ? 'AUTH FAILED · 401 UNAUTHORIZED' : 'RTSP STREAM OFFLINE · HOST UNREACHABLE';
       }
       return;
     }
@@ -1019,7 +1065,12 @@ function initCctvStreamPlayer(device, id) {
 
   // Copy RTSP URL Handler
   document.getElementById('cctv-btn-copy-url')?.addEventListener('click', () => {
-    const urlToCopy = activeRtspUrl || (device.ip.startsWith('rtsp://') ? device.ip : `rtsp://${device.ip}:554/cam/realmonitor?channel=1&subtype=1`);
+    let urlToCopy = activeRtspUrl || device.ip;
+    if (urlToCopy.startsWith('rstp://')) {
+      urlToCopy = urlToCopy.replace(/^rstp:\/\//i, 'rtsp://');
+    } else if (!urlToCopy.startsWith('rtsp://')) {
+      urlToCopy = `rtsp://${urlToCopy}:554/cam/realmonitor?channel=1&subtype=1`;
+    }
     navigator.clipboard.writeText(urlToCopy).then(() => {
       Swal.fire({
         icon: 'success',

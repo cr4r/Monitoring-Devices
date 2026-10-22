@@ -7,6 +7,7 @@ import express from 'express';
 import { query, queryOne, run } from '../database/db.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { probeDevice, getIsapiDeviceInfo, parseRtspUrl } from '../services/hikvisionService.js';
+import { digestClient } from '../services/digestClient.js';
 import { broadcast } from '../services/websocketService.js';
 
 const router = express.Router();
@@ -226,7 +227,8 @@ router.get('/:id/rtsp-stream-info', authenticateToken, async (req, res) => {
     return res.status(404).json({ success: false, message: 'Perangkat tidak ditemukan.' });
   }
 
-  const { host, port, username, password, path: rawPath } = parseRtspUrl(device.ip);
+  const parsed = parseRtspUrl(device.ip);
+  const { host, port, username, password, path: rawPath } = parsed;
   const isOnline = (device.status || '').toLowerCase() === 'online';
 
   const defaultSub = (rawPath && rawPath.includes('subtype=0')) ? 0 : 1;
@@ -280,56 +282,100 @@ router.get('/:id/rtsp-stream-info', authenticateToken, async (req, res) => {
       currentLatencyMs: device.response_time && !isNaN(device.response_time) ? Number(device.response_time) : 18,
       profiles,
       defaultProfileId: defaultSub === 0 ? 'main' : 'sub',
-      sanitizedUrl: `rtsp://${host}:${port || 554}${basePath}`,
-      fullRtspUrl: device.ip.startsWith('rtsp://') ? device.ip : `rtsp://${device.ip}:${port || 554}${basePath}`,
+      sanitizedUrl: parsed.sanitizedUrl || `rtsp://${host}:${port || 554}${basePath}`,
+      fullRtspUrl: parsed.normalizedUrl || `rtsp://${host}:${port || 554}${basePath}`,
     },
   });
 });
 
+// Cache URL kandidat snapshot yang telah terbukti berhasil per perangkat
+const snapshotUrlCache = new Map();
+
 // Helper mengambil frame snapshot JPEG langsung dari kamera CCTV (Dahua / Hikvision / ONVIF)
 async function fetchCameraSnapshot(device, subtype = 1) {
-  const { host, username, password } = parseRtspUrl(device.ip);
-  if (!host) return null;
+  const parsed = parseRtspUrl(device.ip);
+  const host = parsed.host;
+  const username = parsed.username || device.username || null;
+  const password = parsed.password || device.password_encrypted || null;
 
-  const httpPort = device.port && device.port !== 554 ? device.port : 80;
-  const isDahua = String(device.ip).includes('/cam/realmonitor') || String(device.jenis).toLowerCase().includes('dahua');
-
-  const candidates = [];
-  if (isDahua) {
-    candidates.push(`http://${host}:${httpPort}/cgi-bin/snapshot.cgi?channel=1&subtype=${subtype}`);
-    candidates.push(`http://${host}:8080/cgi-bin/snapshot.cgi?channel=1&subtype=${subtype}`);
-  } else {
-    const ch = subtype === 0 ? 101 : (subtype === 2 ? 103 : 102);
-    candidates.push(`http://${host}:${httpPort}/ISAPI/Streaming/channels/${ch}/picture`);
-    candidates.push(`http://${host}:${httpPort}/onvif-http/snapshot?channel=1`);
-    candidates.push(`http://${host}:${httpPort}/cgi-bin/snapshot.cgi?channel=1&subtype=${subtype}`);
+  if (!host) {
+    return { success: false, reason: 'INVALID_HOST', message: 'Host IP kamera tidak valid.' };
   }
 
-  for (const url of candidates) {
+  const httpPort = device.port && device.port !== 554 ? device.port : 80;
+  const ch = subtype === 0 ? 101 : (subtype === 2 ? 103 : 102);
+
+  const candidates = [];
+
+  // Jika sebelumnya sudah ada kandidat yang berhasil, prioritaskan kandidat tersebut
+  const cachedUrl = snapshotUrlCache.get(device.id);
+  if (cachedUrl) {
+    let adjusted = cachedUrl;
+    if (adjusted.includes('subtype=')) {
+      adjusted = adjusted.replace(/subtype=\d+/, `subtype=${subtype}`);
+    } else if (adjusted.includes('/channels/')) {
+      adjusted = adjusted.replace(/\/channels\/\d+\//, `/channels/${ch}/`);
+    }
+    candidates.push(adjusted);
+  }
+
+  // Dahua CGI candidates
+  candidates.push(`http://${host}:${httpPort}/cgi-bin/snapshot.cgi?channel=1&subtype=${subtype}`);
+  candidates.push(`http://${host}:8080/cgi-bin/snapshot.cgi?channel=1&subtype=${subtype}`);
+
+  // Hikvision ISAPI candidates
+  candidates.push(`http://${host}:${httpPort}/ISAPI/Streaming/channels/${ch}/picture`);
+  candidates.push(`http://${host}:8000/ISAPI/Streaming/channels/${ch}/picture`);
+
+  // Generic ONVIF snapshot candidate
+  candidates.push(`http://${host}:${httpPort}/onvif-http/snapshot?channel=1`);
+
+  const uniqueCandidates = [...new Set(candidates)];
+  let lastAuthFailed = false;
+
+  for (const url of uniqueCandidates) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2500);
+      const timer = setTimeout(() => controller.abort(), 3000);
 
-      const headers = {};
-      if (username && password) {
-        headers['Authorization'] = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
-      }
-
-      const resp = await fetch(url, { headers, signal: controller.signal }).catch(() => null);
+      const resp = await digestClient.fetch(url, { signal: controller.signal }, username, password).catch(() => null);
       clearTimeout(timer);
 
-      if (resp && resp.status === 200) {
+      if (!resp) continue;
+
+      if (resp.status === 200) {
         const ct = resp.headers.get('content-type') || 'image/jpeg';
         if (ct.includes('image') || ct.includes('jpeg') || ct.includes('octet-stream')) {
           const arrayBuf = await resp.arrayBuffer();
-          return { buffer: Buffer.from(arrayBuf), contentType: ct };
+          // Simpan kandidat sukses untuk request selanjutnya
+          snapshotUrlCache.set(device.id, url);
+          return {
+            success: true,
+            buffer: Buffer.from(arrayBuf),
+            contentType: ct,
+          };
         }
+      } else if (resp.status === 401) {
+        lastAuthFailed = true;
       }
     } catch {
       // coba kandidat berikutnya
     }
   }
-  return null;
+
+  if (lastAuthFailed) {
+    return {
+      success: false,
+      reason: 'AUTH_FAILED',
+      message: 'Kredensial kamera (username/password) ditolak oleh perangkat (401 Unauthorized).'
+    };
+  }
+
+  return {
+    success: false,
+    reason: 'UNREACHABLE',
+    message: 'Kamera tidak dapat dijangkau dari server lokal.'
+  };
 }
 
 // GET /api/devices/:id/live-frame — Ambil 1 frame JPEG langsung dari kamera CCTV riil
@@ -340,17 +386,26 @@ router.get('/:id/live-frame', async (req, res) => {
   }
 
   const subtype = req.query.res === 'main' ? 0 : (req.query.res === 'mobile' ? 2 : 1);
-  const frame = await fetchCameraSnapshot(device, subtype);
-  if (frame) {
-    res.setHeader('Content-Type', frame.contentType || 'image/jpeg');
+  const result = await fetchCameraSnapshot(device, subtype);
+  if (result.success && result.buffer) {
+    res.setHeader('Content-Type', result.contentType || 'image/jpeg');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    return res.send(frame.buffer);
+    return res.send(result.buffer);
+  }
+
+  if (result.reason === 'AUTH_FAILED') {
+    return res.status(401).json({
+      success: false,
+      offline: false,
+      authFailed: true,
+      message: result.message,
+    });
   }
 
   return res.status(503).json({
     success: false,
     offline: true,
-    message: 'Kamera tidak dapat dijangkau dari host ini. Pastikan server terhubung ke jaringan CCTV lokal.',
+    message: result.message || 'Kamera tidak dapat dijangkau dari host ini. Pastikan server terhubung ke jaringan CCTV lokal.',
   });
 });
 
@@ -363,11 +418,12 @@ router.get('/:id/stream.mjpg', async (req, res) => {
 
   const subtype = req.query.res === 'main' ? 0 : (req.query.res === 'mobile' ? 2 : 1);
   const firstFrame = await fetchCameraSnapshot(device, subtype);
-  if (!firstFrame) {
-    return res.status(503).json({
+  if (!firstFrame.success || !firstFrame.buffer) {
+    return res.status(firstFrame.reason === 'AUTH_FAILED' ? 401 : 503).json({
       success: false,
-      offline: true,
-      message: 'Koneksi ke kamera RTSP timeout / refused pada host ini.',
+      offline: firstFrame.reason !== 'AUTH_FAILED',
+      authFailed: firstFrame.reason === 'AUTH_FAILED',
+      message: firstFrame.message || 'Koneksi ke kamera RTSP timeout / refused pada host ini.',
     });
   }
 
@@ -396,12 +452,12 @@ router.get('/:id/stream.mjpg', async (req, res) => {
 
   sendFrame(firstFrame.buffer, firstFrame.contentType);
 
-  const fps = subtype === 0 ? 15 : (subtype === 2 ? 8 : 12);
+  const fps = subtype === 0 ? 6 : (subtype === 2 ? 3 : 5);
   const intervalId = setInterval(async () => {
     if (isClosed) return clearInterval(intervalId);
     try {
       const f = await fetchCameraSnapshot(device, subtype);
-      if (f && !isClosed) {
+      if (f.success && f.buffer && !isClosed) {
         sendFrame(f.buffer, f.contentType);
       }
     } catch {
