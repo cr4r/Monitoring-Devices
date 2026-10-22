@@ -26,14 +26,11 @@ export function getGroups() {
   return list.length > 0 ? list : ['Umum', 'Server Room', 'Lantai 1', 'Lantai 2'];
 }
 
-export function updateDeviceStatus(id, status, maintenanceInfo = null, responseTime = null) {
+export function updateDeviceStatus(id, status, maintenanceInfo = null) {
   const dev = mockDevices.find((d) => d.id === id);
   if (dev) {
     dev.status = status;
     dev.maintenanceInfo = maintenanceInfo;
-    if (responseTime !== null && responseTime !== undefined) {
-      dev.responseTime = Number(responseTime);
-    }
     if (status === 'online') {
       dev.lastOnline = new Date().toISOString();
     }

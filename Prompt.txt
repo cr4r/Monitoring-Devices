@@ -20,3 +20,8 @@ Silahkan tanya sedetail mungkin agar kamu mengerti.
 
 
 
+/plan
+- saya sudah menambahkan baru 13 devices namun di dashboard > peta visual terlihat sempit dan teks nya mulai menumpuk. rencana akan menambahkan sekitar 100 device dan mungkin lebih dari itu.
+- ketika device sudah sangat banyak, saat mengeping semua device atau sesuai dengan interval, apakah sudah di optimizer agar komputer tidak crash atau lemot.
+- selain itu untuk apa core switch L3 dan dibawahnya ada Switch vlan, harusnya jika devices switch di tambahkan, gunakan devices tersebut
+- selain itu saya menambahkan misalkan device switch AP timbangan dengan ip 192.168.38.226 dan device komputer dengan ip 192.168.38.77 dengan subnet pilih Switch AP timbangan tersebut. saya lihat tampilannya tidak mengakar lagi hanya menyamping dengan garis putus putus kesamping.

@@ -397,14 +397,76 @@
   padding: var(--spacing-md);
   position: relative;
   overflow: hidden;
+  transition: all 0.25s ease;
+}
+
+.network-map-wrapper.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border-radius: 0;
+  border: none;
+  padding: 16px;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.network-map-wrapper.fullscreen .canvas-container {
+  flex: 1;
+  height: auto !important;
+}
+
+.network-map-wrapper.fullscreen #networkCanvas {
+  height: 100% !important;
 }
 
 .network-map-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-sm);
   flex-wrap: wrap;
+}
+
+.map-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.map-search-box {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.map-search-box input {
+  padding: 5px 10px 5px 28px;
+  font-size: 0.8rem;
+  height: 31px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--color-heading);
+  width: 170px;
+  transition: width 0.2s ease, border-color 0.2s ease;
+}
+
+.map-search-box input:focus {
+  width: 220px;
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+.map-search-box .search-icon {
+  position: absolute;
+  left: 8px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  pointer-events: none;
 }
 
 #networkCanvas {
@@ -413,6 +475,7 @@
   border-radius: var(--border-radius);
   background: radial-gradient(ellipse at center, var(--bg-card) 0%, var(--bg-primary) 100%);
   border: 1px solid var(--border-color);
+  touch-action: none;
 }
 
 #networkCanvas:active {

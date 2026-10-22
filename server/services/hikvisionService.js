@@ -352,13 +352,14 @@ export async function probeDevice(device, timeoutMs = config.pingTimeoutMs) {
     const rtspRes = await checkRtspStream(host, port, timeoutMs, username, password, rtspPath);
     if (rtspRes.alive) return rtspRes;
 
-    // Fallback ke ICMP jika stream ditolak tapi IP hidup
+    // Jika stream RTSP port 554 tidak aktif, perangkat RTSP WAJIB dilaporkan OFFLINE.
+    // ICMP ping hanya dijalankan untuk diagnosa informasi statusText, bukan penentu online.
     const pingRes = await pingHost(host, timeoutMs);
     if (pingRes.alive) {
       return {
-        alive: true,
-        time: pingRes.time,
-        statusText: `${pingRes.time} ms (ICMP - RTSP stream tertutup)`,
+        alive: false,
+        time: 0,
+        statusText: `RTSP Stream Offline (Port ${port} tertutup, Host ICMP ${pingRes.time} ms)`,
       };
     }
     return rtspRes;

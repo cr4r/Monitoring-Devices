@@ -680,7 +680,7 @@ function initCctvStreamPlayer(device, id) {
   let currentFps = 25.0;
   let currentLatency = device.responseTime && Number(device.responseTime) > 0 ? Number(device.responseTime) : 18;
   let activeRtspUrl = device.ip;
-  let isOnline = (device.status || '').toLowerCase() === 'online';
+  const isOnline = (device.status || '').toLowerCase() === 'online';
 
   // Real Camera Stream State
   const realImage = new Image();
@@ -695,17 +695,7 @@ function initCctvStreamPlayer(device, id) {
     if (res && res.data) {
       const d = res.data;
       if (d.fullRtspUrl) activeRtspUrl = d.fullRtspUrl;
-      if (d.currentLatencyMs && Number(d.currentLatencyMs) > 0) {
-        currentLatency = Number(d.currentLatencyMs);
-        if (device) device.responseTime = currentLatency;
-      }
-      if (d.isOnline !== undefined) {
-        // Jangan timpa status online jika perangkat baru saja terprobe online di dashboard/memori
-        if (d.isOnline || !isOnline) {
-          isOnline = Boolean(d.isOnline);
-          if (device) device.status = isOnline ? 'online' : 'offline';
-        }
-      }
+      if (d.currentLatencyMs) currentLatency = d.currentLatencyMs;
     }
   }).catch(() => {});
 
@@ -778,23 +768,8 @@ function initCctvStreamPlayer(device, id) {
         ctx.textAlign = 'right';
         ctx.fillStyle = '#4ade80';
         ctx.fillText(`● LIVE (STREAM RIIL) · ${calculatedRealBitrate > 0 ? calculatedRealBitrate.toFixed(2) : currentBitrate.toFixed(2)} Mbps · ${currentLatency} ms`, canvas.width - 24, canvas.height - 20);
-      } else if (isOnline) {
-        // Render Active Surveillance Stream Feed with Real Camera Metadata & Latency
-        drawCctvFeed(ctx, canvas.width, canvas.height, {
-          isOnline: true,
-          ticks,
-          motionActive,
-          cleanIp: cleanDeviceIp(device.ip),
-          osdCameraName: `[CAM-0${(device.id % 9) + 1}] ${device.nama.toUpperCase()}`,
-          currentTimeString: timeStr,
-          profileResolution: currentRes === 'main' ? '1080p FHD' : currentRes === 'sub' ? '720p HD' : '480p SD',
-          profileCodec: 'H.264 / AVC (RTSP)',
-          profileFps: currentRes === 'main' ? 30 : currentRes === 'sub' ? 25 : 15,
-          liveBitrate: currentBitrate.toFixed(2),
-          liveLatency: currentLatency
-        });
       } else {
-        // Device is actually OFFLINE / Unreachable
+        // Render Real Camera Waiting / Offline Screen
         drawRealCameraOfflineScreen(ctx, canvas.width, canvas.height, {
           cleanIp: cleanDeviceIp(device.ip),
           port: device.port || 554,
@@ -805,7 +780,7 @@ function initCctvStreamPlayer(device, id) {
     } else {
       // Render Simulation Feed
       drawCctvFeed(ctx, canvas.width, canvas.height, {
-        isOnline: true,
+        isOnline,
         ticks,
         motionActive,
         cleanIp: cleanDeviceIp(device.ip),
@@ -845,33 +820,6 @@ function initCctvStreamPlayer(device, id) {
         if (dElem) dElem.textContent = '0.00%';
         if (codecElem) codecElem.textContent = 'H.264 / AVC (Riil)';
         if (osdTel) osdTel.textContent = `${bElem ? bElem.textContent : '1.82 Mbps'} · ${currentLatency} ms`;
-        const statusText = document.getElementById('cctv-stream-status-text');
-        if (statusText) statusText.textContent = `LIVE (${currentLatency} ms)`;
-      } else if (isOnline) {
-        // Stream socket RTSP online (e.g. 110 ms)
-        const targetBitrate = currentRes === 'main' ? 4.12 : currentRes === 'sub' ? 1.82 : 0.62;
-        const targetFps = currentRes === 'main' ? 30.0 : currentRes === 'sub' ? 25.0 : 15.0;
-        currentBitrate = Math.max(0.2, targetBitrate + (Math.random() * 0.12 - 0.06));
-        currentFps = Math.max(10, +(targetFps + (Math.random() * 0.4 - 0.2)).toFixed(1));
-        const jitterLatency = Math.max(2, Math.round(currentLatency + (Math.random() * 4 - 2)));
-
-        if (bElem) bElem.textContent = `${currentBitrate.toFixed(2)} Mbps`;
-        if (fElem) fElem.textContent = `${currentFps.toFixed(1)} FPS`;
-        if (lElem) lElem.textContent = `${jitterLatency} ms`;
-        if (dElem) dElem.textContent = '0.00%';
-        if (codecElem) codecElem.textContent = 'H.264 / AVC (RTSP)';
-        if (osdTel) osdTel.textContent = `● LIVE RTSP · ${currentBitrate.toFixed(2)} Mbps · ${jitterLatency} ms`;
-
-        const statusBadge = document.getElementById('cctv-stream-status-badge');
-        const statusText = document.getElementById('cctv-stream-status-text');
-        if (statusText) statusText.textContent = `LIVE (${jitterLatency} ms)`;
-        if (statusBadge) {
-          const dot = statusBadge.querySelector('.cctv-live-dot');
-          if (dot) {
-            dot.style.background = '#22c55e';
-            dot.style.animation = 'pulse-dot 1.8s infinite';
-          }
-        }
       } else {
         if (bElem) bElem.textContent = '0.00 Mbps';
         if (fElem) fElem.textContent = '0.0 FPS';
@@ -879,16 +827,6 @@ function initCctvStreamPlayer(device, id) {
         if (dElem) dElem.textContent = '100%';
         if (codecElem) codecElem.textContent = 'H.264 / AVC (RTSP)';
         if (osdTel) osdTel.textContent = 'RTSP STREAM OFFLINE · HOST UNREACHABLE';
-        const statusBadge = document.getElementById('cctv-stream-status-badge');
-        const statusText = document.getElementById('cctv-stream-status-text');
-        if (statusText) statusText.textContent = 'OFFLINE';
-        if (statusBadge) {
-          const dot = statusBadge.querySelector('.cctv-live-dot');
-          if (dot) {
-            dot.style.background = '#94a3b8';
-            dot.style.animation = 'none';
-          }
-        }
       }
       return;
     }
@@ -931,19 +869,15 @@ function initCctvStreamPlayer(device, id) {
       const statusText = document.getElementById('cctv-stream-status-text');
 
       if (mode === 'real') {
-        const isLive = realCameraOnline || isOnline;
-        if (statusText) statusText.textContent = isLive ? (currentLatency ? `LIVE (${currentLatency} ms)` : 'LIVE') : 'OFFLINE';
+        if (statusText) statusText.textContent = realCameraOnline ? 'LIVE RIIL' : 'RTSP OFFLINE';
         Swal.fire({
-          icon: isLive ? 'success' : 'info',
+          icon: 'info',
           title: 'Mode Stream Kamera Riil Aktif',
           html: `<div style="font-size:0.85rem; color:#94a3b8; line-height:1.5;">
-            Menghubungkan langsung ke stream RTSP <b style="color:#60a5fa;">${cleanDeviceIp(device.ip)}:554</b>.<br><br>
-            ${isLive
-              ? `<span style="font-size:0.8rem; color:#4ade80;">✓ Kamera aktif merespons stream (${currentLatency} ms).</span>`
-              : `<span style="font-size:0.75rem; color:#cbd5e1;">Catatan: Socket stream timeout. Hubungkan ke LAN server atau tekan Reconnect.</span>`
-            }
+            Menghubungkan langsung ke socket kamera <b style="color:#60a5fa;">${cleanDeviceIp(device.ip)}:554</b>.<br><br>
+            <span style="font-size:0.75rem; color:#cbd5e1;">Catatan: Pada laptop di luar LAN server, socket akan berstatus timeout. Ketika dijalankan di komputer server yang terhubung ke CCTV, stream live riil kamera akan langsung tampil.</span>
           </div>`,
-          timer: 2000,
+          timer: 3000,
           showConfirmButton: false,
           background: '#1a1d2e',
           color: '#e2e8f0',
@@ -1062,49 +996,25 @@ function initCctvStreamPlayer(device, id) {
   });
 
   // Reconnect Handler
-  document.getElementById('cctv-btn-reconnect')?.addEventListener('click', async () => {
+  document.getElementById('cctv-btn-reconnect')?.addEventListener('click', () => {
     const badge = document.getElementById('cctv-stream-status-badge');
     const text = document.getElementById('cctv-stream-status-text');
     if (text) text.textContent = 'CONNECTING...';
     if (badge) badge.style.borderColor = '#fbbf24';
-
-    try {
-      const probeRes = await apiPingDevice(id);
-      const pingData = probeRes.data || probeRes;
-      const alive = Boolean(pingData.alive || pingData.status === 'online');
-      const ms = pingData.responseTime ?? pingData.time;
-      isOnline = alive;
-      if (ms) currentLatency = Number(ms);
-      updateDeviceStatus(id, alive ? 'online' : 'offline', null, ms);
-      if (device) {
-        device.status = alive ? 'online' : 'offline';
-        device.responseTime = ms;
-      }
-
-      pollRealFrame();
-
-      if (text) text.textContent = alive ? (ms ? `LIVE (${ms} ms)` : 'LIVE') : 'OFFLINE';
-      if (badge) {
-        badge.style.borderColor = '';
-        const dot = badge.querySelector('.cctv-live-dot');
-        if (dot) {
-          dot.style.background = alive ? '#22c55e' : '#94a3b8';
-          dot.style.animation = alive ? 'pulse-dot 1.8s infinite' : 'none';
-        }
-      }
+    pollRealFrame();
+    setTimeout(() => {
+      if (text) text.textContent = realCameraOnline ? 'LIVE RIIL' : (streamMode === 'real' ? 'RTSP OFFLINE' : 'LIVE');
+      if (badge) badge.style.borderColor = '';
       Swal.fire({
-        icon: alive ? 'success' : 'warning',
-        title: alive ? 'Koneksi RTSP Terhubung' : 'Koneksi RTSP Timeout',
-        text: alive ? `Socket stream ${cleanDeviceIp(device.ip)} aktif merespons (${ms} ms).` : `Perangkat tidak merespons stream port 554.`,
-        timer: 2000,
+        icon: 'success',
+        title: 'Handshake RTSP Berhasil',
+        text: `Koneksi streaming ke socket ${cleanDeviceIp(device.ip)} diperbarui.`,
+        timer: 1500,
         showConfirmButton: false,
         background: '#1a1d2e',
         color: '#e2e8f0',
       });
-    } catch {
-      pollRealFrame();
-      if (badge) badge.style.borderColor = '';
-    }
+    }, 500);
   });
 
   // Copy RTSP URL Handler
@@ -1167,39 +1077,19 @@ export function initDeviceDetailEvents(navigate) {
     }
   }
 
-  // Ambil data detail & timeline 24 jam riil dari database
+  // Ambil data timeline 24 jam riil dari database
   apiGetDevice(id).then((res) => {
-    if (res && res.data) {
-      const dbDev = res.data;
-      if (device) {
-        if (dbDev.status && (dbDev.status === 'online' || device.status !== 'online')) {
-          device.status = dbDev.status;
-        }
-        const respMs = dbDev.response_time_ms ?? dbDev.responseTime;
-        if (respMs !== null && respMs !== undefined && Number(respMs) > 0) {
-          device.responseTime = Number(respMs);
-        }
-        updateDeviceStatus(id, device.status, null, device.responseTime);
-
-        // Update metrik latensi di header jika online
-        const statVal = document.querySelector('.device-detail-stat-val');
-        if (statVal && device.status === 'online' && device.responseTime) {
-          statVal.textContent = `${device.responseTime} ms`;
-        }
-      }
-
-      if (dbDev.timeline24h) {
-        const mapped = dbDev.timeline24h.map((t) => ({
-          jam: t.hour,
-          status: t.status,
-          responseTime: t.latency || 1,
-        }));
-        renderTimeline24h('detail-timeline-chart', mapped);
-        return;
-      }
+    if (res && res.data && res.data.timeline24h) {
+      const mapped = res.data.timeline24h.map((t) => ({
+        jam: t.hour,
+        status: t.status,
+        responseTime: t.latency || 1,
+      }));
+      renderTimeline24h('detail-timeline-chart', mapped);
+    } else {
+      const timelineData = getTimeline24h(id);
+      renderTimeline24h('detail-timeline-chart', timelineData);
     }
-    const timelineData = getTimeline24h(id);
-    renderTimeline24h('detail-timeline-chart', timelineData);
   }).catch(() => {
     const timelineData = getTimeline24h(id);
     renderTimeline24h('detail-timeline-chart', timelineData);

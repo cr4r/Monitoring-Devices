@@ -29,6 +29,26 @@ export function parseSqliteUtc(dateStr) {
 }
 
 /**
+ * Eksekutor Antrean Konkuren (Concurrency Pool)
+ * Membatasi jumlah eksekusi proses simultan agar aman bagi CPU sistem
+ */
+export async function asyncPool(limit, items, iteratorFn) {
+  const results = [];
+  const executing = new Set();
+  for (const item of items) {
+    const p = Promise.resolve().then(() => iteratorFn(item));
+    results.push(p);
+    executing.add(p);
+    const clean = () => executing.delete(p);
+    p.then(clean, clean);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}
+
+/**
  * Jalankan 1 siklus pengecekan untuk seluruh perangkat aktif
  */
 export async function runMonitoringCycle() {
@@ -54,12 +74,11 @@ export async function runMonitoringCycle() {
 
     const now = Date.now();
 
+    // 1. Cek masa maintenance yang berakhir
     for (const dev of devices) {
-      // 1. Cek apakah masa maintenance sudah berakhir
       if (dev.status === 'maintenance' && dev.maintenance_until) {
         const untilTime = parseSqliteUtc(dev.maintenance_until);
         if (now >= untilTime) {
-          // Masa maintenance habis, kembalikan ke pemantauan aktif
           run(
             `UPDATE devices SET status = 'offline', maintenance_reason = NULL, maintenance_until = NULL WHERE id = ?`,
             [dev.id]
@@ -72,122 +91,125 @@ export async function runMonitoringCycle() {
           broadcast('maintenance_expired', { id: dev.id, nama: dev.nama });
         }
       }
+    }
 
-      // 2. Evaluasi apakah sudah waktunya dipolling berdasarkan interval masing-masing
+    // 2. Filter perangkat yang sudah jatuh tempo pengecekan (dengan jitter offset 0-6 detik)
+    const dueDevices = devices.filter((dev) => {
+      if (dev.status === 'maintenance') return false;
       const lastCheckTime = parseSqliteUtc(dev.last_check);
+      if (lastCheckTime === 0) return true; // Belum pernah dicek, prioritaskan langsung
+
       const intervalMs = (dev.interval_detik || defaultInterval) * 1000;
+      const jitterMs = ((dev.id * 3) % 7) * 1000; // Sebar eksekusi agar tidak terjadi spike
+      return (now - lastCheckTime >= (intervalMs + jitterMs));
+    });
 
-      if (now - lastCheckTime < intervalMs && lastCheckTime !== 0) {
-        continue; // Belum waktunya
-      }
+    if (dueDevices.length === 0) {
+      return;
+    }
 
-      // Jangan trigger alert jika sedang maintenance
-      if (dev.status === 'maintenance') {
-        continue;
-      }
+    // 3. Eksekusi probe dengan Concurrency Pool (Maksimal 6 proses simultan)
+    const MAX_CONCURRENT_PROBES = 6;
+    await asyncPool(MAX_CONCURRENT_PROBES, dueDevices, async (dev) => {
+      try {
+        const probeResult = await probeDevice(dev, pingTimeout);
 
-      // 3. Lakukan Probe Jaringan Nyata
-      const probeResult = await probeDevice(dev, pingTimeout);
+        if (probeResult.alive) {
+          // PERANGKAT MERESPONS
+          const wasOffline = dev.status === 'offline';
 
-      if (probeResult.alive) {
-        // PERANGKAT MERESPONS
-        const wasOffline = dev.status === 'offline';
-
-        run(
-          `UPDATE devices
-           SET status = 'online',
-               response_time_ms = ?,
-               consecutive_failures = 0,
-               last_check = datetime('now'),
-               last_seen_online = datetime('now')
-           WHERE id = ?`,
-          [probeResult.time, dev.id]
-        );
-
-        if (wasOffline) {
-          // Buat log pemulihan bahasa manusiawi
-          const msg = `${dev.nama} (${dev.ip}) kembali terhubung ke jaringan. Status berubah menjadi Online.`;
           run(
-            `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
-             VALUES (?, ?, ?, ?, 'Offline', 'Online', ?, ?, ?)`,
-            [dev.id, dev.nama, dev.ip, dev.created_at, dev.metode, `${probeResult.time} ms`, msg]
+            `UPDATE devices
+             SET status = 'online',
+                 response_time_ms = ?,
+                 consecutive_failures = 0,
+                 last_check = datetime('now'),
+                 last_seen_online = datetime('now')
+             WHERE id = ?`,
+            [probeResult.time, dev.id]
           );
 
-          // Tutup insiden yang sedang berjalan
-          const activeIncident = queryOne(
-            `SELECT id, waktu_mulai FROM incidents WHERE device_id = ? AND status = 'terbuka' ORDER BY id DESC LIMIT 1`,
-            [dev.id]
-          );
-
-          if (activeIncident) {
-            const startMs = new Date(activeIncident.waktu_mulai).getTime();
-            const durasiMenit = Math.max(1, Math.round((now - startMs) / 60000));
+          if (wasOffline) {
+            const msg = `${dev.nama} (${dev.ip}) kembali terhubung ke jaringan. Status berubah menjadi Online.`;
             run(
-              `UPDATE incidents
-               SET status = 'selesai', waktu_selesai = datetime('now'), durasi_menit = ?
-               WHERE id = ?`,
-              [durasiMenit, activeIncident.id]
+              `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+               VALUES (?, ?, ?, ?, 'Offline', 'Online', ?, ?, ?)`,
+              [dev.id, dev.nama, dev.ip, dev.created_at, dev.metode, `${probeResult.time} ms`, msg]
             );
+
+            const activeIncident = queryOne(
+              `SELECT id, waktu_mulai FROM incidents WHERE device_id = ? AND status = 'terbuka' ORDER BY id DESC LIMIT 1`,
+              [dev.id]
+            );
+
+            if (activeIncident) {
+              const startMs = new Date(activeIncident.waktu_mulai).getTime();
+              const durasiMenit = Math.max(1, Math.round((now - startMs) / 60000));
+              run(
+                `UPDATE incidents
+                 SET status = 'selesai', waktu_selesai = datetime('now'), durasi_menit = ?
+                 WHERE id = ?`,
+                [durasiMenit, activeIncident.id]
+              );
+            }
+
+            broadcast('status_change', {
+              id: dev.id,
+              nama: dev.nama,
+              status: 'online',
+              responseTime: probeResult.time,
+              message: msg,
+            });
           }
 
-          broadcast('status_change', {
+          broadcast('telemetry', {
             id: dev.id,
-            nama: dev.nama,
             status: 'online',
             responseTime: probeResult.time,
-            message: msg,
           });
-        }
+        } else {
+          // PERANGKAT GAGAL MERESPONS
+          const newFailures = (dev.consecutive_failures || 0) + 1;
+          const shouldBeOffline = newFailures >= retryCount;
+          const wasOnline = dev.status === 'online';
 
-        // Siarkan telemetri latency
-        broadcast('telemetry', {
-          id: dev.id,
-          status: 'online',
-          responseTime: probeResult.time,
-        });
-
-      } else {
-        // PERANGKAT GAGAL MERESPONS
-        const newFailures = (dev.consecutive_failures || 0) + 1;
-        const shouldBeOffline = newFailures >= retryCount;
-        const wasOnline = dev.status === 'online';
-
-        run(
-          `UPDATE devices
-           SET consecutive_failures = ?,
-               response_time_ms = 0,
-               last_check = datetime('now'),
-               status = CASE WHEN ? THEN 'offline' ELSE status END
-           WHERE id = ?`,
-          [newFailures, shouldBeOffline ? 1 : 0, dev.id]
-        );
-
-        if (shouldBeOffline && wasOnline) {
-          // Buat log pemadaman bahasa manusiawi
-          const msg = `${dev.nama} (${dev.ip}) tidak merespons ${dev.metode} (${probeResult.statusText}). Status berubah menjadi Offline.`;
           run(
-            `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
-             VALUES (?, ?, ?, ?, 'Online', 'Offline', ?, 'Timeout', ?)`,
-            [dev.id, dev.nama, dev.ip, dev.created_at, dev.metode, msg]
+            `UPDATE devices
+             SET consecutive_failures = ?,
+                 response_time_ms = 0,
+                 last_check = datetime('now'),
+                 status = CASE WHEN ? THEN 'offline' ELSE status END
+             WHERE id = ?`,
+            [newFailures, shouldBeOffline ? 1 : 0, dev.id]
           );
 
-          // Buka insiden baru
-          run(
-            `INSERT INTO incidents (device_id, waktu_mulai, status, penyebab)
-             VALUES (?, datetime('now'), 'terbuka', ?)`,
-            [dev.id, probeResult.statusText]
-          );
+          if (shouldBeOffline && wasOnline) {
+            const msg = `${dev.nama} (${dev.ip}) tidak merespons ${dev.metode} (${probeResult.statusText}). Status berubah menjadi Offline.`;
+            run(
+              `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+               VALUES (?, ?, ?, ?, 'Online', 'Offline', ?, 'Timeout', ?)`,
+              [dev.id, dev.nama, dev.ip, dev.created_at, dev.metode, msg]
+            );
 
-          broadcast('status_change', {
-            id: dev.id,
-            nama: dev.nama,
-            status: 'offline',
-            responseTime: 0,
-            message: msg,
-          });
+            run(
+              `INSERT INTO incidents (device_id, waktu_mulai, status, penyebab)
+               VALUES (?, datetime('now'), 'terbuka', ?)`,
+              [dev.id, probeResult.statusText]
+            );
+
+            broadcast('status_change', {
+              id: dev.id,
+              nama: dev.nama,
+              status: 'offline',
+              responseTime: 0,
+              message: msg,
+            });
+          }
         }
+      } catch (devErr) {
+        console.error(`[Worker Device Probe Error] Device ${dev.id} (${dev.ip}):`, devErr.message);
       }
-    }
+    });
   } catch (err) {
     console.error('[Monitoring Worker Error]:', err);
   } finally {

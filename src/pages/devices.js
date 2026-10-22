@@ -6,7 +6,7 @@
 import Swal from 'sweetalert2';
 import Papa from 'papaparse';
 import { mockDevices, getGroups, addDevice, deleteDevice, duplicateDevice, syncDevicesFromApi, cleanDeviceIp } from '../data/mock-devices.js';
-import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiTestConnection, apiImportCsv, apiBulkDeleteDevices } from '../api.js';
+import { apiCreateDevice, apiUpdateDevice, apiDeleteDevice, apiPingDevice, apiTestConnection, apiImportCsv, apiBulkDeleteDevices, apiPingAllDevices } from '../api.js';
 import { getSession } from '../main.js';
 import { getAppSetting } from '../settingsManager.js';
 
@@ -33,6 +33,7 @@ export function renderDevices() {
         </div>
         <div class="page-actions">
           ${canEdit ? `
+          <button class="btn btn-secondary btn-sm" id="ping-all-btn" title="Ping serentak seluruh perangkat">📡 Ping All</button>
           <button class="btn btn-secondary btn-sm" id="import-csv-btn">📂 Import CSV</button>
           <button class="btn btn-secondary btn-sm" id="export-csv-btn">📥 Export CSV</button>
           <button class="btn btn-primary" id="add-device-btn">➕ Tambah Device</button>
@@ -363,6 +364,70 @@ export function initDevicesEvents(navigate) {
     }
   });
 
+  // Ping All button handler
+  document.getElementById('ping-all-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ping-all-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Memindai...'; }
+
+    Swal.fire({
+      title: '📡 Memindai Seluruh Perangkat',
+      html: `<div style="text-align:center; padding:10px;">
+        <div style="color:var(--color-muted); font-size:0.85rem; margin-bottom:6px;">Mengirim probe serentak ke seluruh perangkat aktif...</div>
+        <div style="font-size:0.8rem; color:#94a3b8;">Status tabel akan otomatis disinkronkan.</div>
+      </div>`,
+      didOpen: () => Swal.showLoading(),
+      allowOutsideClick: false,
+      showConfirmButton: false,
+      background: '#1a1d2e',
+      color: '#e2e8f0',
+    });
+
+    try {
+      const res = await apiPingAllDevices();
+      await syncDevicesFromApi();
+      refreshTable();
+
+      const onlineCount = res.online !== undefined ? res.online : mockDevices.filter((d) => d.status === 'online').length;
+      const offlineCount = res.offline !== undefined ? res.offline : mockDevices.filter((d) => d.status === 'offline').length;
+      const maintCount = res.maintenance !== undefined ? res.maintenance : mockDevices.filter((d) => d.status === 'maintenance').length;
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Pemindaian Selesai',
+        html: `
+          <div style="text-align:center; padding:6px;">
+            <div style="display:flex; justify-content:center; gap:16px; margin:12px 0;">
+              <div style="padding:8px 14px; background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.4); border-radius:8px;">
+                <div style="font-size:1.5rem; font-weight:800; color:#4ade80;">${onlineCount}</div>
+                <div style="font-size:0.75rem; color:#86efac;">Online</div>
+              </div>
+              <div style="padding:8px 14px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); border-radius:8px;">
+                <div style="font-size:1.5rem; font-weight:800; color:#f87171;">${offlineCount}</div>
+                <div style="font-size:0.75rem; color:#fca5a5;">Offline</div>
+              </div>
+              ${maintCount > 0 ? `
+              <div style="padding:8px 14px; background:rgba(234,179,8,0.15); border:1px solid rgba(234,179,8,0.4); border-radius:8px;">
+                <div style="font-size:1.5rem; font-weight:800; color:#fde047;">${maintCount}</div>
+                <div style="font-size:0.75rem; color:#fef08a;">Maintenance</div>
+              </div>` : ''}
+            </div>
+            <div style="font-size:0.8rem; color:#94a3b8;">
+              Tabel perangkat telah disegarkan dengan status koneksi terkini.
+            </div>
+          </div>
+        `,
+        confirmButtonText: 'Tutup',
+        confirmButtonColor: '#6366f1',
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gagal Memindai', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📡 Ping All'; }
+    }
+  });
+
   // Filters
   document.getElementById('dev-search')?.addEventListener('input', (e) => { searchTerm = e.target.value; currentPage = 1; refreshTable(); });
   document.getElementById('dev-filter-jenis')?.addEventListener('change', (e) => { filterJenis = e.target.value; currentPage = 1; refreshTable(); });
@@ -651,13 +716,17 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
         }
       });
     },
-    preConfirm: () => {
+    preConfirm: async () => {
       const nama = document.getElementById('sf-nama').value.trim();
       const ip = document.getElementById('sf-ip').value.trim();
+      const grup = document.getElementById('sf-grup').value.trim();
+
       if (!nama) { Swal.showValidationMessage('Nama device wajib diisi!'); return false; }
       if (!ip) { Swal.showValidationMessage('IP Address wajib diisi!'); return false; }
+      if (!grup) { Swal.showValidationMessage('Grup / Lokasi device wajib diisi!'); return false; }
+
       const parentVal = document.getElementById('sf-parent').value;
-      return {
+      const payload = {
         nama,
         ip,
         jenis: document.getElementById('sf-jenis').value,
@@ -665,30 +734,99 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
         metode: document.getElementById('sf-metode').value,
         port: document.getElementById('sf-port').value ? parseInt(document.getElementById('sf-port').value, 10) : null,
         interval: parseInt(document.getElementById('sf-interval').value, 10) || 60,
-        grup: document.getElementById('sf-grup').value.trim() || 'Default',
+        grup,
         hostname: document.getElementById('sf-hostname').value.trim() || null,
         deskripsi: document.getElementById('sf-deskripsi').value.trim(),
-        lokasi: document.getElementById('sf-grup').value.trim() || '',
+        lokasi: grup,
         active: true,
         credHikvision: null,
       };
+
+      try {
+        if (isEdit) {
+          const res = await apiUpdateDevice(device.id, payload);
+          return { isEdit: true, id: device.id, payload, res };
+        } else {
+          const res = await apiCreateDevice(payload);
+          return { isEdit: false, id: res.data?.id || res.id, payload, res };
+        }
+      } catch (err) {
+        Swal.showValidationMessage(err.message || 'Gagal menyimpan perangkat ke server.');
+        return false;
+      }
     },
   });
 
   if (isConfirmed && formData) {
-    try {
-      if (isEdit) {
-        await apiUpdateDevice(device.id, formData);
+    await syncDevicesFromApi();
+    onSave?.();
+
+    if (formData.isEdit) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Device Diperbarui',
+        timer: 1500,
+        showConfirmButton: false,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    } else {
+      // Auto-Ping Perangkat Baru yang baru saja ditambahkan
+      const newId = formData.id;
+      Swal.fire({
+        title: '📡 Menguji Koneksi Otomatis...',
+        html: `<div style="text-align:center; padding:8px;">
+          <div style="font-size:0.9rem; color:#94a3b8;">Perangkat <b>${formData.payload.nama}</b> berhasil disimpan.<br>Mengirim probe awal ke <code>${formData.payload.ip}</code>...</div>
+        </div>`,
+        didOpen: () => Swal.showLoading(),
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+
+      try {
+        const pingRes = newId ? await apiPingDevice(newId) : null;
         await syncDevicesFromApi();
-        Swal.fire({ icon: 'success', title: 'Device Diperbarui', timer: 1500, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
-      } else {
-        await apiCreateDevice(formData);
-        await syncDevicesFromApi();
-        Swal.fire({ icon: 'success', title: 'Device Ditambahkan', text: `${formData.nama} berhasil disimpan ke database.`, timer: 2000, showConfirmButton: false, background: '#1a1d2e', color: '#e2e8f0' });
+        onSave?.();
+
+        const pingData = pingRes?.data || pingRes || {};
+        const isOnline = Boolean(pingData.alive || pingData.status === 'online');
+        const ms = pingData.responseTime ?? pingData.time;
+
+        Swal.fire({
+          icon: isOnline ? 'success' : 'warning',
+          title: isOnline ? '✅ Device Berhasil Ditambahkan & Online!' : '⚠️ Device Ditambahkan (Offline / Belum Terjangkau)',
+          html: `
+            <div style="text-align:center; padding:6px;">
+              <div style="font-size:1rem; font-weight:700; color:#f1f5f9; margin-bottom:8px;">${formData.payload.nama}</div>
+              <div style="display:inline-block; padding:8px 18px; border-radius:8px; background:${isOnline ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'}; border:1px solid ${isOnline ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}; margin-bottom:12px;">
+                <div style="font-size:1.8rem; font-weight:800; color:${isOnline ? '#4ade80' : '#f87171'};">
+                  ${isOnline ? (ms !== null && ms !== undefined ? `${ms} ms` : 'Online') : 'Timeout / Offline'}
+                </div>
+                <div style="font-size:0.75rem; color:#94a3b8;">${isOnline ? 'Probe Awal Berhasil' : (pingData.statusText || 'Host Unreachable')}</div>
+              </div>
+              <div style="font-size:0.8rem; color:#94a3b8;">
+                Perangkat telah tercatat di basis data dan pemantauan aktif berkala telah dimulai.
+              </div>
+            </div>
+          `,
+          confirmButtonText: 'Selesai',
+          confirmButtonColor: '#6366f1',
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
+      } catch {
+        Swal.fire({
+          icon: 'success',
+          title: 'Device Ditambahkan',
+          text: `${formData.payload.nama} berhasil disimpan ke database.`,
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#1a1d2e',
+          color: '#e2e8f0',
+        });
       }
-      onSave?.();
-    } catch (err) {
-      Swal.fire({ icon: 'error', title: 'Gagal Menyimpan Device', text: err.message, background: '#1a1d2e', color: '#e2e8f0' });
     }
   }
 }

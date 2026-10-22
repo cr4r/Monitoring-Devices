@@ -193,6 +193,38 @@ export async function apiBulkDeleteDevices(ids) {
   });
 }
 
+export async function apiPingAllDevices() {
+  if (_isCurrentSessionPreview()) {
+    const { mockDevices } = await import('./data/mock-devices.js');
+    const results = mockDevices.map((d) => {
+      const isOnline = d.status === 'online';
+      const timeMs = d.responseTime || (isOnline ? 18 : 0);
+      return {
+        id: d.id,
+        nama: d.nama,
+        ip: d.ip,
+        alive: isOnline,
+        status: d.status,
+        time: timeMs,
+        responseTime: timeMs,
+        statusText: isOnline ? `${timeMs} ms` : 'Request Timeout (Simulasi)',
+        method: (d.metode || 'PING').toUpperCase(),
+      };
+    });
+    return {
+      success: true,
+      total: results.length,
+      online: results.filter((r) => r.status === 'online').length,
+      offline: results.filter((r) => r.status === 'offline').length,
+      maintenance: results.filter((r) => r.status === 'maintenance').length,
+      results,
+    };
+  }
+  return request('/devices/ping-all', {
+    method: 'POST',
+  });
+}
+
 export async function apiPingDevice(id) {
   if (_isCurrentSessionPreview()) {
     const { mockDevices } = await import('./data/mock-devices.js');
