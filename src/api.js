@@ -303,10 +303,55 @@ export async function apiFinishMaintenance(id) {
 
 export async function apiImportCsv(devices) {
   if (_isCurrentSessionPreview()) {
-    const { addDevice } = await import('./data/mock-devices.js');
-    devices.forEach((d) => addDevice(d));
+    const { mockDevices, addDevice } = await import('./data/mock-devices.js');
+
+    // Buat peta perangkat yang sudah ada untuk pencocokan parent
+    const ipMap = new Map();
+    const nameMap = new Map();
+    mockDevices.forEach((d) => {
+      if (d.ip) ipMap.set(String(d.ip).trim(), d.id);
+      if (d.nama) nameMap.set(String(d.nama).trim().toLowerCase(), d.id);
+    });
+
+    const pending = [];
+    devices.forEach((d) => {
+      const added = addDevice(d);
+      if (added.ip) ipMap.set(String(added.ip).trim(), added.id);
+      if (added.nama) nameMap.set(String(added.nama).trim().toLowerCase(), added.id);
+      const parentRef = d.terhubung_ke || d.terhubungKe || d.parent_ip || d.parent || d.parent_id || d.parentId;
+      if (parentRef) {
+        pending.push({ item: added, parentRef: String(parentRef).trim() });
+      }
+    });
+
+    // Pass 2: Hubungkan parent_id berdasarkan IP, Nama, atau ID
+    pending.forEach(({ item, parentRef }) => {
+      let resolvedParentId = null;
+      const ipMatch = parentRef.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+      if (ipMatch && ipMap.has(ipMatch[0])) {
+        resolvedParentId = ipMap.get(ipMatch[0]);
+      } else if (nameMap.has(parentRef.toLowerCase())) {
+        resolvedParentId = nameMap.get(parentRef.toLowerCase());
+      } else {
+        const cleanName = parentRef.replace(/\s*[\[\(].*?[\]\)]/g, '').trim().toLowerCase();
+        if (cleanName && nameMap.has(cleanName)) {
+          resolvedParentId = nameMap.get(cleanName);
+        } else if (!isNaN(parseInt(parentRef, 10))) {
+          const numId = parseInt(parentRef, 10);
+          if (mockDevices.some((m) => m.id === numId)) {
+            resolvedParentId = numId;
+          }
+        }
+      }
+
+      if (resolvedParentId && resolvedParentId !== item.id) {
+        item.parent_id = resolvedParentId;
+      }
+    });
+
+    window.dispatchEvent(new CustomEvent('devwatch:devices_updated', { detail: { action: 'import_csv', count: devices.length } }));
     window.dispatchEvent(new CustomEvent('devwatch:ui_update'));
-    return { success: true, count: devices.length };
+    return { success: true, count: devices.length, imported: devices.length };
   }
   return request('/devices/import-csv', {
     method: 'POST',
@@ -457,6 +502,10 @@ export async function apiCleanLogs(retentionDays = 90) {
 }
 
 // ---- WEBSOCKET REAL-TIME LISTENER ----
+export function isWsConnected() {
+  return !!(wsInstance && wsInstance.readyState === WebSocket.OPEN);
+}
+
 export function connectWebSocket() {
   if (wsInstance && wsInstance.readyState === WebSocket.OPEN) return wsInstance;
 
@@ -486,14 +535,17 @@ export function connectWebSocket() {
     wsInstance.onclose = () => {
       console.log('[DevWatch WS]: Terputus. Menghubungkan kembali dalam 3 detik...');
       wsInstance = null;
+      window.dispatchEvent(new CustomEvent('devwatch:ws_disconnected'));
       setTimeout(connectWebSocket, 3000);
     };
 
     wsInstance.onerror = () => {
       wsInstance = null;
+      window.dispatchEvent(new CustomEvent('devwatch:ws_disconnected'));
     };
   } catch {
     wsInstance = null;
+    window.dispatchEvent(new CustomEvent('devwatch:ws_disconnected'));
   }
 
   return wsInstance;

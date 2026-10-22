@@ -14,11 +14,11 @@ const router = express.Router();
 function normalizeJenis(val) {
   if (!val) return 'Komputer';
   const low = String(val).trim().toLowerCase();
-  if (low.includes('cctv')) return 'CCTV Hikvision';
-  if (low.includes('router') || low.includes('gateway')) return 'Router';
-  if (low.includes('switch') || low.includes('hub')) return 'Switch';
-  if (low.includes('server')) return 'Server';
-  if (low.includes('access point') || low.includes('ap') || low.includes('wifi') || low.includes('wi-fi')) return 'Access Point';
+  if (low.includes('cctv') || low.includes('hikvision') || low.includes('camera') || low.includes('kamera')) return 'CCTV Hikvision';
+  if (low.includes('router') || low.includes('gateway') || low.includes('mikrotik')) return 'Router';
+  if (low.includes('switch') || low.includes('hub') || low.includes('sw vlan') || low.includes('bridge')) return 'Switch';
+  if (low.includes('access point') || low.includes('ap ') || low.endsWith(' ap') || low === 'ap' || low.includes('wifi') || low.includes('wi-fi') || low.includes('wireless')) return 'Access Point';
+  if (low.includes('server') || low.includes('srv')) return 'Server';
   return 'Komputer';
 }
 
@@ -832,8 +832,21 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
     return res.status(400).json({ success: false, message: 'Data CSV kosong atau tidak valid.' });
   }
 
+  // Siapkan map untuk pencocokan parent
+  const existingDevices = query('SELECT id, nama, ip FROM devices WHERE is_active = 1');
+  const ipToIdMap = new Map();
+  const nameToIdMap = new Map();
+
+  existingDevices.forEach((dev) => {
+    if (dev.ip) ipToIdMap.set(String(dev.ip).trim(), dev.id);
+    if (dev.nama) nameToIdMap.set(String(dev.nama).trim().toLowerCase(), dev.id);
+  });
+
   let imported = 0;
   let skipped = 0;
+  const pendingParents = [];
+
+  // Pass 1: Simpan seluruh atribut perangkat ke database
   for (const d of devices) {
     if (!d.nama || !d.ip) {
       skipped++;
@@ -841,31 +854,80 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
     }
 
     try {
+      const namaClean = String(d.nama).trim();
+      const ipClean = String(d.ip).trim();
+      const hostnameClean = d.hostname ? String(d.hostname).trim() : null;
       const jenisClean = normalizeJenis(d.jenis);
       const metodeClean = normalizeMetode(d.metode);
       const intervalClean = Math.max(10, Math.min(3600, parseInt(d.interval_detik || d.interval || d.intervalDetik, 10) || 60));
       const portClean = d.port ? parseInt(d.port, 10) || null : (metodeClean === 'RTSP' ? 554 : metodeClean === 'ISAPI' ? 80 : null);
+      const grupClean = (d.grup && String(d.grup).trim()) || 'Umum';
+      const lokasiClean = (d.lokasi && String(d.lokasi).trim()) || 'Kantor';
+      const deskripsiClean = d.deskripsi ? String(d.deskripsi).trim() : null;
 
-      run(
+      const result = run(
         `INSERT INTO devices (nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline')`,
         [
-          String(d.nama).trim(),
-          String(d.ip).trim(),
-          d.hostname ? String(d.hostname).trim() : null,
+          namaClean,
+          ipClean,
+          hostnameClean,
           jenisClean,
           metodeClean,
           portClean,
           intervalClean,
-          (d.grup && String(d.grup).trim()) || 'Umum',
-          (d.lokasi && String(d.lokasi).trim()) || 'Kantor',
-          d.deskripsi ? String(d.deskripsi).trim() : null,
+          grupClean,
+          lokasiClean,
+          deskripsiClean,
         ]
       );
+
+      const newId = Number(result.lastInsertRowid);
+      ipToIdMap.set(ipClean, newId);
+      nameToIdMap.set(namaClean.toLowerCase(), newId);
+
+      const parentRef = d.terhubung_ke || d.terhubungKe || d.parent_ip || d.parent || d.parent_id || d.parentId;
+      if (parentRef) {
+        pendingParents.push({ id: newId, parentRef: String(parentRef).trim() });
+      }
+
       imported++;
     } catch (err) {
       console.warn('Gagal mengimpor baris CSV:', d, err.message);
       skipped++;
+    }
+  }
+
+  // Pass 2: Hubungkan parent_id berdasarkan IP, Nama, atau ID
+  for (const item of pendingParents) {
+    try {
+      let resolvedParentId = null;
+      const ref = item.parentRef;
+
+      // 1. Ekstrak IP jika ada (contoh: "Gateway Router [192.168.1.1]" atau "192.168.1.1")
+      const ipMatch = ref.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+      if (ipMatch && ipToIdMap.has(ipMatch[0])) {
+        resolvedParentId = ipToIdMap.get(ipMatch[0]);
+      } else if (nameToIdMap.has(ref.toLowerCase())) {
+        resolvedParentId = nameToIdMap.get(ref.toLowerCase());
+      } else {
+        // Coba nama bersih tanpa tanda kurung [192.168...]
+        const cleanName = ref.replace(/\s*[\[\(].*?[\]\)]/g, '').trim().toLowerCase();
+        if (cleanName && nameToIdMap.has(cleanName)) {
+          resolvedParentId = nameToIdMap.get(cleanName);
+        } else if (!isNaN(parseInt(ref, 10))) {
+          const numId = parseInt(ref, 10);
+          const found = existingDevices.some((e) => e.id === numId);
+          if (found) resolvedParentId = numId;
+        }
+      }
+
+      // Pastikan parent bukan diri sendiri
+      if (resolvedParentId && resolvedParentId !== item.id) {
+        run('UPDATE devices SET parent_id = ? WHERE id = ?', [resolvedParentId, item.id]);
+      }
+    } catch (linkErr) {
+      console.warn(`Gagal menghubungkan parent untuk device #${item.id}:`, linkErr.message);
     }
   }
 
@@ -886,24 +948,52 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
   });
 });
 
-// GET /api/devices/export-csv — Unduh data perangkat dalam format CSV
+// GET /api/devices/export-csv — Unduh data perangkat dalam format CSV lengkap
 router.get('/export/csv', authenticateToken, (req, res) => {
-  const devices = query('SELECT * FROM devices WHERE is_active = 1');
+  const devices = query(`
+    SELECT d.*, p.nama AS parent_nama, p.ip AS parent_ip
+    FROM devices d
+    LEFT JOIN devices p ON d.parent_id = p.id
+    WHERE d.is_active = 1
+    ORDER BY d.id ASC
+  `);
 
-  const headers = ['ID', 'Nama', 'IP Address', 'Hostname', 'Jenis', 'Metode', 'Interval (Detik)', 'Grup', 'Lokasi', 'Status', 'SLA Target'];
-  const rows = devices.map((d) => [
-    d.id,
-    `"${d.nama.replace(/"/g, '""')}"`,
-    d.ip,
-    d.hostname || '',
-    `"${d.jenis}"`,
-    d.metode,
-    d.interval_detik,
-    `"${d.grup}"`,
-    `"${d.lokasi}"`,
-    d.status,
-    `${d.target_sla}%`,
-  ]);
+  const headers = [
+    'ID',
+    'Nama',
+    'IP Address',
+    'Hostname',
+    'Jenis',
+    'Metode',
+    'Port',
+    'Interval (Detik)',
+    'Grup',
+    'Lokasi',
+    'Terhubung Ke',
+    'Parent ID',
+    'Deskripsi',
+    'Status',
+  ];
+
+  const rows = devices.map((d) => {
+    const parentDesc = d.parent_nama ? `${d.parent_nama} [${d.parent_ip}]` : '';
+    return [
+      d.id,
+      `"${String(d.nama || '').replace(/"/g, '""')}"`,
+      `"${String(d.ip || '').replace(/"/g, '""')}"`,
+      d.hostname ? `"${String(d.hostname).replace(/"/g, '""')}"` : '',
+      `"${String(d.jenis || '').replace(/"/g, '""')}"`,
+      `"${String(d.metode || '').replace(/"/g, '""')}"`,
+      d.port || '',
+      d.interval_detik || 60,
+      `"${String(d.grup || '').replace(/"/g, '""')}"`,
+      `"${String(d.lokasi || '').replace(/"/g, '""')}"`,
+      parentDesc ? `"${parentDesc.replace(/"/g, '""')}"` : '',
+      d.parent_id || '',
+      d.deskripsi ? `"${String(d.deskripsi).replace(/"/g, '""')}"` : '',
+      d.status || 'offline',
+    ];
+  });
 
   const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 

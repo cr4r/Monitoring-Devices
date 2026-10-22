@@ -831,15 +831,57 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
   }
 }
 
-function exportCSV() {
-  const headers = ['ID', 'Nama', 'IP', 'Jenis', 'Metode', 'Port', 'Interval', 'Grup', 'Lokasi', 'Status', 'Uptime24h', 'Deskripsi'];
-  const rows = mockDevices.map((d) => [
-    d.id, d.nama, d.ip, d.jenis, d.metode,
-    d.port || '', d.interval, d.grup, d.lokasi,
-    d.status, d.uptime24h, d.deskripsi || '',
-  ]);
+export function parseDeviceJenis(val) {
+  if (!val) return 'Komputer';
+  const low = String(val).trim().toLowerCase();
+  if (low.includes('cctv') || low.includes('hikvision') || low.includes('camera') || low.includes('kamera')) return 'CCTV Hikvision';
+  if (low.includes('router') || low.includes('gateway') || low.includes('mikrotik')) return 'Router';
+  if (low.includes('switch') || low.includes('hub') || low.includes('sw vlan') || low.includes('bridge')) return 'Switch';
+  if (low.includes('access point') || low.includes('ap ') || low.endsWith(' ap') || low === 'ap' || low.includes('wifi') || low.includes('wi-fi') || low.includes('wireless')) return 'Access Point';
+  if (low.includes('server') || low.includes('srv')) return 'Server';
+  return 'Komputer';
+}
 
-  const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
+function exportCSV() {
+  const headers = [
+    'ID',
+    'Nama',
+    'IP Address',
+    'Hostname',
+    'Jenis',
+    'Metode',
+    'Port',
+    'Interval (Detik)',
+    'Grup',
+    'Lokasi',
+    'Terhubung Ke',
+    'Parent ID',
+    'Deskripsi',
+    'Status',
+  ];
+
+  const rows = mockDevices.map((d) => {
+    const parentDev = d.parent_id ? mockDevices.find((p) => p.id === d.parent_id) : null;
+    const parentDesc = parentDev ? `${parentDev.nama} [${parentDev.ip}]` : '';
+    return [
+      d.id,
+      d.nama,
+      d.ip,
+      d.hostname || '',
+      d.jenis,
+      d.metode,
+      d.port || '',
+      d.interval_detik || d.interval || 60,
+      d.grup || 'Umum',
+      d.lokasi || 'Kantor',
+      parentDesc,
+      d.parent_id || '',
+      d.deskripsi || '',
+      d.status || 'offline',
+    ];
+  });
+
+  const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -852,24 +894,41 @@ function exportCSV() {
     toast: true,
     icon: 'success',
     title: 'File CSV berhasil diunduh',
+    text: `${rows.length} perangkat diekspor lengkap dengan hierarki uplink.`,
     position: 'top-end',
     showConfirmButton: false,
-    timer: 2000,
+    timer: 2500,
     background: '#1a1d2e',
     color: '#e2e8f0',
   });
 }
 
 function downloadCsvTemplate() {
-  const headers = ['Nama', 'IP Address', 'Hostname', 'Jenis', 'Metode', 'Port', 'Interval', 'Grup', 'Lokasi', 'Deskripsi'];
+  const headers = [
+    'Nama',
+    'IP Address',
+    'Hostname',
+    'Jenis',
+    'Metode',
+    'Port',
+    'Interval (Detik)',
+    'Grup',
+    'Lokasi',
+    'Terhubung Ke',
+    'Deskripsi',
+  ];
   const samples = [
-    ['PC Kasir 01', '192.168.1.101', 'pc-kasir-01', 'Komputer', 'PING', '', '60', 'Kasir', 'Lantai 1', 'PC Kasir Utama'],
-    ['CCTV Lobby Lantai 1', '192.168.1.150', 'cctv-lobby', 'CCTV Hikvision', 'ISAPI', '80', '60', 'Keamanan', 'Lobby Lt. 1', 'Kamera gerbang masuk'],
-    ['CCTV Area Parkir', '192.168.1.151', 'cctv-parkir', 'CCTV Hikvision', 'RTSP', '554', '60', 'Keamanan', 'Parkir Belakang', 'Kamera outdoor RTSP'],
-    ['Kamera Koridor ONVIF', '192.168.1.152', 'cam-onvif', 'CCTV Hikvision', 'ONVIF', '80', '60', 'Keamanan', 'Koridor Timur', 'Kamera profil ONVIF'],
+    ['Router Gateway Utama', '192.168.1.1', 'gw-core', 'Router', 'PING', '', '60', 'Network Core', 'Ruang Server Lt. 1', '', 'Core Gateway Mikrotik CCR'],
+    ['Switch Core Distribution', '192.168.1.2', 'sw-dist-01', 'Switch', 'PING', '', '60', 'Network Core', 'Rack Server A', 'Router Gateway Utama [192.168.1.1]', 'Manageable L3 Switch Cisco'],
+    ['Switch Lantai 2', '192.168.1.3', 'sw-lt2', 'Switch', 'PING', '', '60', 'Infrastruktur', 'IDF Lt. 2', 'Switch Core Distribution [192.168.1.2]', 'Switch Akses Ruang Operasional'],
+    ['AP Kantor Utama', '192.168.1.50', 'ap-kantor-01', 'Access Point', 'PING', '', '60', 'Wireless', 'Lobby Lt. 1', 'Switch Core Distribution [192.168.1.2]', 'UniFi AP U6 Pro'],
+    ['Server Database PostgreSQL', '192.168.1.10', 'srv-db-prod', 'Server', 'PING', '', '30', 'Server Room', 'Rack Server B', 'Switch Core Distribution [192.168.1.2]', 'Database Server Ubuntu 24.04'],
+    ['PC Kasir 01', '192.168.1.101', 'pc-kasir-01', 'Komputer', 'PING', '', '60', 'Kasir', 'Lantai 1', 'Switch Core Distribution [192.168.1.2]', 'PC Kasir Utama Dell Optiplex'],
+    ['CCTV Lobby Lantai 1', '192.168.1.150', 'cctv-lobby', 'CCTV Hikvision', 'ISAPI', '80', '60', 'Keamanan', 'Lobby Lt. 1', 'Switch Core Distribution [192.168.1.2]', 'Kamera Hikvision Dome DS-2CD2143G0'],
+    ['CCTV Area Parkir', '192.168.1.151', 'cctv-parkir', 'CCTV Hikvision', 'RTSP', '554', '60', 'Keamanan', 'Parkir Belakang', 'Switch Lantai 2 [192.168.1.3]', 'Kamera outdoor RTSP Bullet'],
   ];
 
-  const csvRows = [headers, ...samples].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+  const csvRows = [headers, ...samples].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csvRows], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -889,8 +948,8 @@ async function showImportCSV(onSave) {
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:10px 14px;">
           <div>
-            <div style="font-weight:600; font-size:0.85rem; color:var(--color-heading);">Gunakan format CSV standar</div>
-            <div style="font-size:0.75rem; color:var(--color-muted);">Kolom: Nama, IP, Jenis, Metode, Port, Interval, Grup, Lokasi</div>
+            <div style="font-weight:600; font-size:0.85rem; color:var(--color-heading);">Format CSV Lengkap & Presisi</div>
+            <div style="font-size:0.75rem; color:var(--color-muted);">Mendukung jenis perangkat, hierarki uplink, hostname, metode, dan interval.</div>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" id="btn-download-csv-template" style="padding:5px 12px; font-size:0.78rem; white-space:nowrap;">
             📥 Unduh Template
@@ -901,7 +960,7 @@ async function showImportCSV(onSave) {
           <input type="file" id="csv-file-input" accept=".csv" />
           <div class="csv-drop-icon">📂</div>
           <div style="font-weight:600; color:var(--color-text-secondary);">Klik atau drag & drop file CSV di sini</div>
-          <div style="font-size:0.78rem; color:var(--color-muted);">Mendukung format koma/titik koma, maks 1.000 baris</div>
+          <div style="font-size:0.78rem; color:var(--color-muted);">Mendukung koma/titik-koma, auto-detect kolom fleksibel</div>
         </div>
 
         <div id="csv-preview" style="display:none;">
@@ -913,7 +972,7 @@ async function showImportCSV(onSave) {
         </div>
       </div>
     `,
-    width: 680,
+    width: 720,
     background: '#1a1d2e',
     color: '#e2e8f0',
     showCancelButton: true,
@@ -936,7 +995,7 @@ async function showImportCSV(onSave) {
       Swal.fire({
         icon: 'success',
         title: 'Import CSV Berhasil',
-        text: `${res.imported || res.count || parsedCsvDevices.length} perangkat berhasil dimasukkan ke sistem.`,
+        text: `${res.imported || res.count || parsedCsvDevices.length} perangkat berhasil diimpor dengan hierarki topologi lengkap.`,
         background: '#1a1d2e',
         color: '#e2e8f0',
       });
@@ -974,10 +1033,8 @@ function handleCSVPreview(file) {
         const nama = getVal('nama', 'name', 'device', 'perangkat') || 'Device CSV';
         const ip = getVal('ip address', 'ip_address', 'ip', 'host', 'target') || '127.0.0.1';
         const hostname = getVal('hostname', 'host_name') || '';
-        const jenisRaw = getVal('jenis', 'type', 'kategori') || 'Komputer';
-        const jenis = jenisRaw.toLowerCase().includes('cctv') || jenisRaw.toLowerCase().includes('hikvision')
-          ? 'CCTV Hikvision'
-          : 'Komputer';
+        const jenisRaw = getVal('jenis', 'type', 'kategori');
+        const jenis = parseDeviceJenis(jenisRaw);
 
         const metodeRaw = getVal('metode', 'method', 'protocol') || 'PING';
         const metodeUp = metodeRaw.toUpperCase();
@@ -989,6 +1046,9 @@ function handleCSVPreview(file) {
         const interval_detik = Math.max(10, Math.min(3600, parseInt(intervalRaw, 10) || 60));
         const grup = getVal('grup', 'group', 'kelompok') || 'Umum';
         const lokasi = getVal('lokasi', 'location', 'ruang', 'lantai') || 'Kantor';
+        const terhubung_ke = getVal('terhubung ke', 'terhubung_ke', 'parent', 'uplink', 'parent_nama', 'parent_ip') || '';
+        const parent_id_raw = getVal('parent_id', 'parent id');
+        const parent_id = parent_id_raw && !isNaN(parseInt(parent_id_raw, 10)) ? parseInt(parent_id_raw, 10) : null;
         const deskripsi = getVal('deskripsi', 'description', 'keterangan') || '';
 
         return {
@@ -1001,6 +1061,8 @@ function handleCSVPreview(file) {
           interval_detik,
           grup,
           lokasi,
+          terhubung_ke,
+          parent_id,
           deskripsi,
         };
       }).filter((d) => d.nama && d.ip && d.ip !== '');
@@ -1016,23 +1078,28 @@ function handleCSVPreview(file) {
           <table class="data-table" style="font-size:0.75rem;">
             <thead>
               <tr>
-                <th>Nama</th>
+                <th>Perangkat</th>
                 <th>IP Address</th>
                 <th>Jenis</th>
                 <th>Metode</th>
-                <th>Port</th>
-                <th>Grup</th>
+                <th>Terhubung Ke</th>
+                <th>Grup / Lokasi</th>
               </tr>
             </thead>
             <tbody>
               ${parsedCsvDevices.slice(0, 8).map((d) => `
                 <tr>
-                  <td><b>${d.nama}</b></td>
+                  <td>
+                    <b>${d.nama}</b>
+                    ${d.hostname ? `<div style="font-size:0.7rem; color:var(--color-muted);">${d.hostname}</div>` : ''}
+                  </td>
                   <td><code>${d.ip}</code></td>
-                  <td>${d.jenis}</td>
-                  <td><span class="chip">${d.metode}</span></td>
-                  <td>${d.port || '—'}</td>
-                  <td>${d.grup}</td>
+                  <td><span class="chip">${d.jenis}</span></td>
+                  <td><span class="chip">${d.metode}${d.port ? `:${d.port}` : ''}</span></td>
+                  <td>
+                    ${d.terhubung_ke ? `<span style="font-size:0.75rem; color:var(--color-accent); font-weight:600;">↳ ${d.terhubung_ke}</span>` : '<span style="color:var(--color-muted);">— (Root)</span>'}
+                  </td>
+                  <td>${d.grup} / ${d.lokasi}</td>
                 </tr>
               `).join('')}
               ${parsedCsvDevices.length > 8 ? `<tr><td colspan="6" style="text-align:center; color:var(--color-muted);">...dan ${parsedCsvDevices.length - 8} perangkat lainnya</td></tr>` : ''}
