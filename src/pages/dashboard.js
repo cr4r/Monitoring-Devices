@@ -23,6 +23,8 @@ let isNodeMoved = false;
 let customNodePositions = {};
 let virtualNodes = [];
 let mapSearchQuery = '';
+let wanNode = null;
+let interRouterLinks = [];
 
 export function renderDashboard() {
   const counts = getStatusCounts();
@@ -166,9 +168,9 @@ export function renderDashboard() {
 
                 <div class="map-toolbar-group">
                   <div class="map-legend">
-                    <div class="map-legend-item"><div class="map-legend-dot" style="background:#0284c7; border-radius:3px;"></div> Router/Switch</div>
+                    <div class="map-legend-item"><div class="map-legend-dot" style="background:#0284c7; border-radius:3px;"></div> ☁️ WAN</div>
+                    <div class="map-legend-item"><div class="map-legend-dot" style="background:#a855f7; border-radius:3px;"></div> ⚡ Trunk</div>
                     <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-online);"></div> Online</div>
-                    <div class="map-legend-item"><div class="map-legend-dot" style="background:#f97316; border-radius:3px;"></div> ⚡ L3</div>
                     <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-offline);"></div> Offline</div>
                   </div>
                   <span class="badge" id="map-node-count-badge" style="background:rgba(99,102,241,0.2); color:#a5b4fc; border:1px solid rgba(99,102,241,0.4); font-size:0.75rem; padding:3px 8px; border-radius:6px;">
@@ -786,17 +788,43 @@ function getNodeIcon(jenis) {
   return '💻';
 }
 
+function wouldCauseCycle(childId, parentCandidateId) {
+  if (!childId || !parentCandidateId) return false;
+  if (childId === parentCandidateId) return true;
+  let curr = parentCandidateId;
+  const seen = new Set([childId]);
+  while (curr) {
+    if (seen.has(curr)) return true;
+    seen.add(curr);
+    const currDev = mockDevices.find((p) => p.id === curr);
+    if (!currDev) break;
+    curr = currDev.parent_id;
+  }
+  return false;
+}
+
 function getDeviceParent(d) {
+  const isRouterOrGateway = ['router', 'gateway'].some((k) => String(d.jenis || '').toLowerCase().includes(k));
+
   if (d.parent_id) {
     const explicit = mockDevices.find((p) => p.id === d.parent_id);
-    if (explicit && explicit.id !== d.id) return explicit;
+    if (explicit && explicit.id !== d.id && !wouldCauseCycle(d.id, explicit.id)) {
+      return explicit;
+    }
   }
-  // Auto fallback 1: Cek apakah ada switch/router di subnet yang sama
+
+  // Router atau Gateway tanpa parent eksplisit selalu berdiri sebagai Root Gateway independen
+  if (isRouterOrGateway) {
+    return null;
+  }
+
+  // Auto fallback 1: Cek apakah ada switch/router di subnet yang sama (kecuali jika menimbulkan siklus)
   const devSubnet = getSubnetPrefix(d.ip);
   const sameSubnetParent = mockDevices.find((p) =>
     p.id !== d.id &&
     ['switch', 'router', 'gateway', 'hub'].some((k) => String(p.jenis || '').toLowerCase().includes(k)) &&
-    getSubnetPrefix(p.ip) === devSubnet
+    getSubnetPrefix(p.ip) === devSubnet &&
+    !wouldCauseCycle(d.id, p.id)
   );
   if (sameSubnetParent) return sameSubnetParent;
 
@@ -806,16 +834,27 @@ function getDeviceParent(d) {
     const sameGroupSw = mockDevices.find((p) =>
       p.id !== d.id &&
       ['switch', 'router'].some((k) => String(p.jenis || '').toLowerCase().includes(k)) &&
-      (p.grup || 'Umum') === (d.grup || 'Umum')
+      (p.grup || 'Umum') === (d.grup || 'Umum') &&
+      !wouldCauseCycle(d.id, p.id)
     );
     if (sameGroupSw) return sameGroupSw;
   }
 
   // Jika d adalah switch, sambungkan ke router utama jika tersedia
   if (String(d.jenis || '').toLowerCase().includes('switch')) {
+    const devSub = getSubnetPrefix(d.ip);
+    const sameSubRouter = mockDevices.find((p) =>
+      p.id !== d.id &&
+      String(p.jenis || '').toLowerCase().includes('router') &&
+      getSubnetPrefix(p.ip) === devSub &&
+      !wouldCauseCycle(d.id, p.id)
+    );
+    if (sameSubRouter) return sameSubRouter;
+
     const mainRouter = mockDevices.find((p) =>
       p.id !== d.id &&
-      String(p.jenis || '').toLowerCase().includes('router')
+      String(p.jenis || '').toLowerCase().includes('router') &&
+      !wouldCauseCycle(d.id, p.id)
     );
     if (mainRouter) return mainRouter;
   }
@@ -824,7 +863,9 @@ function getDeviceParent(d) {
 }
 
 function computeMapLayout(w, h, force = false) {
-  virtualNodes = []; // Bersihkan node virtual fiktif
+  virtualNodes = [];
+  wanNode = null;
+  interRouterLinks = [];
   if (mockDevices.length === 0) return;
 
   // Bangun relasi pohon hierarkis riil
@@ -855,10 +896,17 @@ function computeMapLayout(w, h, force = false) {
     return score(b) - score(a);
   });
 
+  // Identifikasi seluruh Root Router Gateway
+  const rootRouters = roots.filter((r) =>
+    ['router', 'gateway'].some((k) => String(r.jenis || '').toLowerCase().includes(k))
+  );
+
+  const hasWanCloud = rootRouters.length > 0;
   const SLOT_WIDTH = 140;
-  const HORIZONTAL_GAP = 32;
-  const LEVEL_GAP = 130;
-  const TOP_MARGIN = 80;
+  const HORIZONTAL_GAP = 36;
+  const LEVEL_GAP = 135;
+  // Jika ada WAN Cloud di atas router, beri ruang vertikal di tingkat atas
+  const TOP_MARGIN = hasWanCloud ? 140 : 80;
 
   // Hitung lebar setiap subtree secara rekursif
   function measureSubtree(node) {
@@ -881,7 +929,7 @@ function computeMapLayout(w, h, force = false) {
   let totalForestWidth = 0;
   roots.forEach((r, idx) => {
     totalForestWidth += r._subtreeWidth;
-    if (idx < roots.length - 1) totalForestWidth += HORIZONTAL_GAP * 2;
+    if (idx < roots.length - 1) totalForestWidth += HORIZONTAL_GAP * 2.5;
   });
 
   let currentRootX = Math.max(80, (w - totalForestWidth) / 2);
@@ -909,8 +957,41 @@ function computeMapLayout(w, h, force = false) {
 
   roots.forEach((r) => {
     positionSubtree(r, currentRootX, 0);
-    currentRootX += r._subtreeWidth + HORIZONTAL_GAP * 2;
+    currentRootX += r._subtreeWidth + HORIZONTAL_GAP * 2.5;
   });
+
+  // Konfigurasi simpul WAN Cloud & Inter-Router Trunk jika ada router gateway
+  if (hasWanCloud) {
+    const routerXCoords = rootRouters.map((r) => r.mapPos.x);
+    const minRx = Math.min(...routerXCoords);
+    const maxRx = Math.max(...routerXCoords);
+    const wanX = (minRx + maxRx) / 2;
+    const wanY = 48;
+
+    const anyRouterOnline = rootRouters.some((r) => r.status === 'online');
+    wanNode = {
+      x: wanX,
+      y: wanY,
+      w: 172,
+      h: 38,
+      nama: 'Internet / WAN Cloud',
+      sublabel: rootRouters.length > 1 ? `Dual Gateway (${rootRouters.length} Router)` : 'Main WAN Uplink',
+      icon: '☁️',
+      status: anyRouterOnline ? 'online' : 'offline',
+      routers: rootRouters,
+    };
+
+    // Hubungkan antar-router gateway dengan trunk redundansi jika >= 2
+    if (rootRouters.length >= 2) {
+      for (let i = 0; i < rootRouters.length - 1; i++) {
+        interRouterLinks.push({
+          from: rootRouters[i],
+          to: rootRouters[i + 1],
+          label: '⚡ HA / Trunk Sync',
+        });
+      }
+    }
+  }
 }
 
 function fitToScreen(w, h) {
@@ -926,6 +1007,11 @@ function fitToScreen(w, h) {
     minY = Math.min(minY, d.mapPos.y - 45);
     maxY = Math.max(maxY, d.mapPos.y + 65);
   });
+  if (wanNode) {
+    minX = Math.min(minX, wanNode.x - wanNode.w / 2 - 20);
+    maxX = Math.max(maxX, wanNode.x + wanNode.w / 2 + 20);
+    minY = Math.min(minY, wanNode.y - 25);
+  }
   if (minX === Infinity) {
     mapTransform = { x: 0, y: 0, scale: 1 };
     return;
@@ -957,6 +1043,9 @@ function focusDeviceOnMap(dev) {
 }
 
 function findNodeAt(vx, vy) {
+  if (wanNode && Math.abs(wanNode.x - vx) <= wanNode.w / 2 && Math.abs(wanNode.y - vy) <= wanNode.h / 2) {
+    return { type: 'wan', data: wanNode };
+  }
   for (let i = mockDevices.length - 1; i >= 0; i--) {
     const d = mockDevices[i];
     if (!d.mapPos) continue;
@@ -1056,6 +1145,46 @@ function showDeviceMapModal(d) {
   });
 }
 
+function showWanCloudModal(w) {
+  const routers = w.routers || [];
+  const routerListHtml = routers.map((r) => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:rgba(255,255,255,0.04); border-radius:6px; margin-top:4px; border:1px solid rgba(255,255,255,0.06);">
+      <span style="font-weight:600; color:#f1f5f9;">${getNodeIcon(r.jenis)} ${r.nama}</span>
+      <span style="font-family:monospace; color:#38bdf8;">${cleanDeviceIp(r.ip)}</span>
+    </div>
+  `).join('');
+
+  Swal.fire({
+    title: '☁️ Internet / WAN Cloud Backbone',
+    html: `
+      <div style="text-align:left; font-size:0.86rem; display:flex; flex-direction:column; gap:10px; padding:6px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+          <span style="color:#94a3b8;">Arsitektur Uplink</span>
+          <span style="color:#38bdf8; font-weight:700;">${routers.length > 1 ? `Multi-Gateway Redundan (${routers.length} Router)` : 'Single Gateway Uplink'}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="color:#94a3b8;">Status Konektivitas Luar</span>
+          <span style="color:${w.status === 'online' ? '#22c55e' : '#ef4444'}; font-weight:700;">● ${w.status.toUpperCase()}</span>
+        </div>
+        <div style="margin-top:6px;">
+          <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:4px; font-weight:600;">Router Gateway Aktif:</div>
+          ${routerListHtml}
+        </div>
+        ${routers.length > 1 ? `
+        <div style="margin-top:6px; padding:8px 10px; border-radius:6px; background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.4); color:#e9d5ff; font-size:0.78rem;">
+          ⚡ <strong>Inter-Router HA Trunk Redundansi</strong>: Jalur sinkronisasi failover / HA antar router gateway aktif di peta visual.
+        </div>
+        ` : ''}
+      </div>
+    `,
+    showConfirmButton: false,
+    showCloseButton: true,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+    width: 440,
+  });
+}
+
 function initNetworkMap() {
   const canvas = document.getElementById('networkCanvas');
   const tooltip = document.getElementById('map-tooltip');
@@ -1123,6 +1252,9 @@ function initNetworkMap() {
         draggedNode.data.mapPos.x += dx;
         draggedNode.data.mapPos.y += dy;
         customNodePositions[draggedNode.data.id] = { ...draggedNode.data.mapPos };
+      } else if (draggedNode.type === 'wan') {
+        draggedNode.data.x += dx;
+        draggedNode.data.y += dy;
       }
       lastMouse = { x: e.offsetX, y: e.offsetY };
       if (tooltip) tooltip.style.display = 'none';
@@ -1141,41 +1273,58 @@ function initNetworkMap() {
     const hit = findNodeAt(vx, vy);
     if (hit && tooltip) {
       canvas.style.cursor = 'pointer';
-      const d = hit.data;
-      const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
-      const devSub = getSubnetPrefix(d.ip);
-      const parentDev = d._effectiveParent || getDeviceParent(d);
-      const parentSub = parentDev ? getSubnetPrefix(parentDev.ip) : null;
-      const isDiffSub = parentDev && parentSub && devSub !== parentSub;
+      if (hit.type === 'wan') {
+        const w = hit.data;
+        tooltip.innerHTML = `
+          <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
+            <span>☁️</span>
+            <span>${w.nama}</span>
+          </div>
+          <div style="color:#94a3b8; font-size:0.75rem; margin:2px 0;">Pusat Gerbang Jaringan Luar (Internet/ISP Backbone)</div>
+          <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+            <span style="color:#22c55e; font-weight:700;">● ${w.status.toUpperCase()}</span>
+          </div>
+          <div style="font-size:0.72rem; color:#38bdf8; margin-top:4px;">
+            🌐 Terhubung ke ${w.routers?.length || 0} Router Gateway Aktif
+          </div>
+        `;
+      } else {
+        const d = hit.data;
+        const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+        const devSub = getSubnetPrefix(d.ip);
+        const parentDev = d._effectiveParent || getDeviceParent(d);
+        const parentSub = parentDev ? getSubnetPrefix(parentDev.ip) : null;
+        const isDiffSub = parentDev && parentSub && devSub !== parentSub;
 
-      const displayIp = cleanDeviceIp(d.ip);
-      const isRtsp = String(d.ip || '').includes('rtsp://') || String(d.metode || '').toUpperCase() === 'RTSP';
+        const displayIp = cleanDeviceIp(d.ip);
+        const isRtsp = String(d.ip || '').includes('rtsp://') || String(d.metode || '').toUpperCase() === 'RTSP';
 
-      tooltip.innerHTML = `
-        <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
-          <span>${getNodeIcon(d.jenis)}</span>
-          <span>${d.nama}</span>
-        </div>
-        <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">
-          ${displayIp} <span style="color:#64748b;">(${devSub}.x)</span>
-          ${isRtsp ? '<span style="font-size:0.65rem; background:rgba(99,102,241,0.25); color:#a5b4fc; padding:1px 5px; border-radius:3px; margin-left:4px;">📹 RTSP</span>' : ''}
-        </div>
-        <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-          <span style="color:${color}; font-weight:700;">● ${(d.status || 'unknown').toUpperCase()}</span>
-          ${d.responseTime !== null && d.responseTime !== undefined ? `<span style="color:#22c55e;">${d.responseTime}ms</span>` : ''}
-        </div>
-        ${parentDev ? `
-        <div style="font-size:0.72rem; color:#cbd5e1; margin-top:4px;">
-          ↳ Terhubung ke: <strong>${parentDev.nama}</strong> (${cleanDeviceIp(parentDev.ip)})
-        </div>
-        ` : '<div style="font-size:0.72rem; color:#38bdf8; margin-top:4px;">🌐 Perangkat Utama / Root</div>'}
-        ${isDiffSub ? `
-        <div style="margin-top:4px; font-size:0.72rem; color:#fdba74; background:rgba(249,115,22,0.18); border:1px solid rgba(249,115,22,0.35); border-radius:4px; padding:2px 6px;">
-          ⚡ Rute Inter-VLAN / L3 (${devSub}.x ➔ ${parentSub}.x)
-        </div>
-        ` : ''}
-        <div style="font-size:0.7rem; color:#64748b; margin-top:4px;">Klik untuk tindakan & detail</div>
-      `;
+        tooltip.innerHTML = `
+          <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
+            <span>${getNodeIcon(d.jenis)}</span>
+            <span>${d.nama}</span>
+          </div>
+          <div style="font-family:monospace; color:#94a3b8; font-size:0.75rem; margin:2px 0;">
+            ${displayIp} <span style="color:#64748b;">(${devSub}.x)</span>
+            ${isRtsp ? '<span style="font-size:0.65rem; background:rgba(99,102,241,0.25); color:#a5b4fc; padding:1px 5px; border-radius:3px; margin-left:4px;">📹 RTSP</span>' : ''}
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+            <span style="color:${color}; font-weight:700;">● ${(d.status || 'unknown').toUpperCase()}</span>
+            ${d.responseTime !== null && d.responseTime !== undefined ? `<span style="color:#22c55e;">${d.responseTime}ms</span>` : ''}
+          </div>
+          ${parentDev ? `
+          <div style="font-size:0.72rem; color:#cbd5e1; margin-top:4px;">
+            ↳ Terhubung ke: <strong>${parentDev.nama}</strong> (${cleanDeviceIp(parentDev.ip)})
+          </div>
+          ` : '<div style="font-size:0.72rem; color:#38bdf8; margin-top:4px;">🌐 Router Gateway Utama / Root</div>'}
+          ${isDiffSub ? `
+          <div style="margin-top:4px; font-size:0.72rem; color:#fdba74; background:rgba(249,115,22,0.18); border:1px solid rgba(249,115,22,0.35); border-radius:4px; padding:2px 6px;">
+            ⚡ Rute Inter-VLAN / L3 (${devSub}.x ➔ ${parentSub}.x)
+          </div>
+          ` : ''}
+          <div style="font-size:0.7rem; color:#64748b; margin-top:4px;">Klik untuk tindakan & detail</div>
+        `;
+      }
 
       tooltip.style.left = `${Math.min(canvas.offsetWidth - 220, e.offsetX + 15)}px`;
       tooltip.style.top = `${Math.min(canvas.offsetHeight - 100, e.offsetY + 15)}px`;
@@ -1190,6 +1339,8 @@ function initNetworkMap() {
     if (draggedNode && !isNodeMoved) {
       if (draggedNode.type === 'device') {
         showDeviceMapModal(draggedNode.data);
+      } else if (draggedNode.type === 'wan') {
+        showWanCloudModal(draggedNode.data);
       }
     }
     draggedNode = null;
@@ -1326,6 +1477,115 @@ function drawMap(ctx, w, h) {
   const now = Date.now();
   const currentScale = mapTransform.scale;
   const isSearchActive = mapSearchQuery.length > 0;
+
+  // 0a. WAN Uplink Links (Internet / Cloud -> Router Gateways)
+  if (wanNode && wanNode.routers && wanNode.routers.length > 0) {
+    wanNode.routers.forEach((r) => {
+      if (!r.mapPos) return;
+      const wx = wanNode.x;
+      const wy = wanNode.y + wanNode.h / 2;
+      const rx = r.mapPos.x;
+      const ry = r.mapPos.y - 18;
+      const midY = (wy + ry) / 2;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(wx, wy);
+      ctx.bezierCurveTo(wx, midY, rx, midY, rx, ry);
+
+      if (r.status === 'online') {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+
+        // Animasi paket WAN mengalir ke router
+        const t = ((now / 2000) + (r.id * 0.25)) % 1;
+        const bX = Math.pow(1 - t, 3) * wx + 3 * Math.pow(1 - t, 2) * t * wx + 3 * (1 - t) * Math.pow(t, 2) * rx + Math.pow(t, 3) * rx;
+        const bY = Math.pow(1 - t, 3) * wy + 3 * Math.pow(1 - t, 2) * t * midY + 3 * (1 - t) * Math.pow(t, 2) * midY + Math.pow(t, 3) * ry;
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.shadowColor = '#0284c7';
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(bX, bY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+
+  // 0b. Inter-Router HA Trunk Redundancy Links (Router 1 <-> Router 2)
+  if (interRouterLinks && interRouterLinks.length > 0) {
+    interRouterLinks.forEach((link) => {
+      const { from, to, label } = link;
+      if (!from.mapPos || !to.mapPos) return;
+
+      const fx = from.mapPos.x + 18;
+      const fy = from.mapPos.y;
+      const tx = to.mapPos.x - 18;
+      const ty = to.mapPos.y;
+      const midX = (fx + tx) / 2;
+      const midY = (fy + ty) / 2 - 16;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([6, 4]);
+      ctx.moveTo(fx, fy);
+      ctx.bezierCurveTo(fx + (tx - fx) * 0.3, midY, tx - (tx - fx) * 0.3, midY, tx, ty);
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.85)';
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Animasi bolak-balik trunk sync
+      const t = (now / 1600) % 1;
+      const bX = Math.pow(1 - t, 3) * fx + 3 * Math.pow(1 - t, 2) * t * (fx + (tx - fx) * 0.3) + 3 * (1 - t) * Math.pow(t, 2) * (tx - (tx - fx) * 0.3) + Math.pow(t, 3) * tx;
+      const bY = Math.pow(1 - t, 3) * fy + 3 * Math.pow(1 - t, 2) * t * midY + 3 * (1 - t) * Math.pow(t, 2) * midY + Math.pow(t, 3) * ty;
+
+      ctx.save();
+      ctx.fillStyle = '#c084fc';
+      ctx.shadowColor = '#a855f7';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(bX, bY, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Label badge inter-router di tengah
+      if (currentScale >= 0.5) {
+        ctx.save();
+        ctx.font = 'bold 9px Inter, sans-serif';
+        const txt = label || '⚡ HA Sync';
+        const textW = ctx.measureText(txt).width;
+        const bw = textW + 14;
+        const bh = 18;
+        const bx = midX - bw / 2;
+        const by = midY - bh / 2;
+
+        ctx.fillStyle = isLight ? '#f3e8ff' : '#241442';
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(bx, by, bw, bh, 9);
+        } else {
+          ctx.rect(bx, by, bw, bh);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isLight ? '#7e22ce' : '#e9d5ff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(txt, midX, midY + 0.5);
+        ctx.restore();
+      }
+    });
+  }
 
   // 1. Connection: Garis pohon mengakar ke bawah (Hierarchical Cubic Bezier)
   mockDevices.forEach((d) => {
@@ -1472,6 +1732,47 @@ function drawMap(ctx, w, h) {
       }
     }
   });
+
+  // 3. Draw WAN Cloud Node Body (Pusat Internet / Gateway Uplink)
+  if (wanNode) {
+    ctx.save();
+    const wx = wanNode.x;
+    const wy = wanNode.y;
+    const ww = wanNode.w;
+    const wh = wanNode.h;
+
+    // Glowing aura jika online
+    ctx.shadowColor = wanNode.status === 'online' ? 'rgba(56, 189, 248, 0.55)' : 'rgba(239, 68, 68, 0.4)';
+    ctx.shadowBlur = 12;
+
+    // Background pill
+    ctx.fillStyle = isLight ? '#f0f9ff' : '#082f49';
+    ctx.strokeStyle = wanNode.status === 'online' ? '#38bdf8' : '#ef4444';
+    ctx.lineWidth = 1.8;
+
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(wx - ww / 2, wy - wh / 2, ww, wh, wh / 2);
+    } else {
+      ctx.rect(wx - ww / 2, wy - wh / 2, ww, wh);
+    }
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // WAN Cloud text & status indicator
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 11px Inter, sans-serif';
+    ctx.fillStyle = isLight ? '#0369a1' : '#f0f9ff';
+    ctx.fillText(`${wanNode.icon} ${wanNode.nama}`, wx, wy - 5);
+
+    ctx.font = '600 9px Inter, sans-serif';
+    ctx.fillStyle = isLight ? '#0284c7' : '#38bdf8';
+    ctx.fillText(wanNode.sublabel, wx, wy + 8);
+    ctx.restore();
+  }
 
   ctx.restore();
 }
