@@ -62,9 +62,16 @@ export async function fetchLiveDevices() {
   }
 }
 
+let previewLogsCleared = false;
+
 export async function fetchLiveLogs() {
   const session = getSession();
   if (session?.is_preview) {
+    if (previewLogsCleared) {
+      backendLogs = [];
+      backendCounts = { status: 0, aktivitas: 0, konfigurasi: 0 };
+      return;
+    }
     if (activeTab === 'status') {
       backendLogs = getDemoLogs().map((r) => ({
         id: r.id,
@@ -718,6 +725,15 @@ export function initLogsEvents() {
   });
 
   bindLogRowsSelect();
+
+  // Dengar event logs_updated (WebSocket atau pembersihan manual)
+  const onLogsUpdated = (e) => {
+    if (e?.detail?.days === 0) {
+      previewLogsCleared = true;
+    }
+    refresh();
+  };
+  window.addEventListener('devwatch:logs_updated', onLogsUpdated);
 
   window.logGoPage = (p) => { logPage = p; refresh(); };
 }

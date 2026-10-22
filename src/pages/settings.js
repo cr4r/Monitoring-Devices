@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiCleanLogs } from '../api.js';
+import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiCleanLogs, apiGetLogsStats } from '../api.js';
 import { applySystemSettings } from '../settingsManager.js';
 import { applyTheme, getSavedTheme } from '../themeManager.js';
 
@@ -772,28 +772,75 @@ function bindSaveButtons() {
     };
   }
 
-  // Clean logs button (Real log cleanup)
+  // Clean logs button (Real log cleanup with stats & flexible retention)
   const cleanLogsBtn = document.getElementById('clean-logs-btn');
   if (cleanLogsBtn) {
     cleanLogsBtn.onclick = async () => {
+      // 1. Ambil statistik log terkini
+      let stats = { total: 0, status: { count: 0 }, activity: { count: 0 }, config: { count: 0 }, oldestAll: null };
+      try {
+        const statRes = await apiGetLogsStats();
+        if (statRes && statRes.stats) {
+          stats = statRes.stats;
+        }
+      } catch (err) {
+        console.warn('Gagal memuat statistik log:', err.message);
+      }
+
+      // Hitung umur log tertua
+      let oldestDays = 0;
+      let oldestDesc = 'Belum ada log';
+      if (stats.oldestAll) {
+        const oldestDate = new Date(stats.oldestAll);
+        const now = new Date();
+        const diffMs = Math.max(0, now - oldestDate);
+        oldestDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const oldestHours = Math.floor(diffMs / (1000 * 60 * 60));
+        oldestDesc = oldestDays > 0 ? `${oldestDays} hari yang lalu` : `${oldestHours} jam yang lalu`;
+      }
+
       const currentRetention = getVal('retention_days', '90');
+
       const { isConfirmed } = await Swal.fire({
-        title: '🧹 Bersihkan Log Lama',
+        title: '🧹 Bersihkan Log Sistem',
         html: `
-          <div style="text-align:left; font-size:0.85rem; color:#94a3b8;">
-            <p>Seluruh riwayat log status, aktivitas, dan perubahan konfigurasi yang lebih lama dari batas retensi akan dihapus permanen untuk menghemat ruang penyimpanan:</p>
-            <div style="margin-top:10px;">
-              <label style="font-weight:600; color:var(--color-heading);">Batas Retensi:</label>
-              <select class="form-control" id="swal-clean-retention" style="margin-top:4px;">
-                <option value="30" ${currentRetention === '30' ? 'selected' : ''}>Lebih dari 30 hari</option>
-                <option value="60" ${currentRetention === '60' ? 'selected' : ''}>Lebih dari 60 hari</option>
-                <option value="90" ${currentRetention === '90' ? 'selected' : ''}>Lebih dari 90 hari (default)</option>
-                <option value="180" ${currentRetention === '180' ? 'selected' : ''}>Lebih dari 180 hari</option>
+          <div style="text-align:left; font-size:0.85rem; color:#94a3b8; display:flex; flex-direction:column; gap:12px;">
+            <!-- Ringkasan Log Saat Ini -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-weight:700; color:var(--color-heading);">📊 Log Tersimpan Saat Ini:</span>
+                <span style="background:rgba(99,102,241,0.2); color:#818cf8; font-weight:700; padding:2px 8px; border-radius:12px; font-size:0.8rem;">${stats.total} Total Baris</span>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:0.78rem;">
+                <div>• Log Status: <b>${stats.status?.count || 0}</b></div>
+                <div>• Log Aktivitas: <b>${stats.activity?.count || 0}</b></div>
+                <div>• Log Konfigurasi: <b>${stats.config?.count || 0}</b></div>
+                <div>• Rekaman Tertua: <b style="color:var(--color-heading);">${oldestDesc}</b></div>
+              </div>
+            </div>
+
+            <!-- Form Pilihan Batas Pembersihan -->
+            <div>
+              <label style="font-weight:600; color:var(--color-heading); display:block; margin-bottom:4px;">Pilih Kriteria Pembersihan:</label>
+              <select class="form-control" id="swal-clean-retention" style="width:100%;">
+                <option value="0">⚠️ Semua Log (Hapus Total / Kosongkan Riwayat)</option>
+                <option value="1">Lebih dari 1 hari lalu (Kemarin & sebelumnya)</option>
+                <option value="3">Lebih dari 3 hari lalu</option>
+                <option value="7">Lebih dari 7 hari lalu (1 minggu)</option>
+                <option value="14">Lebih dari 14 hari lalu (2 minggu)</option>
+                <option value="30" ${currentRetention === '30' ? 'selected' : ''}>Lebih dari 30 hari lalu (1 bulan)</option>
+                <option value="60" ${currentRetention === '60' ? 'selected' : ''}>Lebih dari 60 hari lalu (2 bulan)</option>
+                <option value="90" ${currentRetention === '90' || !['0','1','3','7','14','30','60','180'].includes(currentRetention) ? 'selected' : ''}>Lebih dari 90 hari lalu (3 bulan - standar)</option>
+                <option value="180" ${currentRetention === '180' ? 'selected' : ''}>Lebih dari 180 hari lalu (6 bulan)</option>
               </select>
             </div>
+
+            <!-- Kotak Penjelasan Dinamis -->
+            <div id="swal-clean-hint" style="border-radius:6px; padding:8px 12px; font-size:0.78rem; transition:all 0.2s ease;"></div>
           </div>
         `,
         icon: 'warning',
+        width: 500,
         showCancelButton: true,
         confirmButtonText: '🧹 Bersihkan Sekarang',
         cancelButtonText: 'Batal',
@@ -801,6 +848,35 @@ function bindSaveButtons() {
         cancelButtonColor: '#374151',
         background: '#1a1d2e',
         color: '#e2e8f0',
+        didOpen: () => {
+          const select = document.getElementById('swal-clean-retention');
+          const hint = document.getElementById('swal-clean-hint');
+
+          const updateHint = () => {
+            if (!select || !hint) return;
+            const selDays = parseInt(select.value, 10);
+
+            if (selDays === 0) {
+              hint.style.background = 'rgba(239, 68, 68, 0.12)';
+              hint.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+              hint.style.color = '#fca5a5';
+              hint.innerHTML = `⚠️ <b>Peringatan Hapus Total</b>: Seluruh <b>${stats.total}</b> baris log status, aktivitas, dan riwayat konfigurasi akan dikosongkan permanen.`;
+            } else if (stats.total > 0 && selDays > oldestDays) {
+              hint.style.background = 'rgba(245, 158, 11, 0.12)';
+              hint.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+              hint.style.color = '#fcd34d';
+              hint.innerHTML = `ℹ️ <b>Catatan Penting</b>: Log tertua di sistem baru berumur <b>${oldestDesc}</b>. Memilih batas <b>${selDays} hari</b> akan menghasilkan <b>0 log dihapus</b> karena belum ada log yang melampaui batas tersebut. Pilih batas yang lebih kecil (misal 1 hari) atau <b>Semua Log</b> jika ingin mengosongkan.`;
+            } else {
+              hint.style.background = 'rgba(99, 102, 241, 0.1)';
+              hint.style.border = '1px solid rgba(99, 102, 241, 0.25)';
+              hint.style.color = '#c7d2fe';
+              hint.innerHTML = `✓ Seluruh log yang tercatat lebih dari <b>${selDays} hari</b> yang lalu akan dihapus permanen untuk menghemat ruang disk.`;
+            }
+          };
+
+          select?.addEventListener('change', updateHint);
+          updateHint();
+        },
       });
 
       if (isConfirmed) {
@@ -819,16 +895,21 @@ function bindSaveButtons() {
         try {
           const res = await apiCleanLogs(days);
           const del = res.deleted || {};
+          window.dispatchEvent(new CustomEvent('devwatch:logs_updated', { detail: { action: 'clean_logs', days } }));
+
           Swal.fire({
             icon: 'success',
             title: 'Pembersihan Selesai',
             html: `
               <div style="font-size:0.85rem; color:#94a3b8;">
-                <p>${res.message || 'Pembersihan log lama berhasil.'}</p>
-                <div style="margin-top:8px; display:inline-block; text-align:left; font-size:0.8rem; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px;">
-                  <div>• Log Status: <b>${del.statusLogs || 0}</b> dihapus</div>
-                  <div>• Log Aktivitas: <b>${del.activityLogs || 0}</b> dihapus</div>
-                  <div>• Log Konfigurasi: <b>${del.configLogs || 0}</b> dihapus</div>
+                <p>${res.message || 'Pembersihan log berhasil.'}</p>
+                <div style="margin-top:10px; display:inline-block; text-align:left; font-size:0.8rem; background:rgba(255,255,255,0.05); padding:10px 14px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+                  <div>• Log Status: <b style="color:#10b981;">${del.statusLogs || 0}</b> dihapus</div>
+                  <div>• Log Aktivitas: <b style="color:#10b981;">${del.activityLogs || 0}</b> dihapus</div>
+                  <div>• Log Konfigurasi: <b style="color:#10b981;">${del.configLogs || 0}</b> dihapus</div>
+                  <div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.1); font-weight:700; color:var(--color-heading);">
+                    Total Dihapus: <b>${del.total || 0}</b> baris
+                  </div>
                 </div>
               </div>
             `,

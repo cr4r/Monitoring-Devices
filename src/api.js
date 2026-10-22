@@ -494,7 +494,38 @@ export async function apiTriggerBackup() {
   });
 }
 
+export async function apiGetLogsStats() {
+  if (_isCurrentSessionPreview()) {
+    return {
+      success: true,
+      stats: {
+        total: 20,
+        oldestAll: new Date(Date.now() - 14400000).toISOString(),
+        status: { count: 16, oldest: new Date(Date.now() - 14400000).toISOString() },
+        activity: { count: 2, oldest: new Date(Date.now() - 3600000).toISOString() },
+        config: { count: 2, oldest: new Date(Date.now() - 7200000).toISOString() },
+      },
+    };
+  }
+  return request('/settings/logs-stat');
+}
+
 export async function apiCleanLogs(retentionDays = 90) {
+  if (_isCurrentSessionPreview()) {
+    window.dispatchEvent(new CustomEvent('devwatch:logs_updated', { detail: { action: 'clean_logs', days: retentionDays } }));
+    return {
+      success: true,
+      message: retentionDays === 0
+        ? 'Seluruh riwayat log demo simulasi berhasil dibersihkan (20 baris dihapus).'
+        : `Pembersihan log lama demo simulasi (> ${retentionDays} hari) selesai.`,
+      deleted: {
+        statusLogs: retentionDays === 0 ? 16 : 0,
+        activityLogs: retentionDays === 0 ? 2 : 0,
+        configLogs: retentionDays === 0 ? 2 : 0,
+        total: retentionDays === 0 ? 20 : 0,
+      },
+    };
+  }
   return request('/settings/clean-logs', {
     method: 'POST',
     body: JSON.stringify({ retentionDays }),

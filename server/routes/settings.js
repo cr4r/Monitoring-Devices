@@ -9,6 +9,7 @@ import path from 'path';
 import { db, query, queryOne, run } from '../database/db.js';
 import { config } from '../config.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { broadcast } from '../services/websocketService.js';
 
 const router = express.Router();
 
@@ -169,15 +170,57 @@ router.get('/backup/download', authenticateToken, requireRole(['admin']), (req, 
   }
 });
 
+// GET /api/settings/logs-stat — Ringkasan jumlah dan tanggal log sistem
+router.get('/logs-stat', authenticateToken, (req, res) => {
+  try {
+    const status = queryOne('SELECT count(*) as count, min(waktu) as oldest, max(waktu) as newest FROM device_status_logs') || {};
+    const activity = queryOne('SELECT count(*) as count, min(waktu) as oldest, max(waktu) as newest FROM user_activity_logs') || {};
+    const config = queryOne('SELECT count(*) as count, min(waktu) as oldest, max(waktu) as newest FROM config_logs') || {};
+
+    const statusCount = status.count || 0;
+    const activityCount = activity.count || 0;
+    const configCount = config.count || 0;
+    const total = statusCount + activityCount + configCount;
+
+    // Tentukan waktu log tertua keseluruhan
+    const timestamps = [status.oldest, activity.oldest, config.oldest].filter(Boolean);
+    const oldestAll = timestamps.length > 0 ? timestamps.sort()[0] : null;
+
+    res.json({
+      success: true,
+      stats: {
+        total,
+        oldestAll,
+        status: { count: statusCount, oldest: status.oldest || null, newest: status.newest || null },
+        activity: { count: activityCount, oldest: activity.oldest || null, newest: activity.newest || null },
+        config: { count: configCount, oldest: config.oldest || null, newest: config.newest || null },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: `Gagal mengambil statistik log: ${err.message}` });
+  }
+});
+
 // POST /api/settings/clean-logs — Pembersihan riwayat log kadaluarsa sesuai batas retensi
 router.post('/clean-logs', authenticateToken, requireRole(['admin']), (req, res) => {
   try {
     const settings = getSystemSettingsObject();
-    const days = parseInt(req.body.retentionDays || settings.retention_days || '90', 10);
+    const rawDays = req.body.retentionDays !== undefined ? req.body.retentionDays : (settings.retention_days || '90');
+    const days = parseInt(rawDays, 10);
 
-    const statusRes = run(`DELETE FROM device_status_logs WHERE waktu < datetime('now', '-${days} days')`);
-    const actRes = run(`DELETE FROM user_activity_logs WHERE waktu < datetime('now', '-${days} days')`);
-    const cfgRes = run(`DELETE FROM config_logs WHERE waktu < datetime('now', '-${days} days')`);
+    let statusRes, actRes, cfgRes;
+
+    if (days === 0) {
+      // Hapus total semua rekaman riwayat log
+      statusRes = run('DELETE FROM device_status_logs');
+      actRes = run('DELETE FROM user_activity_logs');
+      cfgRes = run('DELETE FROM config_logs');
+    } else {
+      // Hapus berdasarkan batas waktu retensi hari
+      statusRes = run(`DELETE FROM device_status_logs WHERE waktu < datetime('now', '-${days} days')`);
+      actRes = run(`DELETE FROM user_activity_logs WHERE waktu < datetime('now', '-${days} days')`);
+      cfgRes = run(`DELETE FROM config_logs WHERE waktu < datetime('now', '-${days} days')`);
+    }
 
     const totalDeleted = (statusRes.changes || 0) + (actRes.changes || 0) + (cfgRes.changes || 0);
 
@@ -186,15 +229,26 @@ router.post('/clean-logs', authenticateToken, requireRole(['admin']), (req, res)
       db.exec('PRAGMA incremental_vacuum;');
     } catch {}
 
+    const detailPesan = days === 0
+      ? `Membersihkan seluruh riwayat log sistem (${totalDeleted} baris dihapus)`
+      : `Membersihkan ${totalDeleted} baris log lama (> ${days} hari)`;
+
     run(
       `INSERT INTO config_logs (user_id, user_nama, aksi, detail)
        VALUES (?, ?, 'Pembersihan Log', ?)`,
-      [req.user.id, req.user.nama, `Membersihkan ${totalDeleted} baris log lama (> ${days} hari)`]
+      [req.user.id, req.user.nama, detailPesan]
     );
+
+    // Siarkan pembaruan log ke semua browser yang terhubung
+    try {
+      broadcast('logs_updated', { action: 'clean_logs', deleted: totalDeleted, days });
+    } catch {}
 
     res.json({
       success: true,
-      message: `Pembersihan berhasil. Sebanyak ${totalDeleted} entri log lama (> ${days} hari) telah dihapus.`,
+      message: days === 0
+        ? `Seluruh riwayat log berhasil dibersihkan (${totalDeleted} baris dihapus).`
+        : `Pembersihan berhasil. Sebanyak ${totalDeleted} entri log lama (> ${days} hari) telah dihapus.`,
       deleted: {
         statusLogs: statusRes.changes || 0,
         activityLogs: actRes.changes || 0,
