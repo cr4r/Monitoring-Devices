@@ -385,7 +385,11 @@ export function initDashboardEvents(navigate) {
         mapAnimId = null;
       }
 
-      if (currentTab === 'peta') initNetworkMap();
+      if (currentTab === 'peta') {
+        requestAnimationFrame(() => {
+          initNetworkMap();
+        });
+      }
       if (currentTab === 'timeline') initTimeline();
     });
   });
@@ -477,7 +481,11 @@ export function initDashboardEvents(navigate) {
       applyFilter();
       updateGroupFilterOptions();
       updateTimelineSelectOptions();
-      if (currentTab === 'peta') initNetworkMap();
+      if (currentTab === 'peta') {
+        requestAnimationFrame(() => {
+          initNetworkMap();
+        });
+      }
       if (currentTab === 'timeline') initTimeline();
     })
     .catch((err) => {
@@ -511,7 +519,11 @@ export function initDashboardEvents(navigate) {
       applyFilter();
       updateGroupFilterOptions();
       updateTimelineSelectOptions();
-      if (currentTab === 'peta') initNetworkMap();
+      if (currentTab === 'peta') {
+        requestAnimationFrame(() => {
+          initNetworkMap();
+        });
+      }
       if (currentTab === 'timeline') initTimeline();
 
       const onlineCount = res.online !== undefined ? res.online : mockDevices.filter((d) => d.status === 'online').length;
@@ -577,7 +589,11 @@ export function initDashboardEvents(navigate) {
   startCountdownTimers();
 
   // Init tab peta if active
-  if (currentTab === 'peta') initNetworkMap();
+  if (currentTab === 'peta') {
+    requestAnimationFrame(() => {
+      initNetworkMap();
+    });
+  }
   if (currentTab === 'timeline') initTimeline();
 
   // Global device action handlers
@@ -943,7 +959,6 @@ function computeMapLayout(w, h, force = false) {
 
     if (force || !customNodePositions[node.id]) {
       node.mapPos = { x, y };
-      customNodePositions[node.id] = { x, y };
     } else {
       node.mapPos = { ...customNodePositions[node.id] };
     }
@@ -1185,6 +1200,38 @@ function showWanCloudModal(w) {
   });
 }
 
+function getCanvasMouseCoords(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / (rect.width || 1);
+  const scaleY = canvas.height / (rect.height || 1);
+  const mouseX = (e.clientX - rect.left) * scaleX;
+  const mouseY = (e.clientY - rect.top) * scaleY;
+  const vx = (mouseX - mapTransform.x) / mapTransform.scale;
+  const vy = (mouseY - mapTransform.y) / mapTransform.scale;
+  return { mouseX, mouseY, vx, vy, rect };
+}
+
+function updateCanvasDimensions(forceLayout = false) {
+  const canvas = document.getElementById('networkCanvas');
+  if (!canvas) return false;
+  const container = canvas.parentElement;
+  if (!container) return false;
+
+  const rect = container.getBoundingClientRect();
+  const width = Math.max(320, Math.floor(rect.width));
+  const height = Math.max(300, Math.floor(rect.height || 580));
+
+  const hasChanged = canvas.width !== width || canvas.height !== height;
+  if (hasChanged || forceLayout) {
+    canvas.width = width;
+    canvas.height = height;
+    computeMapLayout(canvas.width, canvas.height, forceLayout);
+    fitToScreen(canvas.width, canvas.height);
+    return true;
+  }
+  return false;
+}
+
 function initNetworkMap() {
   const canvas = document.getElementById('networkCanvas');
   const tooltip = document.getElementById('map-tooltip');
@@ -1193,11 +1240,19 @@ function initNetworkMap() {
   const ctx = canvas.getContext('2d');
   canvasCtx = ctx;
 
-  canvas.width = canvas.offsetWidth || 960;
-  canvas.height = canvas.offsetHeight || 580;
+  updateCanvasDimensions(false);
 
-  computeMapLayout(canvas.width, canvas.height, false);
-  fitToScreen(canvas.width, canvas.height);
+  // ResizeObserver untuk sinkronisasi layout dinamis antar resolusi & perangkat
+  const container = canvas.parentElement;
+  if (window.ResizeObserver && container && !container._hasResizeObserver) {
+    container._hasResizeObserver = true;
+    const ro = new ResizeObserver(() => {
+      if (currentTab === 'peta') {
+        updateCanvasDimensions(false);
+      }
+    });
+    ro.observe(container);
+  }
 
   // Update badge jumlah perangkat di toolbar peta
   const nodeCountBadge = document.getElementById('map-node-count-badge');
@@ -1221,13 +1276,23 @@ function initNetworkMap() {
   };
   runLoop();
 
+  // Proteksi pasang event listener hanya sekali (anti-duplikasi & anti-lompat)
+  if (canvas._mapEventsAttached) return;
+  canvas._mapEventsAttached = true;
+
+  // Window resize fallback
+  window.addEventListener('resize', () => {
+    if (currentTab === 'peta') {
+      updateCanvasDimensions(false);
+    }
+  });
+
   // Mouse interaction
   canvas.addEventListener('mousedown', (e) => {
-    const vx = (e.offsetX - mapTransform.x) / mapTransform.scale;
-    const vy = (e.offsetY - mapTransform.y) / mapTransform.scale;
+    const { mouseX, mouseY, vx, vy } = getCanvasMouseCoords(e, canvas);
     const hit = findNodeAt(vx, vy);
 
-    dragStartMouse = { x: e.offsetX, y: e.offsetY };
+    dragStartMouse = { x: mouseX, y: mouseY };
     isNodeMoved = false;
 
     if (hit) {
@@ -1235,17 +1300,16 @@ function initNetworkMap() {
     } else {
       isDragging = true;
     }
-    lastMouse = { x: e.offsetX, y: e.offsetY };
+    lastMouse = { x: mouseX, y: mouseY };
   });
 
   canvas.addEventListener('mousemove', (e) => {
-    const vx = (e.offsetX - mapTransform.x) / mapTransform.scale;
-    const vy = (e.offsetY - mapTransform.y) / mapTransform.scale;
+    const { mouseX, mouseY, vx, vy, rect } = getCanvasMouseCoords(e, canvas);
 
     if (draggedNode) {
-      const dx = (e.offsetX - lastMouse.x) / mapTransform.scale;
-      const dy = (e.offsetY - lastMouse.y) / mapTransform.scale;
-      if (Math.hypot(e.offsetX - dragStartMouse.x, e.offsetY - dragStartMouse.y) > 4) {
+      const dx = (mouseX - lastMouse.x) / mapTransform.scale;
+      const dy = (mouseY - lastMouse.y) / mapTransform.scale;
+      if (Math.hypot(mouseX - dragStartMouse.x, mouseY - dragStartMouse.y) > 4) {
         isNodeMoved = true;
       }
       if (draggedNode.type === 'device') {
@@ -1256,15 +1320,15 @@ function initNetworkMap() {
         draggedNode.data.x += dx;
         draggedNode.data.y += dy;
       }
-      lastMouse = { x: e.offsetX, y: e.offsetY };
+      lastMouse = { x: mouseX, y: mouseY };
       if (tooltip) tooltip.style.display = 'none';
       return;
     }
 
     if (isDragging) {
-      mapTransform.x += e.offsetX - lastMouse.x;
-      mapTransform.y += e.offsetY - lastMouse.y;
-      lastMouse = { x: e.offsetX, y: e.offsetY };
+      mapTransform.x += mouseX - lastMouse.x;
+      mapTransform.y += mouseY - lastMouse.y;
+      lastMouse = { x: mouseX, y: mouseY };
       if (tooltip) tooltip.style.display = 'none';
       return;
     }
@@ -1326,8 +1390,10 @@ function initNetworkMap() {
         `;
       }
 
-      tooltip.style.left = `${Math.min(canvas.offsetWidth - 220, e.offsetX + 15)}px`;
-      tooltip.style.top = `${Math.min(canvas.offsetHeight - 100, e.offsetY + 15)}px`;
+      const tipX = e.clientX - rect.left;
+      const tipY = e.clientY - rect.top;
+      tooltip.style.left = `${Math.min(rect.width - 220, tipX + 15)}px`;
+      tooltip.style.top = `${Math.min(rect.height - 100, tipY + 15)}px`;
       tooltip.style.display = 'block';
     } else {
       canvas.style.cursor = 'grab';
@@ -1356,10 +1422,9 @@ function initNetworkMap() {
   // Wheel zoom interaktif berpusat kursor
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    const { mouseX, mouseY } = getCanvasMouseCoords(e, canvas);
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
     const newScale = Math.max(0.18, Math.min(3.0, mapTransform.scale * zoomFactor));
-    const mouseX = e.offsetX;
-    const mouseY = e.offsetY;
     mapTransform.x = mouseX - (mouseX - mapTransform.x) * (newScale / mapTransform.scale);
     mapTransform.y = mouseY - (mouseY - mapTransform.y) * (newScale / mapTransform.scale);
     mapTransform.scale = newScale;
@@ -1373,6 +1438,7 @@ function initNetworkMap() {
     mapTransform.scale = Math.max(0.18, mapTransform.scale * 0.83);
   });
   document.getElementById('map-fit-screen')?.addEventListener('click', () => {
+    updateCanvasDimensions(false);
     fitToScreen(canvas.width, canvas.height);
   });
   document.getElementById('map-reset')?.addEventListener('click', () => {
@@ -1380,8 +1446,7 @@ function initNetworkMap() {
   });
   document.getElementById('map-auto-layout')?.addEventListener('click', () => {
     customNodePositions = {};
-    computeMapLayout(canvas.width, canvas.height, true);
-    fitToScreen(canvas.width, canvas.height);
+    updateCanvasDimensions(true);
     Swal.fire({
       toast: true,
       position: 'top-end',
@@ -1403,9 +1468,7 @@ function initNetworkMap() {
     const btn = document.getElementById('map-fullscreen');
     if (btn) btn.innerHTML = isFs ? '✕ Keluar Layar Penuh' : '⛶ Layar Penuh';
     setTimeout(() => {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      fitToScreen(canvas.width, canvas.height);
+      updateCanvasDimensions(false);
     }, 120);
   });
 
