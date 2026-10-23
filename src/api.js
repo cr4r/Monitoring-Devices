@@ -79,10 +79,14 @@ export async function request(endpoint, options = {}) {
 }
 
 // ---- AUTENTIKASI ----
-export async function apiLogin(email, password) {
+export async function apiLogin(identifier, password) {
   const res = await request('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      username: identifier,
+      email: identifier,
+      password,
+    }),
   });
   if (res.token) {
     setToken(res.token);

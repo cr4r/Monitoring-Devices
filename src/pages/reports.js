@@ -1,7 +1,7 @@
 // ================================================================
 // DevWatch — reports.js
 // Laporan: mingguan (arsip & snapshot otomatis), uptime/SLA, insiden,
-// dan pembuatan berkas PDF riil (Full SQLite Data)
+// dan pembuatan berkas PDF & CSV riil (Full SQLite Data)
 // ================================================================
 
 import Swal from 'sweetalert2';
@@ -17,6 +17,7 @@ import { exportReportPdf } from '../services/pdfService.js';
 import { formatDateWithTz } from '../settingsManager.js';
 import { getSession } from '../main.js';
 import { getDemoDevices } from '../data/demoDevices.js';
+import { cleanDeviceIp } from '../data/mock-devices.js';
 
 let activeTab = 'mingguan';
 let liveWeekly = null;
@@ -24,6 +25,11 @@ let liveArchives = [];
 let liveSla = [];
 let liveIncidents = [];
 let selectedArchiveId = 'current';
+
+let slaSearchTerm = '';
+let slaSortOrder = 'desc'; // 'desc' (tertinggi) atau 'asc' (terendah)
+let incidentSearchTerm = '';
+let incidentPeriodFilter = 'all'; // 'all', '24h', '7d', '30d'
 
 export async function fetchLiveReports(archiveId = null) {
   const session = getSession();
@@ -34,17 +40,23 @@ export async function fetchLiveReports(archiveId = null) {
       nama: d.nama,
       ip: d.ip,
       grup: d.grup,
+      lokasi: d.lokasi,
+      jenis: d.jenis,
       status: d.status,
-      targetSla: d.uptime24h || 99.0,
+      targetSla: d.target_sla || d.uptime24h || 99.0,
       uptime24h: d.uptime24h || 99.0,
       uptime7d: Math.max(90, (d.uptime24h || 99) - 0.5),
       uptime30d: Math.max(90, (d.uptime24h || 99) - 0.8),
+      isCompliant: (d.uptime24h || 99) >= (d.target_sla || 99),
     }));
     liveIncidents = [
       {
         id: 1,
-        nama: 'PC Marketing 01',
-        ip: '192.168.1.30',
+        device_id: 4,
+        device_nama: 'PC Marketing 01',
+        device_ip: '192.168.1.30',
+        grup: 'Lantai 2',
+        lokasi: 'Ruang Marketing',
         waktu_mulai: new Date(Date.now() - 3600000).toISOString(),
         waktu_selesai: null,
         durasi_menit: 60,
@@ -53,8 +65,11 @@ export async function fetchLiveReports(archiveId = null) {
       },
       {
         id: 2,
-        nama: 'CCTV Gudang Barang',
-        ip: '192.168.2.103',
+        device_id: 13,
+        device_nama: 'CCTV Gudang Barang',
+        device_ip: '192.168.2.103',
+        grup: 'Gudang',
+        lokasi: 'Pintu Gudang B',
         waktu_mulai: new Date(Date.now() - 5400000).toISOString(),
         waktu_selesai: null,
         durasi_menit: 90,
@@ -63,8 +78,11 @@ export async function fetchLiveReports(archiveId = null) {
       },
       {
         id: 3,
-        nama: 'PC Akuntansi 01',
-        ip: '192.168.1.20',
+        device_id: 1,
+        device_nama: 'PC Akuntansi 01',
+        device_ip: '192.168.1.20',
+        grup: 'Lantai 1',
+        lokasi: 'Ruang Akuntansi',
         waktu_mulai: new Date(Date.now() - 28800000).toISOString(),
         waktu_selesai: new Date(Date.now() - 25200000).toISOString(),
         durasi_menit: 60,
@@ -78,17 +96,25 @@ export async function fetchLiveReports(archiveId = null) {
       onlineDevices: 16,
       averageUptime: 99.1,
       targetSla: 99.0,
+      slaCompliancePct: 95.0,
       totalIncidents: 3,
       totalDowntimeHours: 3.5,
       topDevices: liveSla.slice(0, 5),
+      worstDevices: liveSla.slice(15, 20),
+      groupBreakdown: [
+        { grup: 'Lantai 1', total: 6, averageUptime: 99.8 },
+        { grup: 'Lantai 2', total: 5, averageUptime: 98.6 },
+        { grup: 'Server Room', total: 4, averageUptime: 99.9 },
+        { grup: 'Gudang', total: 3, averageUptime: 97.4 },
+      ],
       dailyTrends: [
-        { hari: 'Senin', uptime: 99.8 },
-        { hari: 'Selasa', uptime: 99.5 },
-        { hari: 'Rabu', uptime: 99.1 },
-        { hari: 'Kamis', uptime: 98.9 },
-        { hari: 'Jumat', uptime: 99.4 },
-        { hari: 'Sabtu', uptime: 99.7 },
-        { hari: 'Minggu', uptime: 99.6 },
+        { hari: 'Senin', uptimePct: 99.8, insidenCount: 0 },
+        { hari: 'Selasa', uptimePct: 99.5, insidenCount: 0 },
+        { hari: 'Rabu', uptimePct: 99.1, insidenCount: 1 },
+        { hari: 'Kamis', uptimePct: 98.9, insidenCount: 1 },
+        { hari: 'Jumat', uptimePct: 99.4, insidenCount: 0 },
+        { hari: 'Sabtu', uptimePct: 99.7, insidenCount: 0 },
+        { hari: 'Minggu', uptimePct: 99.6, insidenCount: 1 },
       ],
     };
     liveArchives = [];
@@ -118,9 +144,12 @@ export function renderReports() {
     onlineDevices: liveSla.filter((d) => d.status === 'online').length,
     averageUptime: 99.2,
     targetSla: 99.0,
+    slaCompliancePct: 100.0,
     totalIncidents: liveIncidents.length,
     totalDowntimeHours: 0,
     topDevices: [],
+    worstDevices: [],
+    groupBreakdown: [],
     dailyTrends: [],
   };
 
@@ -167,7 +196,10 @@ export function renderReports() {
                     </option>
                   `).join('')}
                 </select>
-                <button class="btn btn-secondary btn-sm" id="btn-save-weekly-snapshot" title="Simpan snapshot mingguan sekarang ke database">
+                <button class="btn btn-secondary btn-sm" id="btn-refresh-weekly" title="Segarkan dan sinkronkan data terkini dari basis data">
+                  🔄 Sinkronkan Data
+                </button>
+                <button class="btn btn-primary btn-sm" id="btn-save-weekly-snapshot" title="Simpan snapshot mingguan sekarang ke database">
                   💾 Buat Snapshot
                 </button>
                 <span class="badge badge-online">✅ Sinkron SQLite</span>
@@ -176,20 +208,12 @@ export function renderReports() {
 
             <!-- Summary Cards -->
             <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;" id="weekly-cards-container">
-              ${[
-                { label: 'Total Perangkat', val: summary.totalDevices, icon: '📡', color: 'var(--color-accent)' },
-                { label: 'Rata-rata Uptime', val: summary.averageUptime + '%', icon: '📊', color: 'var(--color-online)' },
-                { label: 'Total Insiden', val: summary.totalIncidents, icon: '⚡', color: 'var(--color-offline)' },
-                { label: 'Total Downtime', val: summary.totalDowntimeHours + ' jam', icon: '⏱️', color: 'var(--color-maintenance)' },
-              ].map((s) => `
-                <div class="report-summary-card">
-                  <div style="font-size:1.5rem;">${s.icon}</div>
-                  <div>
-                    <div style="font-size:1.3rem; font-weight:800; color:${s.color};">${s.val}</div>
-                    <div style="font-size:0.78rem; color:var(--color-muted);">${s.label}</div>
-                  </div>
-                </div>
-              `).join('')}
+              ${renderWeeklySummaryCards(summary)}
+            </div>
+
+            <!-- Group Breakdown Chips -->
+            <div id="weekly-group-breakdown-container" style="margin-bottom:16px;">
+              ${renderGroupBreakdown(summary.groupBreakdown)}
             </div>
 
             <!-- Charts -->
@@ -209,38 +233,45 @@ export function renderReports() {
             </div>
 
             <!-- Highlights -->
-            <div class="two-col" style="margin-top:16px;">
-              <div class="card">
-                <div class="section-title" style="margin-bottom:8px;">🏆 Perangkat Terbaik</div>
-                <div style="font-size:1rem; font-weight:700; color:var(--color-online);">${summary.topDevices[0]?.nama || 'Belum ada data'}</div>
-                <div style="font-size:0.8rem; color:var(--color-muted);">Status: ${summary.topDevices[0]?.status || 'normal'} · Target SLA: ${summary.topDevices[0]?.sla || 99}%</div>
-              </div>
-              <div class="card">
-                <div class="section-title" style="margin-bottom:8px;">⚠️ Perhatian & Pemeliharaan</div>
-                <div style="font-size:1rem; font-weight:700; color:var(--color-offline);">${summary.topDevices[summary.topDevices.length - 1]?.nama || 'Semua Perangkat Normal'}</div>
-                <div style="font-size:0.8rem; color:var(--color-muted);">Tercatat otomatis pada snapshot mingguan SQLite</div>
-              </div>
+            <div class="two-col" style="margin-top:16px;" id="weekly-highlights-container">
+              ${renderWeeklyHighlights(summary)}
             </div>
           </div>
 
           <!-- TAB: SLA -->
           <div class="tab-content ${activeTab === 'sla' ? 'active' : ''}" id="tab-content-sla">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
               <div>
                 <div style="font-size:1rem; font-weight:700; color:var(--color-heading);">Uptime & SLA Tracker</div>
-                <div style="font-size:0.78rem; color:var(--color-muted);">Perhitungan: (Waktu Online / Total Waktu Monitoring) × 100</div>
+                <div style="font-size:0.78rem; color:var(--color-muted);">Formula PRD: (Waktu Online / Total Waktu Monitoring) × 100</div>
               </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <select class="form-control" id="sla-period-select" style="width:auto;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <div class="search-input-wrapper" style="min-width:180px;">
+                  <span class="search-icon">🔍</span>
+                  <input type="text" class="form-control" id="sla-search-input" placeholder="Cari nama atau IP..." value="${slaSearchTerm}" style="padding:6px 12px 6px 32px; font-size:0.8rem;" />
+                </div>
+                <select class="form-control" id="sla-period-select" style="width:auto; font-size:0.8rem; padding:6px 10px;">
                   <option value="24h">24 Jam Terakhir</option>
                   <option value="7d">7 Hari Terakhir</option>
                   <option value="30d">30 Hari Terakhir</option>
                 </select>
-                <select class="form-control" id="sla-grup-select" style="width:auto;">
+                <select class="form-control" id="sla-grup-select" style="width:auto; font-size:0.8rem; padding:6px 10px;">
                   <option value="all">Semua Grup</option>
                   ${groups.map((g) => `<option value="${g}">${g}</option>`).join('')}
                 </select>
+                <select class="form-control" id="sla-sort-select" style="width:auto; font-size:0.8rem; padding:6px 10px;" title="Urutan evaluasi">
+                  <option value="desc" ${slaSortOrder === 'desc' ? 'selected' : ''}>Uptime Tertinggi</option>
+                  <option value="asc" ${slaSortOrder === 'asc' ? 'selected' : ''}>⚠️ Uptime Terendah (Prioritas Masalah)</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="sla-export-csv-btn" title="Unduh data SLA dalam format CSV">
+                  📥 Export CSV
+                </button>
               </div>
+            </div>
+
+            <!-- SLA Metrics Overview Bar -->
+            <div id="sla-metrics-summary" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px; margin-bottom:16px;">
+              ${renderSlaMetricsOverview('24h', 'all')}
             </div>
 
             <div class="two-col">
@@ -253,11 +284,14 @@ export function renderReports() {
                     <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--color-offline); height:8px; border-radius:2px;"></div> <95%</div>
                   </div>
                 </div>
-                <div style="height:300px;"><canvas id="sla-uptime-chart"></canvas></div>
+                <div style="height:320px;"><canvas id="sla-uptime-chart"></canvas></div>
               </div>
 
-              <div class="card" style="padding:var(--spacing-md); overflow-y:auto; max-height:380px;">
-                <div class="section-title" style="margin-bottom:12px;">Detail Evaluasi SLA per Perangkat</div>
+              <div class="card" style="padding:var(--spacing-md); overflow-y:auto; max-height:400px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                  <div class="section-title" style="margin-bottom:0;">Detail Evaluasi SLA per Perangkat</div>
+                  <span id="sla-device-count-badge" class="badge badge-neutral" style="font-size:0.7rem;">${liveSla.length} node</span>
+                </div>
                 <div id="sla-device-list">
                   ${renderSLAList('24h', 'all')}
                 </div>
@@ -267,40 +301,36 @@ export function renderReports() {
 
           <!-- TAB: INSIDEN -->
           <div class="tab-content ${activeTab === 'insiden' ? 'active' : ''}" id="tab-content-insiden">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:8px;">
-              <div style="font-size:1rem; font-weight:700; color:var(--color-heading);">Laporan Riwayat Insiden</div>
-              <div style="display:flex; gap:8px;">
-                <select class="form-control" id="insiden-filter" style="width:auto;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+              <div>
+                <div style="font-size:1rem; font-weight:700; color:var(--color-heading);">Laporan Riwayat Insiden Jaringan</div>
+                <div style="font-size:0.78rem; color:var(--color-muted);">Catatan otomatis downtime, durasi gangguan, dan penyebab konektivitas</div>
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <div class="search-input-wrapper" style="min-width:180px;">
+                  <span class="search-icon">🔍</span>
+                  <input type="text" class="form-control" id="insiden-search-input" placeholder="Cari perangkat, IP, lokasi..." value="${incidentSearchTerm}" style="padding:6px 12px 6px 32px; font-size:0.8rem;" />
+                </div>
+                <select class="form-control" id="insiden-period-select" style="width:auto; font-size:0.8rem; padding:6px 10px;">
+                  <option value="all">Semua Waktu</option>
+                  <option value="24h">24 Jam Terakhir</option>
+                  <option value="7d">7 Hari Terakhir</option>
+                  <option value="30d">30 Hari Terakhir</option>
+                </select>
+                <select class="form-control" id="insiden-filter" style="width:auto; font-size:0.8rem; padding:6px 10px;">
                   <option value="all">Semua Status</option>
                   <option value="aktif">Sedang Berlangsung</option>
                   <option value="selesai">Selesai</option>
                 </select>
+                <button class="btn btn-secondary btn-sm" id="insiden-export-csv-btn" title="Unduh riwayat insiden dalam format CSV">
+                  📥 Export CSV
+                </button>
               </div>
             </div>
 
-            <!-- Stats -->
-            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-bottom:20px;">
-              <div class="report-summary-card">
-                <span style="font-size:1.5rem;">⚡</span>
-                <div>
-                  <div class="stat-value text-offline">${liveIncidents.length}</div>
-                  <div style="font-size:0.78rem; color:var(--color-muted);">Total Insiden</div>
-                </div>
-              </div>
-              <div class="report-summary-card">
-                <span style="font-size:1.5rem;">🔴</span>
-                <div>
-                  <div class="stat-value text-offline">${liveIncidents.filter((i) => !i.waktu_selesai).length}</div>
-                  <div style="font-size:0.78rem; color:var(--color-muted);">Aktif Sekarang</div>
-                </div>
-              </div>
-              <div class="report-summary-card">
-                <span style="font-size:1.5rem;">✅</span>
-                <div>
-                  <div class="stat-value text-online">${liveIncidents.filter((i) => i.waktu_selesai).length}</div>
-                  <div style="font-size:0.78rem; color:var(--color-muted);">Insiden Selesai</div>
-                </div>
-              </div>
+            <!-- Stats Insiden & MTTR -->
+            <div id="insiden-metrics-container" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-bottom:20px;">
+              ${renderIncidentStats()}
             </div>
 
             <div id="insiden-list">
@@ -313,16 +343,175 @@ export function renderReports() {
   `;
 }
 
+function renderWeeklySummaryCards(summary) {
+  const cards = [
+    { label: 'Total Perangkat', val: summary.totalDevices || 0, icon: '📡', color: 'var(--color-accent)' },
+    { label: 'Rata-rata Uptime', val: (summary.averageUptime ?? 100) + '%', icon: '📊', color: 'var(--color-online)' },
+    { label: 'Kepatuhan Target SLA', val: (summary.slaCompliancePct ?? 100) + '%', icon: '🎯', color: (summary.slaCompliancePct ?? 100) >= 95 ? 'var(--color-online)' : 'var(--color-maintenance)' },
+    { label: 'Total Insiden', val: summary.totalIncidents || 0, icon: '⚡', color: 'var(--color-offline)' },
+    { label: 'Total Downtime', val: (summary.totalDowntimeHours || 0) + ' jam', icon: '⏱️', color: 'var(--color-maintenance)' },
+  ];
+
+  return cards.map((s) => `
+    <div class="report-summary-card">
+      <div style="font-size:1.5rem;">${s.icon}</div>
+      <div>
+        <div style="font-size:1.25rem; font-weight:800; color:${s.color};">${s.val}</div>
+        <div style="font-size:0.78rem; color:var(--color-muted);">${s.label}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderGroupBreakdown(breakdown = []) {
+  if (!breakdown || breakdown.length === 0) return '';
+  return `
+    <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:10px 14px;">
+      <div style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+        🏢 Distribusi Performa Uptime per Grup Kantor:
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        ${breakdown.map((g) => {
+          const color = g.averageUptime >= 99 ? 'var(--color-online)' : g.averageUptime >= 95 ? 'var(--color-maintenance)' : 'var(--color-offline)';
+          return `
+            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:4px 10px; font-size:0.78rem; display:flex; align-items:center; gap:6px;">
+              <span style="font-weight:600; color:var(--color-heading);">${g.grup}</span>
+              <span style="color:var(--color-muted);">(${g.total} device)</span>
+              <span style="font-weight:700; color:${color}; font-family:var(--font-mono);">${g.averageUptime}%</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderWeeklyHighlights(summary) {
+  const topList = summary.topDevices || [];
+  const worstList = summary.worstDevices || [];
+
+  return `
+    <div class="card" style="padding:var(--spacing-md);">
+      <div class="section-title" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+        <span>🏆 Perangkat Paling Andal (Top 5)</span>
+        <span class="badge badge-online" style="font-size:0.7rem;">Online Tertinggi</span>
+      </div>
+      ${topList.length === 0 ? '<div style="font-size:0.8rem; color:var(--color-muted);">Belum ada data evaluasi</div>' : `
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${topList.slice(0, 5).map((d) => `
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+              <div>
+                <strong style="color:var(--color-text);">${d.nama}</strong>
+                <span style="font-size:0.72rem; color:var(--color-muted); margin-left:6px;" title="${d.ip}">${cleanDeviceIp(d.ip)} (${d.grup || 'Umum'})</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="badge badge-online">${d.uptime}%</span>
+                <span style="font-size:0.75rem; color:var(--color-muted);">Target: ${d.sla}%</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+
+    <div class="card" style="padding:var(--spacing-md);">
+      <div class="section-title" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+        <span>⚠️ Perhatian & Diagnostik (Prioritas)</span>
+        <span class="badge badge-offline" style="font-size:0.7rem;">Uptime Rendah / Ada Insiden</span>
+      </div>
+      ${worstList.length === 0 ? '<div style="font-size:0.8rem; color:var(--color-muted);">Semua perangkat beroperasi normal</div>' : `
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${worstList.slice(0, 5).map((d) => `
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+              <div>
+                <strong style="color:var(--color-text);">${d.nama}</strong>
+                <span style="font-size:0.72rem; color:var(--color-muted); margin-left:6px;" title="${d.ip}">${cleanDeviceIp(d.ip)} (${d.grup || 'Umum'})</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="badge ${d.uptime >= 99 ? 'badge-online' : d.uptime >= 95 ? 'badge-maintenance' : 'badge-offline'}">${d.uptime}%</span>
+                <span style="font-size:0.75rem; color:var(--color-muted);">${d.incidentsCount || 0} insiden</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function getFilteredSlaData(period = '24h', grup = 'all') {
+  const fieldMap = { '24h': 'uptime24h', '7d': 'uptime7d', '30d': 'uptime30d' };
+  const field = fieldMap[period] || 'uptime24h';
+
+  let data = [...liveSla];
+  if (grup !== 'all') {
+    data = data.filter((d) => d.grup === grup);
+  }
+
+  if (slaSearchTerm && slaSearchTerm.trim()) {
+    const q = slaSearchTerm.trim().toLowerCase();
+    data = data.filter((d) => (d.nama || '').toLowerCase().includes(q) || (d.ip || '').includes(q));
+  }
+
+  data.sort((a, b) => {
+    const valA = a[field] ?? 99.0;
+    const valB = b[field] ?? 99.0;
+    return slaSortOrder === 'asc' ? valA - valB : valB - valA;
+  });
+
+  return data;
+}
+
+function renderSlaMetricsOverview(period, grup) {
+  const data = getFilteredSlaData(period, grup);
+  const fieldMap = { '24h': 'uptime24h', '7d': 'uptime7d', '30d': 'uptime30d' };
+  const field = fieldMap[period] || 'uptime24h';
+
+  const total = data.length;
+  const compliantCount = data.filter((d) => (d[field] ?? 99.0) >= (d.targetSla || 99.0)).length;
+  const compliancePct = total > 0 ? Math.round((compliantCount / total) * 100) : 100;
+  const avgUptime = total > 0 ? (data.reduce((acc, d) => acc + (d[field] ?? 99.0), 0) / total).toFixed(1) : '100.0';
+
+  return `
+    <div class="report-summary-card" style="padding:10px 14px;">
+      <span style="font-size:1.3rem;">🎯</span>
+      <div>
+        <div style="font-size:1.15rem; font-weight:800; color:${compliancePct >= 95 ? 'var(--color-online)' : 'var(--color-maintenance)'};">${compliancePct}%</div>
+        <div style="font-size:0.75rem; color:var(--color-muted);">Kepatuhan Target SLA</div>
+      </div>
+    </div>
+    <div class="report-summary-card" style="padding:10px 14px;">
+      <span style="font-size:1.3rem;">📊</span>
+      <div>
+        <div style="font-size:1.15rem; font-weight:800; color:var(--color-online);">${avgUptime}%</div>
+        <div style="font-size:0.75rem; color:var(--color-muted);">Rata-rata Uptime (${period})</div>
+      </div>
+    </div>
+    <div class="report-summary-card" style="padding:10px 14px;">
+      <span style="font-size:1.3rem;">✅</span>
+      <div>
+        <div style="font-size:1.15rem; font-weight:800; color:var(--color-online);">${compliantCount} <span style="font-size:0.75rem; color:var(--color-muted); font-weight:500;">/ ${total} node</span></div>
+        <div style="font-size:0.75rem; color:var(--color-muted);">Memenuhi Standar SLA</div>
+      </div>
+    </div>
+    <div class="report-summary-card" style="padding:10px 14px;">
+      <span style="font-size:1.3rem;">⚠️</span>
+      <div>
+        <div style="font-size:1.15rem; font-weight:800; color:${total - compliantCount > 0 ? 'var(--color-offline)' : 'var(--color-muted)'};">${total - compliantCount}</div>
+        <div style="font-size:0.75rem; color:var(--color-muted);">Di Bawah Target SLA</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderSLAList(period, grup) {
   const fieldMap = { '24h': 'uptime24h', '7d': 'uptime7d', '30d': 'uptime30d' };
   const field = fieldMap[period] || 'uptime24h';
 
-  let data = liveSla;
-  if (grup !== 'all') data = data.filter((d) => d.grup === grup);
-  data = [...data].sort((a, b) => (b[field] || 0) - (a[field] || 0));
+  const data = getFilteredSlaData(period, grup);
 
   if (data.length === 0) {
-    return `<div class="empty-state" style="padding:20px;"><div class="empty-icon">📊</div><div class="empty-title">Tidak ada data SLA</div></div>`;
+    return `<div class="empty-state" style="padding:24px;"><div class="empty-icon">📊</div><div class="empty-title">Tidak ada data SLA cocok</div><div class="empty-desc">Coba sesuaikan kata kunci pencarian atau filter grup</div></div>`;
   }
 
   return data.map((d) => {
@@ -335,7 +524,7 @@ function renderSLAList(period, grup) {
       <div class="sla-device-row">
         <div class="sla-device-name">
           <div style="font-weight:600; font-size:0.85rem; color:var(--color-text);">${d.nama}</div>
-          <div style="font-size:0.72rem; color:var(--color-muted);">${d.ip} · Target: ${target}% · ${d.grup || 'Umum'}</div>
+          <div style="font-size:0.72rem; color:var(--color-muted);" title="${d.ip}">${cleanDeviceIp(d.ip)} · Target: ${target}% · ${d.grup || 'Umum'}</div>
         </div>
         <div class="sla-bar-wrapper">
           <div class="uptime-bar">
@@ -351,13 +540,90 @@ function renderSLAList(period, grup) {
   }).join('');
 }
 
+function getFilteredIncidentData(statusFilter = 'all') {
+  let data = [...liveIncidents];
+
+  if (statusFilter === 'aktif') data = data.filter((i) => !i.waktu_selesai);
+  if (statusFilter === 'selesai') data = data.filter((i) => i.waktu_selesai);
+
+  // Filter waktu
+  if (incidentPeriodFilter !== 'all') {
+    const cutoffMs = {
+      '24h': 24 * 60 * 60 * 1000,
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+    }[incidentPeriodFilter] || Infinity;
+
+    const now = Date.now();
+    data = data.filter((i) => {
+      const t = new Date(i.waktu_mulai || i.mulai).getTime();
+      return now - t <= cutoffMs;
+    });
+  }
+
+  // Filter pencarian
+  if (incidentSearchTerm && incidentSearchTerm.trim()) {
+    const q = incidentSearchTerm.trim().toLowerCase();
+    data = data.filter((i) => {
+      const devName = (i.device_nama || i.nama || i.device || '').toLowerCase();
+      const devIp = (i.device_ip || i.ip || '').toLowerCase();
+      const devGrup = (i.grup || '').toLowerCase();
+      const devLokasi = (i.lokasi || '').toLowerCase();
+      const desc = (i.penyebab || i.keterangan || '').toLowerCase();
+      return devName.includes(q) || devIp.includes(q) || devGrup.includes(q) || devLokasi.includes(q) || desc.includes(q);
+    });
+  }
+
+  return data;
+}
+
+function renderIncidentStats() {
+  const all = liveIncidents;
+  const active = all.filter((i) => !i.waktu_selesai);
+  const finished = all.filter((i) => i.waktu_selesai);
+
+  // Hitung MTTR (Mean Time to Resolution)
+  const totalMins = finished.reduce((acc, i) => acc + (i.durasi_menit || 0), 0);
+  const mttrMins = finished.length > 0 ? Math.round(totalMins / finished.length) : 0;
+  const mttrFormatted = mttrMins >= 60 ? `${(mttrMins / 60).toFixed(1)} jam` : `${mttrMins} mnt`;
+
+  return `
+    <div class="report-summary-card">
+      <span style="font-size:1.5rem;">⚡</span>
+      <div>
+        <div class="stat-value text-offline">${all.length}</div>
+        <div style="font-size:0.78rem; color:var(--color-muted);">Total Insiden</div>
+      </div>
+    </div>
+    <div class="report-summary-card">
+      <span style="font-size:1.5rem;">🔴</span>
+      <div>
+        <div class="stat-value text-offline">${active.length}</div>
+        <div style="font-size:0.78rem; color:var(--color-muted);">Aktif Sekarang</div>
+      </div>
+    </div>
+    <div class="report-summary-card">
+      <span style="font-size:1.5rem;">✅</span>
+      <div>
+        <div class="stat-value text-online">${finished.length}</div>
+        <div style="font-size:0.78rem; color:var(--color-muted);">Insiden Selesai</div>
+      </div>
+    </div>
+    <div class="report-summary-card">
+      <span style="font-size:1.5rem;">⏱️</span>
+      <div>
+        <div class="stat-value" style="color:var(--color-maintenance);">${mttrFormatted}</div>
+        <div style="font-size:0.78rem; color:var(--color-muted);">Rata-rata MTTR (Penanganan)</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderInsidenList(filter) {
-  let data = liveIncidents;
-  if (filter === 'aktif') data = data.filter((i) => !i.waktu_selesai);
-  if (filter === 'selesai') data = data.filter((i) => i.waktu_selesai);
+  const data = getFilteredIncidentData(filter);
 
   if (data.length === 0) {
-    return `<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">Tidak ada insiden tercatat</div><div class="empty-desc">Seluruh perangkat berjalan lancar</div></div>`;
+    return `<div class="empty-state" style="padding:32px;"><div class="empty-icon">✅</div><div class="empty-title">Tidak ada insiden tercatat</div><div class="empty-desc">Seluruh perangkat berjalan lancar atau tidak cocok dengan filter aktif</div></div>`;
   }
 
   return `
@@ -366,11 +632,12 @@ function renderInsidenList(filter) {
         <thead>
           <tr>
             <th>Perangkat</th>
+            <th>Grup & Lokasi</th>
             <th>Waktu Mulai</th>
             <th>Waktu Selesai</th>
             <th>Durasi</th>
             <th>Status</th>
-            <th>Keterangan</th>
+            <th>Penyebab / Keterangan</th>
           </tr>
         </thead>
         <tbody>
@@ -379,14 +646,18 @@ function renderInsidenList(filter) {
             return `
               <tr class="${isAktif ? 'log-offline' : ''}">
                 <td>
-                  <div style="font-weight:600; color:var(--color-heading);">${inc.device_nama || inc.device || 'Perangkat'}</div>
-                  <div class="ip-text">${inc.device_ip || inc.ip || ''}</div>
+                  <div style="font-weight:600; color:var(--color-heading);">${inc.device_nama || inc.nama || inc.device || 'Perangkat'}</div>
+                  <div class="ip-text" title="${inc.device_ip || inc.ip || ''}">${cleanDeviceIp(inc.device_ip || inc.ip || '')}</div>
                 </td>
-                <td style="font-size:0.8rem; color:var(--color-muted); white-space:nowrap;">
+                <td style="font-size:0.78rem; color:var(--color-text-secondary);">
+                  <div>🏢 <strong>${inc.grup || 'Umum'}</strong></div>
+                  <div style="color:var(--color-muted); font-size:0.72rem;">📍 ${inc.lokasi || '-'}</div>
+                </td>
+                <td style="font-size:0.78rem; color:var(--color-muted); white-space:nowrap;">
                   ${formatDateWithTz(inc.waktu_mulai || inc.mulai)}
                 </td>
-                <td style="font-size:0.8rem; color:var(--color-muted); white-space:nowrap;">
-                  ${inc.waktu_selesai ? formatDateWithTz(inc.waktu_selesai) : '—'}
+                <td style="font-size:0.78rem; color:var(--color-muted); white-space:nowrap;">
+                  ${inc.waktu_selesai ? formatDateWithTz(inc.waktu_selesai) : '<span style="color:#ef4444; font-weight:700;">Masih Berlangsung</span>'}
                 </td>
                 <td>
                   ${inc.durasi_menit ? `<span class="chip">⏱️ ${inc.durasi_menit} mnt</span>` : (isAktif ? '<span style="color:var(--color-offline); font-weight:700; font-size:0.8rem;">Aktif</span>' : '—')}
@@ -396,7 +667,9 @@ function renderInsidenList(filter) {
                     ${isAktif ? '🔴 Aktif' : '⚫ Selesai'}
                   </span>
                 </td>
-                <td style="font-size:0.82rem; color:var(--color-text-secondary); max-width:250px;">${inc.penyebab || inc.keterangan || 'Gangguan konektivitas'}</td>
+                <td style="font-size:0.82rem; color:var(--color-text-secondary); max-width:260px;">
+                  ${inc.penyebab || inc.keterangan || 'Gangguan konektivitas'}
+                </td>
               </tr>
             `;
           }).join('')}
@@ -406,12 +679,135 @@ function renderInsidenList(filter) {
   `;
 }
 
+function exportSlaCsv() {
+  const period = document.getElementById('sla-period-select')?.value || '24h';
+  const grup = document.getElementById('sla-grup-select')?.value || 'all';
+  const data = getFilteredSlaData(period, grup);
+
+  const headers = ['ID', 'Nama Perangkat', 'IP Address', 'Grup', 'Status', 'Target SLA (%)', 'Uptime 24h (%)', 'Uptime 7d (%)', 'Uptime 30d (%)', 'Kepatuhan'];
+  const rows = data.map((d) => [
+    d.id,
+    `"${(d.nama || '').replace(/"/g, '""')}"`,
+    cleanDeviceIp(d.ip),
+    `"${(d.grup || 'Umum').replace(/"/g, '""')}"`,
+    d.status,
+    d.targetSla || 99.0,
+    d.uptime24h || 100,
+    d.uptime7d || 100,
+    d.uptime30d || 100,
+    (d.uptime24h || 100) >= (d.targetSla || 99) ? 'MEMENUHI' : 'DI BAWAH TARGET',
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `laporan-sla-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  Swal.fire({
+    toast: true,
+    icon: 'success',
+    title: 'Data SLA Berhasil Diekspor',
+    text: `${rows.length} perangkat telah diekspor ke CSV.`,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 2000,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+  });
+}
+
+function exportIncidentCsv() {
+  const statusFilter = document.getElementById('insiden-filter')?.value || 'all';
+  const data = getFilteredIncidentData(statusFilter);
+
+  const headers = ['ID', 'Perangkat', 'IP Address', 'Grup', 'Lokasi', 'Waktu Mulai', 'Waktu Selesai', 'Durasi (Menit)', 'Status', 'Penyebab / Keterangan'];
+  const rows = data.map((i) => [
+    i.id,
+    `"${(i.device_nama || i.nama || i.device || '').replace(/"/g, '""')}"`,
+    cleanDeviceIp(i.device_ip || i.ip || ''),
+    `"${(i.grup || 'Umum').replace(/"/g, '""')}"`,
+    `"${(i.lokasi || '-').replace(/"/g, '""')}"`,
+    i.waktu_mulai || '',
+    i.waktu_selesai || 'Sedang Berlangsung',
+    i.durasi_menit || 0,
+    i.waktu_selesai ? 'Selesai' : 'Aktif',
+    `"${(i.penyebab || i.keterangan || '').replace(/"/g, '""')}"`,
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `laporan-insiden-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  Swal.fire({
+    toast: true,
+    icon: 'success',
+    title: 'Data Insiden Berhasil Diekspor',
+    text: `${rows.length} baris insiden telah diekspor ke CSV.`,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 2000,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+  });
+}
+
+function updateWeeklyReactiveUI() {
+  if (!liveWeekly) return;
+
+  const sub = document.getElementById('weekly-period-subtitle');
+  if (sub) sub.innerText = `Periode: ${liveWeekly.periode}`;
+
+  const cardsContainer = document.getElementById('weekly-cards-container');
+  if (cardsContainer) cardsContainer.innerHTML = renderWeeklySummaryCards(liveWeekly);
+
+  const breakdownContainer = document.getElementById('weekly-group-breakdown-container');
+  if (breakdownContainer) breakdownContainer.innerHTML = renderGroupBreakdown(liveWeekly.groupBreakdown);
+
+  const highlightsContainer = document.getElementById('weekly-highlights-container');
+  if (highlightsContainer) highlightsContainer.innerHTML = renderWeeklyHighlights(liveWeekly);
+}
+
+function updateSlaReactiveUI() {
+  const period = document.getElementById('sla-period-select')?.value || '24h';
+  const grup = document.getElementById('sla-grup-select')?.value || 'all';
+
+  const list = document.getElementById('sla-device-list');
+  if (list) list.innerHTML = renderSLAList(period, grup);
+
+  const overview = document.getElementById('sla-metrics-summary');
+  if (overview) overview.innerHTML = renderSlaMetricsOverview(period, grup);
+
+  const countBadge = document.getElementById('sla-device-count-badge');
+  const filtered = getFilteredSlaData(period, grup);
+  if (countBadge) countBadge.textContent = `${filtered.length} node`;
+
+  const fieldMap = { '24h': 'uptime24h', '7d': 'uptime7d', '30d': 'uptime30d' };
+  renderUptimeBar('sla-uptime-chart', filtered, fieldMap[period]);
+}
+
+function updateIncidentReactiveUI() {
+  const statusFilter = document.getElementById('insiden-filter')?.value || 'all';
+  const list = document.getElementById('insiden-list');
+  if (list) list.innerHTML = renderInsidenList(statusFilter);
+
+  const stats = document.getElementById('insiden-metrics-container');
+  if (stats) stats.innerHTML = renderIncidentStats();
+}
+
 export function initReportsEvents() {
   fetchLiveReports().then(() => {
-    const list = document.getElementById('sla-device-list');
-    if (list) list.innerHTML = renderSLAList('24h', 'all');
-    const incList = document.getElementById('insiden-list');
-    if (incList) incList.innerHTML = renderInsidenList('all');
+    updateWeeklyReactiveUI();
+    updateSlaReactiveUI();
+    updateIncidentReactiveUI();
     initWeeklyCharts();
   });
 
@@ -424,8 +820,16 @@ export function initReportsEvents() {
       btn.classList.add('active');
       document.getElementById(`tab-content-${activeTab}`)?.classList.add('active');
 
-      if (activeTab === 'mingguan') initWeeklyCharts();
-      if (activeTab === 'sla') initSLACharts();
+      if (activeTab === 'mingguan') {
+        updateWeeklyReactiveUI();
+        initWeeklyCharts();
+      }
+      if (activeTab === 'sla') {
+        updateSlaReactiveUI();
+      }
+      if (activeTab === 'insiden') {
+        updateIncidentReactiveUI();
+      }
     });
   });
 
@@ -434,11 +838,17 @@ export function initReportsEvents() {
     selectedArchiveId = e.target.value;
     const archId = selectedArchiveId === 'current' ? null : selectedArchiveId;
     await fetchLiveReports(archId);
-
-    const sub = document.getElementById('weekly-period-subtitle');
-    if (sub && liveWeekly) sub.innerText = `Periode: ${liveWeekly.periode}`;
-
+    updateWeeklyReactiveUI();
     initWeeklyCharts();
+  });
+
+  // Refresh weekly button
+  document.getElementById('btn-refresh-weekly')?.addEventListener('click', async () => {
+    Swal.showLoading();
+    await fetchLiveReports(selectedArchiveId === 'current' ? null : selectedArchiveId);
+    updateWeeklyReactiveUI();
+    initWeeklyCharts();
+    Swal.close();
   });
 
   // Manual Snapshot button
@@ -447,6 +857,7 @@ export function initReportsEvents() {
       Swal.showLoading();
       await apiSaveWeeklySnapshot();
       await fetchLiveReports();
+      updateWeeklyReactiveUI();
       Swal.fire({
         icon: 'success',
         title: 'Snapshot Tersimpan',
@@ -461,28 +872,30 @@ export function initReportsEvents() {
     }
   });
 
-  // SLA filters
-  document.getElementById('sla-period-select')?.addEventListener('change', () => {
-    const period = document.getElementById('sla-period-select').value;
-    const grup = document.getElementById('sla-grup-select').value;
-    const list = document.getElementById('sla-device-list');
-    if (list) list.innerHTML = renderSLAList(period, grup);
-    const fieldMap = { '24h': 'uptime24h', '7d': 'uptime7d', '30d': 'uptime30d' };
-    renderUptimeBar('sla-uptime-chart', liveSla, fieldMap[period]);
+  // SLA Event Handlers
+  document.getElementById('sla-period-select')?.addEventListener('change', updateSlaReactiveUI);
+  document.getElementById('sla-grup-select')?.addEventListener('change', updateSlaReactiveUI);
+  document.getElementById('sla-sort-select')?.addEventListener('change', (e) => {
+    slaSortOrder = e.target.value;
+    updateSlaReactiveUI();
   });
+  document.getElementById('sla-search-input')?.addEventListener('input', (e) => {
+    slaSearchTerm = e.target.value;
+    updateSlaReactiveUI();
+  });
+  document.getElementById('sla-export-csv-btn')?.addEventListener('click', exportSlaCsv);
 
-  document.getElementById('sla-grup-select')?.addEventListener('change', () => {
-    const period = document.getElementById('sla-period-select').value;
-    const grup = document.getElementById('sla-grup-select').value;
-    const list = document.getElementById('sla-device-list');
-    if (list) list.innerHTML = renderSLAList(period, grup);
+  // Insiden Event Handlers
+  document.getElementById('insiden-filter')?.addEventListener('change', updateIncidentReactiveUI);
+  document.getElementById('insiden-period-select')?.addEventListener('change', (e) => {
+    incidentPeriodFilter = e.target.value;
+    updateIncidentReactiveUI();
   });
-
-  // Insiden filter
-  document.getElementById('insiden-filter')?.addEventListener('change', (e) => {
-    const list = document.getElementById('insiden-list');
-    if (list) list.innerHTML = renderInsidenList(e.target.value);
+  document.getElementById('insiden-search-input')?.addEventListener('input', (e) => {
+    incidentSearchTerm = e.target.value;
+    updateIncidentReactiveUI();
   });
+  document.getElementById('insiden-export-csv-btn')?.addEventListener('click', exportIncidentCsv);
 
   // REAL Export PDF
   document.getElementById('report-export-btn')?.addEventListener('click', async () => {
@@ -535,11 +948,5 @@ function initWeeklyCharts() {
     ];
     renderWeeklyTrend('weekly-trend-chart', trends.map((t) => ({ hari: t.hari, avgUptime: t.uptimePct, insiden: t.insidenCount })));
     renderIncidentBar('weekly-incident-chart', trends.map((t) => ({ hari: t.hari, avgUptime: t.uptimePct, insiden: t.insidenCount })));
-  }, 100);
-}
-
-function initSLACharts() {
-  setTimeout(() => {
-    renderUptimeBar('sla-uptime-chart', liveSla, 'uptime24h');
   }, 100);
 }

@@ -81,18 +81,49 @@ export function addDevice(device) {
 export function cleanDeviceIp(rawIp) {
   if (!rawIp) return '';
   const s = String(rawIp).trim();
-  if (s.includes('://') || s.includes('@')) {
-    const ipMatch = s.match(/@([a-zA-Z0-9.\-_]+)(?::\d+)?/);
-    if (ipMatch) return ipMatch[1];
-    try {
-      let normalized = s;
-      if (/^r[ts]{2}p:\/\//i.test(normalized)) {
-        normalized = normalized.replace(/^r[ts]{2}p:\/\//i, 'http://');
-      }
-      const u = new URL(normalized);
-      return u.hostname || s;
-    } catch {}
+
+  // 1. Jika mengandung format URL / credentials / path
+  if (s.includes('://') || s.includes('@') || s.includes('/')) {
+    // Hilangkan scheme jika ada (rtsp://, rstp://, http://, dsb.)
+    const rest = s.replace(/^[a-zA-Z0-9+-.]+:\/\//, '');
+
+    // Ambil authority (sebelum path '/' atau query '?')
+    const slashIdx = rest.indexOf('/');
+    const questionIdx = rest.indexOf('?');
+    let splitIdx = -1;
+    if (slashIdx !== -1 && questionIdx !== -1) {
+      splitIdx = Math.min(slashIdx, questionIdx);
+    } else if (slashIdx !== -1) {
+      splitIdx = slashIdx;
+    } else if (questionIdx !== -1) {
+      splitIdx = questionIdx;
+    }
+    const authority = splitIdx !== -1 ? rest.slice(0, splitIdx) : rest;
+
+    // Ambil host:port setelah '@' TERAKHIR (menghindari pemotongan password yang mengandung '@')
+    const lastAt = authority.lastIndexOf('@');
+    const hostPort = lastAt !== -1 ? authority.slice(lastAt + 1) : authority;
+
+    // Pisahkan port jika ada
+    let host = hostPort;
+    if (hostPort.startsWith('[')) {
+      const endBracket = hostPort.indexOf(']');
+      if (endBracket !== -1) host = hostPort.slice(1, endBracket);
+    } else if (hostPort.includes(':')) {
+      host = hostPort.split(':')[0];
+    }
+
+    if (host && host.trim()) return host.trim();
   }
+
+  // 2. Jika IP biasa dengan port (e.g. 192.168.1.1:80)
+  if (s.includes(':') && !s.includes('::')) {
+    const parts = s.split(':');
+    if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+      return parts[0].trim();
+    }
+  }
+
   return s;
 }
 

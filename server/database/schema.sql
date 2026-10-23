@@ -6,6 +6,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nama TEXT NOT NULL,
+  username TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   role TEXT CHECK(role IN ('admin', 'teknisi', 'viewer')) NOT NULL DEFAULT 'viewer',

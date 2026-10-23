@@ -146,12 +146,54 @@ export function getWeeklyReport(reportId = null) {
 
   const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
   const dailyTrends = days.map((day, idx) => {
-    const dayIncidents = incidents.filter((_, i) => i % 7 === idx).length;
+    // (getDay() + 6) % 7: Senin=0, Selasa=1, ..., Minggu=6
+    const dayIncidents = incidents.filter((inc) => {
+      if (!inc.waktu_mulai) return false;
+      const d = new Date(inc.waktu_mulai);
+      const incDayIndex = (d.getDay() + 6) % 7;
+      return incDayIndex === idx;
+    }).length;
+
     return {
       hari: day,
-      // Cap ke [0, 100]; kurangi 0.4 per insiden di hari itu, tapi jangan pernah >100
       uptimePct: +Math.min(100, Math.max(0, actualUptimePct - (dayIncidents > 0 ? 0.4 * dayIncidents : 0))).toFixed(1),
       insidenCount: dayIncidents,
+    };
+  });
+
+  const devStats = devices.map((d) => {
+    const devInc = incidents.filter((i) => i.device_id === d.id);
+    const devDown = devInc.reduce((acc, i) => acc + (i.durasi_menit || 0), 0);
+    const devCap = 7 * 24 * 60;
+    const uptime = +Math.max(0, Math.min(100, ((devCap - devDown) / devCap) * 100)).toFixed(1);
+    const target = d.target_sla || 99.0;
+    return {
+      id: d.id,
+      nama: d.nama,
+      ip: d.ip,
+      grup: d.grup,
+      sla: target,
+      uptime,
+      status: d.status,
+      incidentsCount: devInc.length,
+      isCompliant: uptime >= target,
+    };
+  });
+
+  const sortedBest = [...devStats].sort((a, b) => b.uptime - a.uptime);
+  const sortedWorst = [...devStats].sort((a, b) => a.uptime - b.uptime);
+
+  const compliantCount = devStats.filter((d) => d.isCompliant).length;
+  const slaCompliancePct = total > 0 ? +((compliantCount / total) * 100).toFixed(1) : 100.0;
+
+  const groups = [...new Set(devices.map((d) => d.grup).filter(Boolean))];
+  const groupBreakdown = groups.map((g) => {
+    const gDevs = devStats.filter((d) => d.grup === g);
+    const avgUptime = gDevs.reduce((acc, d) => acc + d.uptime, 0) / (gDevs.length || 1);
+    return {
+      grup: g,
+      total: gDevs.length,
+      averageUptime: +avgUptime.toFixed(1),
     };
   });
 
@@ -170,15 +212,10 @@ export function getWeeklyReport(reportId = null) {
     totalIncidents: incidents.length,
     totalDowntimeHours: +(totalDowntimeMinutes / 60).toFixed(1),
     dailyTrends,
-    topDevices: devices.slice(0, 5).map((d) => ({
-      id: d.id,
-      nama: d.nama,
-      ip: d.ip,
-      sla: d.target_sla,
-      // Tidak tambahkan bonus palsu — uptime = target_sla jika online, dikurangi 1.5 jika offline
-      uptime: +Math.min(100, Math.max(0, d.target_sla + (d.status === 'online' ? 0 : -1.5))).toFixed(1),
-      status: d.status,
-    })),
+    slaCompliancePct,
+    groupBreakdown,
+    topDevices: sortedBest.slice(0, 5),
+    worstDevices: sortedWorst.slice(0, 5),
   };
 
   return reportData;

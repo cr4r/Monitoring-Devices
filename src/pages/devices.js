@@ -17,6 +17,29 @@ let filterGrup = 'all';
 let filterStatus = 'all';
 let filterJenis = 'all';
 let selectedDeviceIds = new Set();
+let sortColumn = 'ip';
+let sortDirection = 'asc';
+
+function parseIpOctets(ipStr = '') {
+  const clean = cleanDeviceIp(ipStr);
+  const match = clean.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/);
+  if (!match) return null;
+  return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10), parseInt(match[4], 10)];
+}
+
+function compareDeviceIps(ipA = '', ipB = '') {
+  const octA = parseIpOctets(ipA);
+  const octB = parseIpOctets(ipB);
+  if (octA && octB) {
+    for (let i = 0; i < 4; i++) {
+      if (octA[i] !== octB[i]) return octA[i] - octB[i];
+    }
+    return 0;
+  }
+  if (octA && !octB) return -1;
+  if (!octA && octB) return 1;
+  return cleanDeviceIp(ipA).localeCompare(cleanDeviceIp(ipB));
+}
 
 export function renderDevices() {
   const session = getSession();
@@ -93,7 +116,7 @@ export function renderDevices() {
 }
 
 function getFiltered() {
-  return mockDevices.filter((d) => {
+  const list = mockDevices.filter((d) => {
     if (filterJenis !== 'all') {
       const j = (d.jenis || '').toLowerCase();
       if (!j.includes(filterJenis)) return false;
@@ -110,6 +133,33 @@ function getFiltered() {
     }
     return true;
   });
+
+  // Sorting
+  list.sort((a, b) => {
+    let result = 0;
+    if (sortColumn === 'ip') {
+      result = compareDeviceIps(a.ip, b.ip);
+    } else if (sortColumn === 'nama') {
+      result = (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base' });
+    } else if (sortColumn === 'jenis') {
+      result = (a.jenis || '').localeCompare(b.jenis || '', 'id', { sensitivity: 'base' });
+    } else if (sortColumn === 'metode') {
+      result = (a.metode || '').localeCompare(b.metode || '', 'id', { sensitivity: 'base' });
+    } else if (sortColumn === 'interval') {
+      result = (parseInt(a.interval, 10) || 0) - (parseInt(b.interval, 10) || 0);
+    } else if (sortColumn === 'grup') {
+      result = (a.grup || '').localeCompare(b.grup || '', 'id', { sensitivity: 'base' });
+    } else if (sortColumn === 'lastCheck') {
+      const tA = a.lastChecked ? new Date(a.lastChecked).getTime() : 0;
+      const tB = b.lastChecked ? new Date(b.lastChecked).getTime() : 0;
+      result = tA - tB;
+    } else if (sortColumn === 'status') {
+      result = (a.status || '').localeCompare(b.status || '', 'id', { sensitivity: 'base' });
+    }
+    return sortDirection === 'desc' ? -result : result;
+  });
+
+  return list;
 }
 
 function renderDevicesTable(canEdit, isAdmin) {
@@ -215,6 +265,15 @@ function renderDevicesTable(canEdit, isAdmin) {
 
   const allPagedSelected = paged.length > 0 && paged.every((d) => selectedDeviceIds.has(d.id));
 
+  const getSortIndicator = (col) => {
+    if (sortColumn !== col) {
+      return '<span class="sort-icon" style="opacity:0.35; font-size:0.75rem; margin-left:4px;">↕</span>';
+    }
+    return sortDirection === 'asc'
+      ? '<span class="sort-icon" style="color:var(--color-accent); font-weight:700; font-size:0.8rem; margin-left:4px;">▲</span>'
+      : '<span class="sort-icon" style="color:var(--color-accent); font-weight:700; font-size:0.8rem; margin-left:4px;">▼</span>';
+  };
+
   return `
     <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-color); flex-wrap:wrap; gap:8px;">
       <span class="text-sm text-muted">${total > 0 ? `Menampilkan ${start + 1}–${Math.min(start + rowsPerPage, total)} dari ${total} device` : 'Menampilkan 0 device'}</span>
@@ -234,15 +293,31 @@ function renderDevicesTable(canEdit, isAdmin) {
             <th style="width:40px; text-align:center;">
               <input type="checkbox" id="select-all-devices" ${allPagedSelected ? 'checked' : ''} style="cursor:pointer; transform:scale(1.15);" />
             </th>
-            <th>Nama Device</th>
-            <th>IP Address</th>
-            <th>Jenis</th>
-            <th>Metode</th>
-            <th>Interval</th>
-            <th>Grup</th>
-            <th>Last Check</th>
-            <th>Status</th>
-            <th>Aksi</th>
+            <th class="sortable-th" data-sort="nama" style="cursor:pointer; user-select:none;" title="Urutkan A-Z / Z-A berdasarkan Nama">
+              Nama Device ${getSortIndicator('nama')}
+            </th>
+            <th class="sortable-th" data-sort="ip" style="cursor:pointer; user-select:none;" title="Urutkan IP (Atas ke Bawah / Bawah ke Atas)">
+              IP Address ${getSortIndicator('ip')}
+            </th>
+            <th class="sortable-th" data-sort="jenis" style="cursor:pointer; user-select:none;" title="Urutkan A-Z / Z-A berdasarkan Jenis">
+              Jenis ${getSortIndicator('jenis')}
+            </th>
+            <th class="sortable-th" data-sort="metode" style="cursor:pointer; user-select:none;" title="Urutkan Metode">
+              Metode ${getSortIndicator('metode')}
+            </th>
+            <th class="sortable-th" data-sort="interval" style="cursor:pointer; user-select:none;" title="Urutkan Interval">
+              Interval ${getSortIndicator('interval')}
+            </th>
+            <th class="sortable-th" data-sort="grup" style="cursor:pointer; user-select:none;" title="Urutkan A-Z / Z-A berdasarkan Grup">
+              Grup ${getSortIndicator('grup')}
+            </th>
+            <th class="sortable-th" data-sort="lastCheck" style="cursor:pointer; user-select:none;" title="Urutkan Waktu Cek Terakhir">
+              Last Check ${getSortIndicator('lastCheck')}
+            </th>
+            <th class="sortable-th" data-sort="status" style="cursor:pointer; user-select:none;" title="Urutkan Status">
+              Status ${getSortIndicator('status')}
+            </th>
+            <th style="text-align:center;">Aksi</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -318,16 +393,35 @@ export function initDevicesEvents(navigate) {
     });
   };
 
+  const bindTheadSorting = () => {
+    document.querySelectorAll('#devices-table-wrapper th.sortable-th').forEach((th) => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-sort');
+        if (!col) return;
+        if (sortColumn === col) {
+          sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortColumn = col;
+          sortDirection = 'asc';
+        }
+        currentPage = 1;
+        refreshTable();
+      });
+    });
+  };
+
   const refreshTable = () => {
     const wrapper = document.getElementById('devices-table-wrapper');
     if (wrapper) {
       wrapper.innerHTML = renderDevicesTable(canEdit, isAdmin);
       bindCheckboxes();
+      bindTheadSorting();
       updateBulkBar();
     }
   };
 
   bindCheckboxes();
+  bindTheadSorting();
   updateBulkBar();
 
   // Bulk action buttons
@@ -523,6 +617,7 @@ export function initDevicesEvents(navigate) {
   window.devDuplicateBtn = (id) => showDeviceForm(id, refreshTable, true);
 
   window.devEditBtn = (id) => showDeviceForm(id, refreshTable);
+  window.showDeviceForm = showDeviceForm;
 
   // Add Device
   document.getElementById('add-device-btn')?.addEventListener('click', () => {
@@ -540,19 +635,57 @@ export function initDevicesEvents(navigate) {
   });
 }
 
-async function showDeviceForm(id, onSave, isDuplicate = false) {
+export async function showDeviceForm(id, onSave, isDuplicate = false) {
   const device = id ? mockDevices.find((d) => d.id === id) : null;
   const isEdit = !!device && !isDuplicate;
 
   const defaultNama = isDuplicate && device ? `${device.nama} (Salinan)` : (device?.nama || '');
 
-  // Daftar opsi parent uplink (Router, Switch, dsb)
+  // Kumpulan grup & lokasi unik yang pernah dibuat di sistem/database
+  const existingGroups = [...new Set(mockDevices.map((d) => d.grup).filter(Boolean))].sort();
+  const existingLocations = [...new Set(mockDevices.map((d) => d.lokasi).filter(Boolean))].sort();
+
+  // Helper subnet label
+  const getSubnetLabel = (ip) => {
+    if (!ip) return '';
+    const parts = ip.split('.');
+    return parts.length >= 3 ? `${parts[0]}.${parts[1]}.${parts[2]}.x` : ip;
+  };
+
+  // Daftar opsi parent uplink (Router, Switch, dsb) dikelompokkan per grup
   const candidateParents = mockDevices.filter((d) => d.id !== id);
-  const parentOptionsHtml = candidateParents.map((p) => {
-    const isSelected = device?.parent_id === p.id;
-    const pIcon = p.jenis === 'router' ? '🌐' : p.jenis === 'switch' ? '🔀' : p.jenis === 'server' ? '🖥️' : '💻';
-    return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>${pIcon} ${p.nama} (${p.ip}) - [${p.jenis?.toUpperCase() || 'DEVICE'}]</option>`;
-  }).join('');
+  const infraParents = candidateParents.filter((p) => ['router', 'switch'].includes((p.jenis || '').toLowerCase()));
+  const allParentGroups = [...new Set(candidateParents.map((p) => p.grup || 'Umum'))].sort();
+
+  let parentOptionsHtml = '';
+
+  // 1. Kategori Khusus: Router & Switch (Rekomendasi Utama Uplink)
+  if (infraParents.length > 0) {
+    parentOptionsHtml += `<optgroup label="🌐 Rekomendasi Uplink (Router & Switch)">`;
+    infraParents.forEach((p) => {
+      const isSelected = device?.parent_id === p.id;
+      const pIcon = (p.jenis || '').toLowerCase() === 'router' ? '🌐' : '🔀';
+      const subLabel = getSubnetLabel(p.ip);
+      parentOptionsHtml += `<option value="${p.id}" ${isSelected ? 'selected' : ''}>${pIcon} ${p.nama} (${p.ip}) • [${subLabel}] • ${p.grup || 'Umum'}</option>`;
+    });
+    parentOptionsHtml += `</optgroup>`;
+  }
+
+  // 2. Kategori Berdasarkan Grup Kantor / Lokasi
+  allParentGroups.forEach((grp) => {
+    const grpDevs = candidateParents.filter((p) => (p.grup || 'Umum') === grp);
+    if (grpDevs.length > 0) {
+      parentOptionsHtml += `<optgroup label="🏢 Grup: ${grp} (${grpDevs.length} node)">`;
+      grpDevs.forEach((p) => {
+        const isSelected = device?.parent_id === p.id;
+        const jLower = (p.jenis || '').toLowerCase();
+        const pIcon = jLower === 'router' ? '🌐' : jLower === 'switch' ? '🔀' : jLower === 'server' ? '🖥️' : jLower.includes('ap') || jLower.includes('access') ? '📶' : jLower.includes('cctv') ? '📷' : '💻';
+        const subLabel = getSubnetLabel(p.ip);
+        parentOptionsHtml += `<option value="${p.id}" ${isSelected ? 'selected' : ''}>${pIcon} ${p.nama} (${p.ip}) • [${subLabel}] • ${p.jenis || 'Device'}</option>`;
+      });
+      parentOptionsHtml += `</optgroup>`;
+    }
+  });
 
   const currentJenis = (device?.jenis || '').toLowerCase();
 
@@ -560,11 +693,19 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
     title: isDuplicate ? `📋 Duplikat Device` : isEdit ? `✏️ Edit Device` : '➕ Tambah Device Baru',
     width: 660,
     html: `
+      <!-- Datalist Autocomplete dari Database -->
+      <datalist id="existing-groups-list">
+        ${existingGroups.map((g) => `<option value="${g}">`).join('')}
+      </datalist>
+      <datalist id="existing-locations-list">
+        ${existingLocations.map((loc) => `<option value="${loc}">`).join('')}
+      </datalist>
+
       <div style="text-align:left; display:flex; flex-direction:column; gap:12px; padding:4px 0;">
         <div class="form-grid">
           <div class="form-group" style="grid-column: span 2;">
             <label class="form-label">Nama Device <span class="required">*</span></label>
-            <input type="text" id="sf-nama" class="form-control" placeholder="Router Utama Lantai 1 / CCTV Lobby" value="${defaultNama}" />
+            <input type="text" id="sf-nama" class="form-control" placeholder="Router Utama Lantai 1 / CCTV Lobby" value="${defaultNama}" autocomplete="off" />
           </div>
 
           <div class="form-group" style="grid-column: span 2;">
@@ -624,12 +765,12 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
 
           <div class="form-group">
             <label class="form-label">Grup / Lokasi</label>
-            <input type="text" id="sf-grup" class="form-control" placeholder="Lantai 1" value="${device?.grup || ''}" />
+            <input type="text" id="sf-grup" list="existing-groups-list" class="form-control" placeholder="Ketik atau pilih grup..." value="${device?.grup || ''}" autocomplete="off" />
           </div>
 
           <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Hostname (opsional)</label>
-            <input type="text" id="sf-hostname" class="form-control" placeholder="ROUTER-MAIN-01" value="${device?.hostname || ''}" />
+            <label class="form-label">Hostname (opsional / RFC 1123)</label>
+            <input type="text" id="sf-hostname" class="form-control" placeholder="ROUTER-MAIN-01" value="${device?.hostname || ''}" autocomplete="off" />
           </div>
         </div>
 
@@ -651,13 +792,32 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
       const btnTest = document.getElementById('btn-test-inline');
       const resDiv = document.getElementById('test-connection-result');
       const ipInput = document.getElementById('sf-ip');
+      const namaInput = document.getElementById('sf-nama');
+      const hostnameInput = document.getElementById('sf-hostname');
       const metodeSelect = document.getElementById('sf-metode');
       const portInput = document.getElementById('sf-port');
       const parentSelect = document.getElementById('sf-parent');
       const hintBox = document.getElementById('subnet-hint-box');
 
+      // Auto-fill format Hostname (RFC 1123) saat mengetik nama device
+      let isHostnameManual = !!(device?.hostname);
+      hostnameInput?.addEventListener('input', () => {
+        isHostnameManual = hostnameInput.value.trim().length > 0;
+      });
+
+      namaInput?.addEventListener('input', () => {
+        if (!isHostnameManual) {
+          const raw = namaInput.value.toUpperCase();
+          const slug = raw
+            .replace(/[^A-Z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 32);
+          if (hostnameInput) hostnameInput.value = slug;
+        }
+      });
+
       const checkSubnet = () => {
-        const currentIp = ipInput.value.trim();
+        const currentIp = cleanDeviceIp(ipInput.value.trim());
         const parentId = parseInt(parentSelect.value, 10);
         if (!currentIp || !parentId) {
           if (hintBox) hintBox.style.display = 'none';
@@ -668,8 +828,9 @@ async function showDeviceForm(id, onSave, isDuplicate = false) {
           if (hintBox) hintBox.style.display = 'none';
           return;
         }
+        const parentCleanIp = cleanDeviceIp(parentDev.ip);
         const curParts = currentIp.split('.');
-        const parentParts = parentDev.ip.split('.');
+        const parentParts = parentCleanIp.split('.');
         if (curParts.length >= 3 && parentParts.length >= 3) {
           const curSub = curParts.slice(0, 3).join('.');
           const parSub = parentParts.slice(0, 3).join('.');

@@ -809,6 +809,30 @@ export function getDemoDevices() {
 export const DEMO_STATUS_LOGS = [
   {
     id: 1,
+    device_id: 1,
+    device_name: 'Router Gateway Utama',
+    device_ip: '192.168.1.1',
+    status_sebelumnya: 'Offline',
+    status_baru: 'Online',
+    metode: 'PING',
+    response_time: '1 ms',
+    pesan_log: 'Router Gateway Utama (192.168.1.1) terhubung stabil ke uplink ISP.',
+    created_at: new Date(Date.now() - 1800000).toISOString()
+  },
+  {
+    id: 2,
+    device_id: 2,
+    device_name: 'Core Switch Lt. 2',
+    device_ip: '192.168.1.2',
+    status_sebelumnya: 'Offline',
+    status_baru: 'Online',
+    metode: 'PING',
+    response_time: '2 ms',
+    pesan_log: 'Core Switch Lt. 2 (192.168.1.2) aktif mengalirkan trunk VLAN jaringan kantor.',
+    created_at: new Date(Date.now() - 2400000).toISOString()
+  },
+  {
+    id: 3,
     device_id: 4,
     device_name: 'PC Marketing 01',
     device_ip: '192.168.1.30',
@@ -820,7 +844,7 @@ export const DEMO_STATUS_LOGS = [
     created_at: new Date(Date.now() - 3600000).toISOString()
   },
   {
-    id: 2,
+    id: 4,
     device_id: 13,
     device_name: 'CCTV Gudang Barang',
     device_ip: '192.168.2.103',
@@ -832,7 +856,7 @@ export const DEMO_STATUS_LOGS = [
     created_at: new Date(Date.now() - 5400000).toISOString()
   },
   {
-    id: 3,
+    id: 5,
     device_id: 5,
     device_name: 'PC Gudang',
     device_ip: '192.168.2.50',
@@ -844,7 +868,19 @@ export const DEMO_STATUS_LOGS = [
     created_at: new Date(Date.now() - 7200000).toISOString()
   },
   {
-    id: 4,
+    id: 6,
+    device_id: 18,
+    device_name: 'Access Point Lantai 1',
+    device_ip: '192.168.1.15',
+    status_sebelumnya: 'Offline',
+    status_baru: 'Online',
+    metode: 'PING',
+    response_time: '3 ms',
+    pesan_log: 'Access Point Lantai 1 (192.168.1.15) online dan menyiarkan sinyal WiFi kantor.',
+    created_at: new Date(Date.now() - 9000000).toISOString()
+  },
+  {
+    id: 7,
     device_id: 16,
     device_name: 'CCTV Parkiran Belakang',
     device_ip: '192.168.1.106',
@@ -856,7 +892,7 @@ export const DEMO_STATUS_LOGS = [
     created_at: new Date(Date.now() - 10800000).toISOString()
   },
   {
-    id: 5,
+    id: 8,
     device_id: 1,
     device_name: 'PC Akuntansi 01',
     device_ip: '192.168.1.20',

@@ -6,6 +6,7 @@
 
 import { jsPDF } from 'jspdf';
 import { formatDateWithTz, getAppSetting } from '../settingsManager.js';
+import { cleanDeviceIp } from '../data/mock-devices.js';
 
 /**
  * Format tanggal cetak dokumen
@@ -355,7 +356,7 @@ function renderSlaTable(doc, startY, list) {
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text(item.ip || '', 66, y + 3.4);
+    doc.text(cleanDeviceIp(item.ip) || '', 66, y + 3.4);
     doc.text(item.grup || 'Umum', 94, y + 3.4);
     doc.text(`${item.targetSla || 99}%`, 118, y + 3.4);
 
@@ -647,7 +648,7 @@ export async function exportLogsPdf(activeTab, logs, filters = {}) {
 
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 116, 139);
-      doc.text(l.ip || l.device_ip || '', 105, y + 3.2);
+      doc.text(cleanDeviceIp(l.ip || l.device_ip) || '', 105, y + 3.2);
       doc.text(l.metode || 'PING', 142, y + 3.2);
 
       const resp = String(l.responseTime || l.response_time || '');

@@ -668,6 +668,22 @@ textarea.form-control {
   white-space: nowrap;
 }
 
+.data-table thead th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.data-table thead th.sortable-th:hover {
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--color-heading);
+}
+
+.data-table thead th.sortable-th .sort-icon {
+  display: inline-block;
+  transition: transform var(--transition-fast);
+}
+
 .data-table tbody td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);

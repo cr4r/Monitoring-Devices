@@ -15,6 +15,16 @@ let backendCounts = { status: 0, aktivitas: 0, konfigurasi: 0 };
 let logDeviceList = [];
 let selectedDeviceKey = 'all';
 
+export function getDeviceIcon(name = '', jenis = '', ip = '') {
+  const s = `${name} ${jenis} ${ip}`.toLowerCase();
+  if (s.includes('rtsp') || s.includes('rstp') || s.includes('cctv') || s.includes('cam') || s.includes('kamera')) return '📷';
+  if (s.includes('router') || s.includes('gateway')) return '🌐';
+  if (s.includes('switch') || s.includes('hub')) return '🔀';
+  if (s.includes('access point') || s.includes('ap') || s.includes('wifi')) return '📶';
+  if (s.includes('server')) return '🖥️';
+  return '💻';
+}
+
 function getDeviceKey(d) {
   if (!d) return 'all';
   return `${d.device_name || ''}:::${d.device_ip || ''}:::${d.device_created_at || ''}`;
@@ -28,22 +38,61 @@ export async function fetchLiveDevices() {
         device_id: 1,
         device_name: 'Router Gateway Utama',
         device_ip: '192.168.1.1',
+        device_jenis: 'Router',
         device_created_at: '2026-10-15 08:00:00',
         is_active: 1,
-        total_log: 12,
+        total_log: 15,
       },
       {
         device_id: 2,
         device_name: 'Core Switch Lt. 2',
         device_ip: '192.168.1.2',
+        device_jenis: 'Switch',
         device_created_at: '2026-10-15 08:30:00',
         is_active: 1,
+        total_log: 10,
+      },
+      {
+        device_id: 3,
+        device_name: 'PC Server File',
+        device_ip: '192.168.1.10',
+        device_jenis: 'Server',
+        device_created_at: '2026-10-15 09:00:00',
+        is_active: 1,
+        total_log: 6,
+      },
+      {
+        device_id: 18,
+        device_name: 'Access Point Lantai 1',
+        device_ip: '192.168.1.15',
+        device_jenis: 'Access Point',
+        device_created_at: '2026-10-15 09:30:00',
+        is_active: 1,
         total_log: 8,
+      },
+      {
+        device_id: 13,
+        device_name: 'CCTV Gudang Barang',
+        device_ip: '192.168.2.103',
+        device_jenis: 'CCTV Hikvision',
+        device_created_at: '2026-10-15 10:00:00',
+        is_active: 1,
+        total_log: 12,
+      },
+      {
+        device_id: 4,
+        device_name: 'PC Marketing 01',
+        device_ip: '192.168.1.30',
+        device_jenis: 'Komputer',
+        device_created_at: '2026-10-15 10:15:00',
+        is_active: 1,
+        total_log: 20,
       },
       {
         device_id: 99,
         device_name: 'PC Marketing Lama (Dihapus)',
         device_ip: '192.168.1.55',
+        device_jenis: 'Komputer',
         device_created_at: '2026-09-01 10:15:00',
         is_active: 0,
         total_log: 24,
@@ -185,6 +234,7 @@ export async function fetchLiveLogs() {
             responseTime: respTime,
             pesan: r.pesan_log,
             tipe: isOnline ? 'online' : (isMaint ? 'maintenance' : 'offline'),
+            jenis: r.jenis || (r.device_ip && (r.device_ip.includes('rtsp') || r.device_ip.includes('rstp')) ? 'CCTV Hikvision' : ''),
           };
         } else if (activeTab === 'aktivitas') {
           return {
@@ -226,21 +276,40 @@ function renderDeviceOptGroups() {
 
   let html = '';
   if (activeDevices.length > 0) {
-    html += `<optgroup label="🟢 Perangkat Aktif (${activeDevices.length})">`;
+    // Kelompokkan berdasarkan jenis perangkat agar terorganisir per tipe
+    const groups = {};
     activeDevices.forEach((d) => {
-      const key = getDeviceKey(d);
-      const createdStr = d.device_created_at ? formatDateWithTz(d.device_created_at) : 'Awal';
-      html += `<option value="${key}" ${selectedDeviceKey === key ? 'selected' : ''}>🟢 ${d.device_name} (${d.device_ip}) • Dibuat: ${createdStr}</option>`;
+      const j = d.device_jenis || 'Lainnya';
+      if (!groups[j]) groups[j] = [];
+      groups[j].push(d);
     });
-    html += `</optgroup>`;
+
+    const order = ['Router', 'Switch', 'Access Point', 'CCTV Hikvision', 'Server', 'Komputer', 'Lainnya'];
+    const sortedJenis = Object.keys(groups).sort((a, b) => {
+      const idxA = order.indexOf(a);
+      const idxB = order.indexOf(b);
+      return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
+    });
+
+    sortedJenis.forEach((jenis) => {
+      const list = groups[jenis];
+      const icon = getDeviceIcon('', jenis);
+      html += `<optgroup label="${icon} ${jenis} (${list.length})">`;
+      list.forEach((d) => {
+        const key = getDeviceKey(d);
+        const itemIcon = getDeviceIcon(d.device_name, d.device_jenis, d.device_ip);
+        html += `<option value="${key}" ${selectedDeviceKey === key ? 'selected' : ''}>${itemIcon} ${d.device_name} (${cleanDeviceIp(d.device_ip)}) • Log: ${d.total_log || 0}</option>`;
+      });
+      html += `</optgroup>`;
+    });
   }
 
   if (archivedDevices.length > 0) {
     html += `<optgroup label="📦 Riwayat Terhapus / Arsip (${archivedDevices.length})">`;
     archivedDevices.forEach((d) => {
       const key = getDeviceKey(d);
-      const createdStr = d.device_created_at ? formatDateWithTz(d.device_created_at) : 'Awal';
-      html += `<option value="${key}" ${selectedDeviceKey === key ? 'selected' : ''}>📦 ${d.device_name} (${d.device_ip}) • Dibuat: ${createdStr} [Terhapus]</option>`;
+      const icon = getDeviceIcon(d.device_name, d.device_jenis, d.device_ip);
+      html += `<option value="${key}" ${selectedDeviceKey === key ? 'selected' : ''}>📦 ${icon} ${d.device_name} (${cleanDeviceIp(d.device_ip)}) [Terhapus]</option>`;
     });
     html += `</optgroup>`;
   }
@@ -255,6 +324,7 @@ function renderSelectedDeviceBanner() {
 
   const isActive = dev.is_active === 1;
   const createdStr = dev.device_created_at ? formatDateWithTz(dev.device_created_at) : 'Tidak tercatat';
+  const icon = getDeviceIcon(dev.device_name, dev.device_jenis, dev.device_ip);
 
   return `
     <div style="
@@ -270,7 +340,7 @@ function renderSelectedDeviceBanner() {
       flex-wrap: wrap;
     ">
       <div style="display:flex; align-items:center; gap:10px;">
-        <span style="font-size:1.4rem;">${isActive ? '🖥️' : '📦'}</span>
+        <span style="font-size:1.4rem;">${isActive ? icon : '📦'}</span>
         <div>
           <div style="font-weight:700; font-size:0.9rem; color:var(--color-heading); display:flex; align-items:center; gap:8px;">
             <span>${dev.device_name}</span>
@@ -279,7 +349,7 @@ function renderSelectedDeviceBanner() {
               font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:12px;
               background:${isActive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'};
               color:${isActive ? 'var(--color-online)' : 'var(--color-offline)'};
-            ">${isActive ? '🟢 Aktif di Sistem' : '📦 Arsip (Perangkat Telah Dihapus)'}</span>
+            ">${isActive ? `🟢 Aktif (${dev.device_jenis || 'Perangkat'})` : '📦 Arsip (Perangkat Telah Dihapus)'}</span>
           </div>
           <div style="font-size:0.75rem; color:var(--color-muted); margin-top:2px;">
             📅 Dibuat pada: <strong style="color:var(--color-text);">${createdStr}</strong>
@@ -316,7 +386,7 @@ export function renderLogs() {
         <div class="log-filter-row-top">
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; font-weight:600;">
-              <span>🖥️ Organisir Per Perangkat</span>
+              <span>🌐 Filter Per Perangkat (Semua Tipe)</span>
               <span style="font-size:0.7rem; color:var(--color-accent); font-weight:500;">Diferensiasi berdasarkan tanggal pembuatan perangkat</span>
             </label>
             <select class="form-control" id="log-filter-device" style="font-family:var(--font-sans); font-size:0.85rem; height:40px;">
@@ -442,6 +512,7 @@ function renderLogTable() {
               </td>
               <td>
                 <div style="font-weight:600; color:var(--color-text); display:flex; align-items:center; gap:6px;">
+                  <span style="font-size:1.1rem;">${getDeviceIcon(l.device, l.jenis, l.ip)}</span>
                   <span>${l.device}</span>
                   ${l.deviceId ? '' : '<span style="font-size:0.65rem; background:rgba(234,179,8,0.2); color:var(--color-maintenance); padding:1px 5px; border-radius:4px; font-weight:700;">Arsip</span>'}
                 </div>

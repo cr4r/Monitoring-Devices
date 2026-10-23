@@ -20,13 +20,20 @@ export function renderLogin() {
 
   return `
     <div class="login-page" id="login-page">
+      <!-- Cyber Grid Background & Ambient Lighting -->
+      <div class="login-bg">
+        <div class="login-cyber-grid"></div>
+        <div class="login-bg-orb orb-1"></div>
+        <div class="login-bg-orb orb-2"></div>
+        <div class="login-bg-orb orb-3"></div>
+      </div>
+
       <!-- Floating Theme Toggle -->
       <div style="position:fixed; top:20px; right:20px; z-index:99;">
         <button
           type="button"
           id="login-theme-toggle"
-          class="btn btn-secondary btn-sm"
-          style="display:inline-flex; align-items:center; gap:8px; border-radius:24px; padding:8px 16px; font-size:0.82rem; font-weight:600; background:var(--color-surface, #1e2238); border:1px solid var(--border-color, rgba(255,255,255,0.12)); color:var(--color-text, #f1f5f9); box-shadow:0 4px 14px rgba(0,0,0,0.25); cursor:pointer;"
+          class="login-theme-toggle-btn"
           title="${isLight ? 'Beralih ke Mode Gelap' : 'Beralih ke Mode Terang Lembut'}"
         >
           <span id="login-theme-icon" style="font-size:1.05rem;">${isLight ? '🌙' : '☀️'}</span>
@@ -34,83 +41,91 @@ export function renderLogin() {
         </button>
       </div>
 
-      <div class="login-bg">
-        <div class="login-bg-orb orb-1"></div>
-        <div class="login-bg-orb orb-2"></div>
-        <div class="login-bg-orb orb-3"></div>
-      </div>
-
       <div class="login-card">
+        <!-- Live System Telemetry Status Pill -->
+        <div style="text-align:center;">
+          <div class="login-system-pill">
+            <span class="login-pulse-dot"></span>
+            <span>LIVE TELEMETRY • SISTEM MONITORING READY</span>
+          </div>
+        </div>
+
         <div class="login-logo">
           <div class="login-logo-icon">📡</div>
           <div class="login-logo-text">
             <h1 class="gradient-text brand-app-name">${appName}</h1>
-            <p>Device Monitoring System</p>
+            <p>Infrastructure & Device Telemetry</p>
           </div>
         </div>
 
         <form class="login-form" id="login-form" novalidate>
           <div id="login-alert"></div>
 
-          <div class="form-group">
-            <label class="form-label" for="login-email">
-              Email <span class="required">*</span>
+          <!-- Flexible Identifier (Username OR Email) -->
+          <div class="form-group" style="gap:6px;">
+            <label class="form-label" for="login-identifier" style="font-size:0.82rem; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+              <span>Username atau Email <span class="required">*</span></span>
+              <span style="font-size:0.7rem; color:var(--color-muted); font-weight:500;">admin / user@domain</span>
             </label>
-            <input
-              type="email"
-              id="login-email"
-              class="form-control"
-              placeholder="email@kantor.com"
-              autocomplete="email"
-              required
-            />
+            <div class="login-input-wrapper">
+              <span class="login-input-icon">👤</span>
+              <input
+                type="text"
+                id="login-identifier"
+                class="form-control login-control"
+                placeholder="Masukkan username atau email akun..."
+                autocomplete="username"
+                required
+              />
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label" for="login-password">
-              Password <span class="required">*</span>
+          <div class="form-group" style="gap:6px;">
+            <label class="form-label" for="login-password" style="font-size:0.82rem; font-weight:600;">
+              Kata Sandi <span class="required">*</span>
             </label>
-            <div style="position:relative;">
+            <div class="login-input-wrapper">
+              <span class="login-input-icon">🔒</span>
               <input
                 type="password"
                 id="login-password"
-                class="form-control"
+                class="form-control login-control"
                 placeholder="••••••••"
                 autocomplete="current-password"
                 required
-                style="padding-right:40px;"
+                style="padding-right:42px !important;"
               />
               <button
                 type="button"
                 id="toggle-password"
                 style="
-                  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+                  position:absolute; right:12px; top:50%; transform:translateY(-50%);
                   background:none; border:none; color:var(--color-muted);
-                  cursor:pointer; font-size:1rem; padding:4px;
+                  cursor:pointer; font-size:1.05rem; padding:4px;
                 "
                 aria-label="Tampilkan password"
               >👁️</button>
             </div>
           </div>
 
-          <button type="submit" class="btn btn-primary btn-lg login-btn w-full" id="login-btn">
-            🔐 Masuk
+          <button type="submit" class="login-btn-futuristic w-full" id="login-btn">
+            <span>🔐 Masuk ke Sistem</span>
           </button>
 
           <!-- Divider -->
-          <div style="display:flex; align-items:center; margin:16px 0; color:var(--color-muted); font-size:0.75rem;">
-            <div style="flex:1; height:1px; background:var(--border-color);"></div>
-            <span style="padding:0 8px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">ATAU</span>
-            <div style="flex:1; height:1px; background:var(--border-color);"></div>
+          <div style="display:flex; align-items:center; margin:4px 0; color:var(--color-muted); font-size:0.75rem;">
+            <div style="flex:1; height:1px; background:rgba(255,255,255,0.08);"></div>
+            <span style="padding:0 10px; text-transform:uppercase; letter-spacing:0.08em; font-weight:700; font-size:0.7rem;">ATAU</span>
+            <div style="flex:1; height:1px; background:rgba(255,255,255,0.08);"></div>
           </div>
 
-          <!-- Preview Mode CTA -->
-          <div style="padding:14px; background:linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12)); border:1px solid rgba(139, 92, 246, 0.35); border-radius:10px; text-align:center;">
+          <!-- Preview Mode CTA (Terminal Sandbox) -->
+          <div class="login-preview-terminal">
             <div style="font-size:0.8rem; font-weight:700; color:#a78bfa; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:6px;">
-              <span>🎮 Pratinjau Sistem Tanpa Login</span>
+              <span>🎮 Operator Demo Sandbox</span>
             </div>
             <p style="font-size:0.75rem; color:var(--color-muted); margin:0 0 10px 0; line-height:1.4;">
-              Jelajahi 20 perangkat demo, topologi kanvas, telemetri, dan simulasi insiden.
+              Eksplorasi 20 perangkat demo, topologi jaringan kanvas, telemetri live, dan simulasi insiden tanpa login.
             </p>
             <button
               type="button"
@@ -124,8 +139,8 @@ export function renderLogin() {
         </form>
 
         <div class="login-footer">
-          <p>MonDev v1.0 · Dibuat oleh Fatur</p>
-          <p style="margin-top:4px; font-size:0.75rem; color:var(--color-muted);">Sistem Monitoring Perangkat Jaringan Internal</p>
+          <p style="font-weight:600; color:var(--color-heading);">MonDev Enterprise Edition v1.0</p>
+          <p style="margin-top:3px; font-size:0.72rem; color:var(--color-muted);">Sistem Pemantauan Jaringan & Telemetri Perangkat Internal</p>
         </div>
       </div>
     </div>
@@ -134,7 +149,7 @@ export function renderLogin() {
 
 export function initLoginEvents(navigate) {
   const form = document.getElementById('login-form');
-  const emailInput = document.getElementById('login-email');
+  const identifierInput = document.getElementById('login-identifier') || document.getElementById('login-username');
   const passwordInput = document.getElementById('login-password');
   const togglePwd = document.getElementById('toggle-password');
   const loginBtn = document.getElementById('login-btn');
@@ -166,6 +181,7 @@ export function initLoginEvents(navigate) {
   // Preview Mode handler
   previewBtn?.addEventListener('click', () => {
     setSession({
+      username: 'preview',
       email: 'preview@devwatch.demo',
       nama: 'Guest Preview',
       role: 'admin',
@@ -209,12 +225,12 @@ export function initLoginEvents(navigate) {
       return;
     }
 
-    const email = emailInput.value.trim();
-    const password = passwordInput.value;
+    const identifier = identifierInput?.value?.trim() || '';
+    const password = passwordInput?.value || '';
 
     // Validasi basic
-    if (!email || !password) {
-      showInlineAlert('Email dan password wajib diisi.', 'danger');
+    if (!identifier || !password) {
+      showInlineAlert('Username atau email dan kata sandi wajib diisi.', 'danger');
       return;
     }
 
@@ -223,13 +239,14 @@ export function initLoginEvents(navigate) {
     loginBtn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Memverifikasi...';
 
     try {
-      // Panggil backend API
-      const res = await apiLogin(email, password);
+      // Panggil backend API dengan identifier fleksibel (username atau email)
+      const res = await apiLogin(identifier, password);
 
       failCount = 0;
       setSession({
         id: res.user.id,
         nama: res.user.nama,
+        username: res.user.username,
         email: res.user.email,
         role: res.user.role,
         avatar: res.user.avatar,
@@ -253,7 +270,7 @@ export function initLoginEvents(navigate) {
       return;
     } catch (apiErr) {
       loginBtn.disabled = false;
-      loginBtn.innerHTML = '🔐 Masuk';
+      loginBtn.innerHTML = '<span>🔐 Masuk ke Sistem</span>';
 
       // Tangani jika dikunci oleh backend rate limiter (429)
       if (apiErr.message.includes('dikunci') || apiErr.message.includes('Terlalu banyak')) {

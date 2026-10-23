@@ -86,6 +86,51 @@ try {
   for (const [kat, key, val] of missingDefaults) {
     db.prepare('INSERT OR IGNORE INTO system_settings (kategori, kunci, nilai) VALUES (?, ?, ?)').run(kat, key, val);
   }
+
+  // Migrasi skema: Pastikan tabel users memiliki username unik
+  const userCols = query('PRAGMA table_info(users)');
+  const hasUsername = userCols.some((c) => c.name === 'username');
+  if (!hasUsername) {
+    db.exec('ALTER TABLE users ADD COLUMN username TEXT;');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);');
+  }
+
+  // Isi username yang masih kosong dari email atau nama
+  db.exec(`
+    UPDATE users
+    SET username = CASE 
+      WHEN email LIKE '%@%' THEN LOWER(SUBSTR(email, 1, INSTR(email, '@') - 1))
+      ELSE LOWER(REPLACE(nama, ' ', ''))
+    END
+    WHERE username IS NULL OR username = '';
+  `);
+
+  // Auto-backfill log inisial untuk seluruh perangkat aktif yang belum memiliki riwayat status
+  db.exec(`
+    INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, waktu, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+    SELECT 
+      d.id, 
+      d.nama, 
+      d.ip, 
+      d.created_at, 
+      COALESCE(d.created_at, datetime('now')), 
+      'Inisialisasi', 
+      CASE 
+        WHEN d.status = 'online' THEN 'Online' 
+        WHEN d.status = 'maintenance' THEN 'Maintenance' 
+        ELSE 'Offline' 
+      END,
+      COALESCE(d.metode, 'PING'), 
+      COALESCE(d.response_time_ms || ' ms', '-'),
+      'Perangkat ' || d.nama || ' (' || d.ip || ') terdaftar dalam sistem pemantauan (' || d.jenis || ').'
+    FROM devices d
+    WHERE d.is_active = 1
+      AND d.id NOT IN (
+        SELECT DISTINCT device_id 
+        FROM device_status_logs 
+        WHERE device_id IS NOT NULL
+      );
+  `);
 } catch (migErr) {
   console.warn('[DB Migration Warning]:', migErr.message);
 }

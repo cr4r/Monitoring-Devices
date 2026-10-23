@@ -16,74 +16,134 @@ import { config } from '../config.js';
  * Mendukung format: rtsp://user:pass@host:port/path
  * Juga mendukung IP biasa (tanpa scheme)
  */
+function safeDecode(val) {
+  if (!val) return val;
+  try {
+    return decodeURIComponent(val);
+  } catch {
+    return val;
+  }
+}
+
 export function parseRtspUrl(ipOrUrl) {
   const str = String(ipOrUrl || '').trim();
-  // Jika bukan URL (tidak ada ://), kembalikan sebagai host biasa
-  if (!str.includes('://')) {
-    const cleanHost = str.replace(/[^\w.-]/g, '');
+  if (!str) {
+    return {
+      host: '',
+      port: 554,
+      username: null,
+      password: null,
+      path: '/',
+      normalizedUrl: '',
+      sanitizedUrl: '',
+    };
+  }
+
+  // Jika bukan URL (tidak ada :// dan tidak ada @)
+  if (!str.includes('://') && !str.includes('@')) {
+    let cleanHost = str;
+    let port = 554;
+    if (str.includes(':')) {
+      const parts = str.split(':');
+      cleanHost = parts[0];
+      port = parseInt(parts[1], 10) || 554;
+    }
+    cleanHost = cleanHost.replace(/[^\w.-]/g, '');
     return {
       host: cleanHost,
-      port: 554,
-      username: null,
-      password: null,
-      path: '/',
-      normalizedUrl: `rtsp://${cleanHost}:554/`,
-      sanitizedUrl: `rtsp://${cleanHost}:554/`,
-    };
-  }
-
-  try {
-    // Tangani skema rtsp:// maupun typo rstp://
-    let normalized = str;
-    if (/^r[ts]{2}p:\/\//i.test(normalized)) {
-      normalized = normalized.replace(/^r[ts]{2}p:\/\//i, 'http://');
-    }
-    const u = new URL(normalized);
-    const host = u.hostname;
-    const port = parseInt(u.port, 10) || 554;
-    const username = u.username ? decodeURIComponent(u.username) : null;
-    const password = u.password ? decodeURIComponent(u.password) : null;
-    const path = (u.pathname || '/') + (u.search || '');
-
-    const credPart = (username && password) ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@` : '';
-    const normalizedUrl = `rtsp://${credPart}${host}:${port}${path}`;
-    const sanitizedUrl = `rtsp://${host}:${port}${path}`;
-
-    return {
-      host,
       port,
-      username,
-      password,
-      path,
-      normalizedUrl,
-      sanitizedUrl,
-    };
-  } catch {
-    // Fallback: coba ekstrak IP manual
-    const match = str.match(/[@:]([\d.]+):(\d+)/);
-    if (match) {
-      const host = match[1];
-      const port = parseInt(match[2], 10) || 554;
-      return {
-        host,
-        port,
-        username: null,
-        password: null,
-        path: '/',
-        normalizedUrl: `rtsp://${host}:${port}/`,
-        sanitizedUrl: `rtsp://${host}:${port}/`,
-      };
-    }
-    return {
-      host: str,
-      port: 554,
       username: null,
       password: null,
       path: '/',
-      normalizedUrl: `rtsp://${str}:554/`,
-      sanitizedUrl: `rtsp://${str}:554/`,
+      normalizedUrl: `rtsp://${cleanHost}:${port}/`,
+      sanitizedUrl: `rtsp://${cleanHost}:${port}/`,
     };
   }
+
+  // Pisahkan scheme
+  let rest = str;
+  const schemeMatch = str.match(/^([a-zA-Z0-9+-.]+):\/\/(.*)$/);
+  if (schemeMatch) {
+    rest = schemeMatch[2];
+  }
+
+  // Pisahkan path dan query dari authority
+  let path = '/';
+  const slashIdx = rest.indexOf('/');
+  const questionIdx = rest.indexOf('?');
+  let splitIdx = -1;
+  if (slashIdx !== -1 && questionIdx !== -1) {
+    splitIdx = Math.min(slashIdx, questionIdx);
+  } else if (slashIdx !== -1) {
+    splitIdx = slashIdx;
+  } else if (questionIdx !== -1) {
+    splitIdx = questionIdx;
+  }
+
+  let authority = rest;
+  if (splitIdx !== -1) {
+    authority = rest.slice(0, splitIdx);
+    path = rest.slice(splitIdx);
+  }
+
+  // Pisahkan credentials dan hostPort dengan mencari '@' TERAKHIR
+  // (menghindari kesalahan jika password pengguna mengandung simbol '@' atau '&')
+  let username = null;
+  let password = null;
+  let hostPort = authority;
+
+  const lastAt = authority.lastIndexOf('@');
+  if (lastAt !== -1) {
+    const credPart = authority.slice(0, lastAt);
+    hostPort = authority.slice(lastAt + 1);
+
+    const firstColon = credPart.indexOf(':');
+    if (firstColon !== -1) {
+      username = safeDecode(credPart.slice(0, firstColon));
+      password = safeDecode(credPart.slice(firstColon + 1));
+    } else {
+      username = safeDecode(credPart);
+      password = null;
+    }
+  }
+
+  // Pisahkan host dan port
+  let host = hostPort;
+  let port = 554;
+  if (hostPort.startsWith('[')) {
+    const endBracket = hostPort.indexOf(']');
+    if (endBracket !== -1) {
+      host = hostPort.slice(1, endBracket);
+      const after = hostPort.slice(endBracket + 1);
+      if (after.startsWith(':')) {
+        port = parseInt(after.slice(1), 10) || 554;
+      }
+    }
+  } else if (hostPort.includes(':')) {
+    const colonIdx = hostPort.lastIndexOf(':');
+    host = hostPort.slice(0, colonIdx);
+    port = parseInt(hostPort.slice(colonIdx + 1), 10) || 554;
+  }
+
+  host = host.trim();
+
+  // Buat URL yang dinormalisasi dengan encoding aman
+  const encodedCred = (username && password)
+    ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
+    : (username ? `${encodeURIComponent(username)}@` : '');
+
+  const normalizedUrl = `rtsp://${encodedCred}${host}:${port}${path}`;
+  const sanitizedUrl = `rtsp://${host}:${port}${path}`;
+
+  return {
+    host,
+    port,
+    username,
+    password,
+    path,
+    normalizedUrl,
+    sanitizedUrl,
+  };
 }
 
 /**

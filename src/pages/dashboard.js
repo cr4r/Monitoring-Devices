@@ -12,10 +12,34 @@ import { getTimeline24h } from '../data/mock-reports.js';
 import { getSession } from '../main.js';
 import { exportReportPdf } from '../services/pdfService.js';
 import { getAppSetting } from '../settingsManager.js';
+import { showDeviceForm } from './devices.js';
 
 let currentNavigate = null;
 let currentFilter = { kategori: 'all', status: 'all', grup: 'all', search: '' };
 let currentTab = 'kartu';
+let cardGroupMode = 'grup'; // 'grup' | 'jenis' | 'none'
+let collapsedGroups = new Set();
+
+function parseIpOctets(ipStr = '') {
+  const clean = cleanDeviceIp(ipStr);
+  const match = clean.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/);
+  if (!match) return null;
+  return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10), parseInt(match[4], 10)];
+}
+
+function compareDeviceIps(ipA = '', ipB = '') {
+  const octA = parseIpOctets(ipA);
+  const octB = parseIpOctets(ipB);
+  if (octA && octB) {
+    for (let i = 0; i < 4; i++) {
+      if (octA[i] !== octB[i]) return octA[i] - octB[i];
+    }
+    return 0;
+  }
+  if (octA && !octB) return -1;
+  if (!octA && octB) return 1;
+  return cleanDeviceIp(ipA).localeCompare(cleanDeviceIp(ipB));
+}
 let canvasCtx = null;
 let mapTransform = { x: 0, y: 0, scale: 1 };
 let isDragging = false;
@@ -29,6 +53,9 @@ let virtualNodes = [];
 let mapSearchQuery = '';
 let wanNode = null;
 let interRouterLinks = [];
+let mapFilterGroup = 'all';
+let mapFilterJenis = 'all';
+let groupBoundaries = [];
 
 export function renderDashboard() {
   const counts = getStatusCounts();
@@ -43,6 +70,7 @@ export function renderDashboard() {
           <h1 class="page-title">📊 Dashboard</h1>
           <p class="page-subtitle">Status real-time semua device jaringan kantor</p>
         </div>
+        <div class="page-actions">
           <div class="live-indicator" id="monitoring-engine-indicator" title="${getAppSetting('engine_active', 'true') === 'true' ? 'Engine monitoring aktif memantau perangkat' : 'Engine monitoring dihentikan sementara di pengaturan'}">
             <span class="live-dot" id="monitoring-engine-dot" style="${getAppSetting('engine_active', 'true') === 'true' ? '' : 'background:#eab308; box-shadow:none;'}"></span>
             <span id="monitoring-engine-text" style="font-size:0.8rem; font-weight:600; color:${getAppSetting('engine_active', 'true') === 'true' ? 'var(--color-online)' : '#eab308'};">
@@ -153,6 +181,21 @@ export function renderDashboard() {
                 <option value="all">Semua Grup</option>
                 ${groups.map((g) => `<option value="${g}" ${currentFilter.grup === g ? 'selected' : ''}>${g}</option>`).join('')}
               </select>
+
+              <select class="form-control" id="filter-group-mode" style="width:auto; font-weight:600;" title="Pengelompokan Kartu">
+                <option value="grup" ${cardGroupMode === 'grup' ? 'selected' : ''}>📁 Kelompokkan: Per Kantor</option>
+                <option value="jenis" ${cardGroupMode === 'jenis' ? 'selected' : ''}>🏷️ Kelompokkan: Per Tipe Device</option>
+                <option value="none" ${cardGroupMode === 'none' ? 'selected' : ''}>📋 Semua (Tanpa Kelompok)</option>
+              </select>
+
+              <div class="group-collapse-controls" id="group-collapse-controls" style="display:${cardGroupMode !== 'none' ? 'inline-flex' : 'none'}; align-items:center; gap:6px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-expand-all-groups" title="Buka Seluruh Grup" style="padding:6px 10px; font-size:0.78rem; white-space:nowrap;">
+                  📂 Buka Semua
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-collapse-all-groups" title="Tutup Seluruh Grup" style="padding:6px 10px; font-size:0.78rem; white-space:nowrap;">
+                  📁 Tutup Semua
+                </button>
+              </div>
             </div>
 
             <div class="device-count-chip" id="device-count-display">
@@ -182,6 +225,19 @@ export function renderDashboard() {
                     <span class="search-icon">🔍</span>
                     <input type="text" id="map-search-input" placeholder="Cari nama / IP..." />
                   </div>
+                  <select class="form-control" id="map-filter-group" style="width:auto; font-size:0.78rem; padding:4px 8px; border-radius:6px; height:32px; font-weight:600; cursor:pointer;" title="Filter Berdasarkan Lokasi / Kantor">
+                    <option value="all">📍 Semua Lokasi (${mockDevices.length})</option>
+                    ${groups.map((g) => {
+                      const count = mockDevices.filter((d) => (d.grup || 'Umum') === g).length;
+                      return `<option value="${g}" ${mapFilterGroup === g ? 'selected' : ''}>📍 ${g} (${count})</option>`;
+                    }).join('')}
+                  </select>
+                  <select class="form-control" id="map-filter-jenis" style="width:auto; font-size:0.78rem; padding:4px 8px; border-radius:6px; height:32px; font-weight:600; cursor:pointer;" title="Filter Berdasarkan Tipe Perangkat">
+                    <option value="all" ${mapFilterJenis === 'all' ? 'selected' : ''}>🏷️ Semua Tipe</option>
+                    <option value="cctv" ${mapFilterJenis === 'cctv' ? 'selected' : ''}>📷 CCTV (${mockDevices.filter((d) => String(d.jenis || '').toLowerCase().includes('cctv')).length})</option>
+                    <option value="infra" ${mapFilterJenis === 'infra' ? 'selected' : ''}>🌐 Jaringan (${mockDevices.filter((d) => ['router', 'switch', 'gateway', 'access point', 'ap'].some((k) => String(d.jenis || '').toLowerCase().includes(k))).length})</option>
+                    <option value="komputer" ${mapFilterJenis === 'komputer' ? 'selected' : ''}>💻 Komputer (${mockDevices.filter((d) => String(d.jenis || '').toLowerCase().includes('komputer')).length})</option>
+                  </select>
                 </div>
 
                 <div class="map-toolbar-group">
@@ -248,6 +304,96 @@ export function renderDashboard() {
   `;
 }
 
+function renderSingleDeviceCard(d, canEdit) {
+  const statusColor = {
+    online: 'var(--color-online)',
+    offline: 'var(--color-offline)',
+    maintenance: 'var(--color-maintenance)',
+  }[d.status];
+
+  const statusLabel = { online: '🟢 Online', offline: '🔴 Offline', maintenance: '🟡 Maintenance' }[d.status];
+  const icon = getNodeIcon(d.jenis);
+
+  const checkDate = d.lastChecked ? parseSqliteUtc(d.lastChecked) : null;
+  const lastChecked = d.lastChecked ? formatTimeAgo(d.lastChecked) : 'Belum dicek';
+  const exactCheck = checkDate ? checkDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Belum pernah dicek';
+
+  const onlineDate = d.lastOnline ? parseSqliteUtc(d.lastOnline) : null;
+  const lastOnline = d.lastOnline ? formatTimeAgo(d.lastOnline) : 'Tidak diketahui';
+  const exactOnline = onlineDate ? onlineDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Tidak diketahui';
+
+  const countdownHtml = d.status === 'maintenance' && d.maintenanceInfo
+    ? `<div class="maintenance-countdown">⏱️ <span class="countdown-timer" data-end="${d.maintenanceInfo.estimasiSelesai}">Menghitung...</span></div>`
+    : '';
+
+  return `
+    <div class="device-card ${d.status} fade-in-up" data-device-id="${d.id}">
+      <div class="device-card-header">
+        <div class="device-card-icon ${d.jenis}">${icon}</div>
+        <div style="flex:1; min-width:0;">
+          <div class="device-card-name truncate">${d.nama}</div>
+          <div class="device-card-ip" title="${d.ip}">${cleanDeviceIp(d.ip)}</div>
+        </div>
+        <div class="badge badge-${d.status || 'offline'}" style="flex-shrink:0;">
+          <span class="status-dot ${d.status || 'offline'}"></span>
+          ${(d.status || 'offline').charAt(0).toUpperCase() + (d.status || 'offline').slice(1)}
+        </div>
+      </div>
+
+      <div class="device-card-meta">
+        <div class="device-card-meta-row">
+          <span class="device-card-meta-label">📍 Lokasi:</span>
+          <span class="truncate">${d.lokasi}</span>
+        </div>
+        <div class="device-card-meta-row">
+          <span class="device-card-meta-label">📁 Grup:</span>
+          <span>${d.grup}</span>
+        </div>
+        <div class="device-card-meta-row">
+          <span class="device-card-meta-label">⏱️ Last Check:</span>
+          <span title="${exactCheck}" style="cursor:help; font-weight:600; color:var(--color-heading);">${lastChecked}</span>
+        </div>
+        <div class="device-card-meta-row">
+          <span class="device-card-meta-label">🟢 Last Online:</span>
+          <span title="${exactOnline}" style="cursor:help;">${d.status === 'online' ? 'Sekarang' : lastOnline}</span>
+        </div>
+        ${d.status === 'online' ? `
+        <div class="device-card-meta-row">
+          <span class="device-card-meta-label">📶 Response:</span>
+          <span class="text-online">${d.responseTime} ms</span>
+        </div>` : ''}
+      </div>
+
+      ${countdownHtml}
+
+      ${d.status === 'maintenance' && d.maintenanceInfo ? `
+      <div style="font-size:0.75rem; color:var(--color-maintenance); padding:6px 8px; background:var(--color-maintenance-dim); border-radius:6px; border:1px solid rgba(234,179,8,0.2);">
+        🔧 ${d.maintenanceInfo.alasan}
+      </div>` : ''}
+
+      <div class="device-card-actions">
+        <button class="btn btn-secondary btn-sm" onclick="window.dashboardDetailDevice(${d.id})" style="flex:1;">
+          🔍 Detail
+        </button>
+        ${canEdit ? `
+        <button class="btn btn-secondary btn-sm" onclick="window.dashboardEditDevice(${d.id})" title="Edit Device" style="display:inline-flex; align-items:center; gap:4px; padding:6px 10px;">
+          ✏️ Edit
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="window.dashboardPingDevice(${d.id})" title="Ping Manual">
+          📡
+        </button>
+        ${d.status !== 'maintenance' ? `
+        <button class="btn btn-warning btn-sm" onclick="window.dashboardSetMaintenance(${d.id})" title="Set Maintenance">
+          🔧
+        </button>` : `
+        <button class="btn btn-success btn-sm" onclick="window.dashboardEndMaintenance(${d.id})" title="Selesai Maintenance">
+          ✅
+        </button>`}` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderDeviceCards(filtered = null) {
   if (mockDevices.length === 0) {
     return `
@@ -269,7 +415,7 @@ function renderDeviceCards(filtered = null) {
     `;
   }
 
-  const devices = filtered || getFilteredDevices();
+  const devices = (filtered || getFilteredDevices()).slice();
   if (devices.length === 0) {
     return `
       <div class="empty-state" style="grid-column:1/-1;">
@@ -280,95 +426,88 @@ function renderDeviceCards(filtered = null) {
     `;
   }
 
+  // Selalu urutkan IP dari kecil ke besar secara numerik
+  devices.sort((a, b) => compareDeviceIps(a.ip, b.ip));
+
   const session = getSession();
   const canEdit = session?.role === 'admin' || session?.role === 'teknisi';
 
-  return devices.map((d) => {
-    const statusColor = {
-      online: 'var(--color-online)',
-      offline: 'var(--color-offline)',
-      maintenance: 'var(--color-maintenance)',
-    }[d.status];
+  // Mode 1: Tanpa pengelompokan (Flat list terurut IP)
+  if (cardGroupMode === 'none') {
+    return devices.map((d) => renderSingleDeviceCard(d, canEdit)).join('');
+  }
 
-    const statusLabel = { online: '🟢 Online', offline: '🔴 Offline', maintenance: '🟡 Maintenance' }[d.status];
-    const icon = getNodeIcon(d.jenis);
+  // Mode 2: Per Grup Kantor atau Per Jenis Device
+  const groupsMap = new Map();
 
-    const checkDate = d.lastChecked ? parseSqliteUtc(d.lastChecked) : null;
-    const lastChecked = d.lastChecked ? formatTimeAgo(d.lastChecked) : 'Belum dicek';
-    const exactCheck = checkDate ? checkDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Belum pernah dicek';
+  devices.forEach((d) => {
+    const key = cardGroupMode === 'jenis' ? (d.jenis || 'Lainnya') : (d.grup || 'Umum');
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, []);
+    }
+    groupsMap.get(key).push(d);
+  });
 
-    const onlineDate = d.lastOnline ? parseSqliteUtc(d.lastOnline) : null;
-    const lastOnline = d.lastOnline ? formatTimeAgo(d.lastOnline) : 'Tidak diketahui';
-    const exactOnline = onlineDate ? onlineDate.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }) : 'Tidak diketahui';
+  let html = '';
+  for (const [groupName, groupDevs] of groupsMap.entries()) {
+    const isCollapsed = collapsedGroups.has(groupName);
+    const onlineCount = groupDevs.filter((d) => d.status === 'online').length;
+    const offlineCount = groupDevs.filter((d) => d.status === 'offline').length;
+    const maintCount = groupDevs.filter((d) => d.status === 'maintenance').length;
 
-    const countdownHtml = d.status === 'maintenance' && d.maintenanceInfo
-      ? `<div class="maintenance-countdown">⏱️ <span class="countdown-timer" data-end="${d.maintenanceInfo.estimasiSelesai}">Menghitung...</span></div>`
-      : '';
+    let groupIcon = '🏢';
+    if (cardGroupMode === 'jenis') {
+      groupIcon = getNodeIcon(groupName);
+    }
 
-    return `
-      <div class="device-card ${d.status} fade-in-up" data-device-id="${d.id}">
-        <div class="device-card-header">
-          <div class="device-card-icon ${d.jenis}">${icon}</div>
-          <div style="flex:1; min-width:0;">
-            <div class="device-card-name truncate">${d.nama}</div>
-            <div class="device-card-ip" title="${d.ip}">${cleanDeviceIp(d.ip)}</div>
+    const safeGroupName = encodeURIComponent(groupName);
+
+    html += `
+      <div class="dashboard-device-group-section ${isCollapsed ? 'collapsed' : ''}" data-group-name="${groupName}" style="grid-column: 1 / -1; width: 100%; margin-bottom: 24px;">
+        <div class="dashboard-device-group-header" onclick="window.toggleCardGroup('${safeGroupName}')" style="
+          display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+          padding: 10px 16px; margin-bottom: 12px; cursor: pointer; user-select: none;
+          background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color);
+          border-left: 4px solid var(--color-accent); border-radius: var(--border-radius-md);
+          transition: background 0.2s ease;
+        " title="Klik untuk ${isCollapsed ? 'membuka' : 'menutup'} grup ini">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 4px; pointer-events: none;">
+              ${isCollapsed ? '▶' : '▼'}
+            </button>
+            <span style="font-size: 1.3rem;">${groupIcon}</span>
+            <div>
+              <div style="font-size: 0.98rem; font-weight: 700; color: var(--color-heading); display:flex; align-items:center; gap:8px;">
+                <span>${groupName}</span>
+                <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--color-accent); font-size: 0.72rem; padding: 2px 8px; border-radius: 10px;">
+                  ${groupDevs.length} Device
+                </span>
+                ${isCollapsed ? `<span style="font-size:0.75rem; color:var(--color-muted); font-weight:normal;">(Grup Ditutup)</span>` : ''}
+              </div>
+              <div style="font-size: 0.75rem; color: var(--color-muted); margin-top: 1px;">
+                Urutan IP numerik dari atas ke bawah • ${cardGroupMode === 'jenis' ? 'Kategori Perangkat' : 'Area / Lokasi Kantor'}
+              </div>
+            </div>
           </div>
-          <div class="badge badge-${d.status || 'offline'}" style="flex-shrink:0;">
-            <span class="status-dot ${d.status || 'offline'}"></span>
-            ${(d.status || 'offline').charAt(0).toUpperCase() + (d.status || 'offline').slice(1)}
+
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${onlineCount > 0 ? `<span class="badge" style="background: rgba(34, 197, 94, 0.15); color: var(--color-online); font-size: 0.72rem; padding: 3px 8px;">🟢 ${onlineCount} Online</span>` : ''}
+            ${offlineCount > 0 ? `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: var(--color-offline); font-size: 0.72rem; padding: 3px 8px;">🔴 ${offlineCount} Offline</span>` : ''}
+            ${maintCount > 0 ? `<span class="badge" style="background: rgba(234, 179, 8, 0.15); color: var(--color-maintenance); font-size: 0.72rem; padding: 3px 8px;">🟡 ${maintCount} Maint</span>` : ''}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.toggleCardGroup('${safeGroupName}');" style="font-size:0.72rem; padding:3px 10px; border-radius:6px;">
+              ${isCollapsed ? 'Buka Grup 📂' : 'Tutup Grup 📁'}
+            </button>
           </div>
         </div>
 
-        <div class="device-card-meta">
-          <div class="device-card-meta-row">
-            <span class="device-card-meta-label">📍 Lokasi:</span>
-            <span class="truncate">${d.lokasi}</span>
-          </div>
-          <div class="device-card-meta-row">
-            <span class="device-card-meta-label">📁 Grup:</span>
-            <span>${d.grup}</span>
-          </div>
-          <div class="device-card-meta-row">
-            <span class="device-card-meta-label">⏱️ Last Check:</span>
-            <span title="${exactCheck}" style="cursor:help; font-weight:600; color:var(--color-heading);">${lastChecked}</span>
-          </div>
-          <div class="device-card-meta-row">
-            <span class="device-card-meta-label">🟢 Last Online:</span>
-            <span title="${exactOnline}" style="cursor:help;">${d.status === 'online' ? 'Sekarang' : lastOnline}</span>
-          </div>
-          ${d.status === 'online' ? `
-          <div class="device-card-meta-row">
-            <span class="device-card-meta-label">📶 Response:</span>
-            <span class="text-online">${d.responseTime} ms</span>
-          </div>` : ''}
-        </div>
-
-        ${countdownHtml}
-
-        ${d.status === 'maintenance' && d.maintenanceInfo ? `
-        <div style="font-size:0.75rem; color:var(--color-maintenance); padding:6px 8px; background:var(--color-maintenance-dim); border-radius:6px; border:1px solid rgba(234,179,8,0.2);">
-          🔧 ${d.maintenanceInfo.alasan}
-        </div>` : ''}
-
-        <div class="device-card-actions">
-          <button class="btn btn-secondary btn-sm" onclick="window.dashboardDetailDevice(${d.id})" style="flex:1;">
-            🔍 Detail
-          </button>
-          ${canEdit ? `
-          <button class="btn btn-secondary btn-sm" onclick="window.dashboardPingDevice(${d.id})" title="Ping Manual">
-            📡
-          </button>
-          ${d.status !== 'maintenance' ? `
-          <button class="btn btn-warning btn-sm" onclick="window.dashboardSetMaintenance(${d.id})" title="Set Maintenance">
-            🔧
-          </button>` : `
-          <button class="btn btn-success btn-sm" onclick="window.dashboardEndMaintenance(${d.id})" title="Selesai Maintenance">
-            ✅
-          </button>`}` : ''}
+        <div class="devices-grid" style="margin-top: 0; display: ${isCollapsed ? 'none' : 'grid'};">
+          ${groupDevs.map((d) => renderSingleDeviceCard(d, canEdit)).join('')}
         </div>
       </div>
     `;
-  }).join('');
+  }
+
+  return html;
 }
 
 function getFilteredDevices() {
@@ -946,6 +1085,22 @@ export function initDashboardEvents(navigate) {
     currentFilter.grup = e.target.value;
     applyFilter();
   });
+  document.getElementById('filter-group-mode')?.addEventListener('change', (e) => {
+    cardGroupMode = e.target.value;
+    const collapseControls = document.getElementById('group-collapse-controls');
+    if (collapseControls) {
+      collapseControls.style.display = cardGroupMode !== 'none' ? 'inline-flex' : 'none';
+    }
+    applyFilter();
+  });
+
+  document.getElementById('btn-expand-all-groups')?.addEventListener('click', () => {
+    window.expandAllCardGroups && window.expandAllCardGroups();
+  });
+
+  document.getElementById('btn-collapse-all-groups')?.addEventListener('click', () => {
+    window.collapseAllCardGroups && window.collapseAllCardGroups();
+  });
 
   function updateDashboardStats() {
     const counts = getStatusCounts();
@@ -1139,6 +1294,38 @@ export function initDashboardEvents(navigate) {
 
   // Global device action handlers
   window.dashboardDetailDevice = (id) => navigate('device-detail', { id });
+
+  window.dashboardEditDevice = (id) => {
+    showDeviceForm(id, async () => {
+      await syncDevicesFromApi();
+      applyFilter();
+      updateDashboardStats();
+    });
+  };
+
+  window.toggleCardGroup = (encodedGroupName) => {
+    const groupName = decodeURIComponent(encodedGroupName);
+    if (collapsedGroups.has(groupName)) {
+      collapsedGroups.delete(groupName);
+    } else {
+      collapsedGroups.add(groupName);
+    }
+    applyFilter();
+  };
+
+  window.expandAllCardGroups = () => {
+    collapsedGroups.clear();
+    applyFilter();
+  };
+
+  window.collapseAllCardGroups = () => {
+    const filtered = getFilteredDevices();
+    filtered.forEach((d) => {
+      const key = cardGroupMode === 'jenis' ? (d.jenis || 'Lainnya') : (d.grup || 'Umum');
+      collapsedGroups.add(key);
+    });
+    applyFilter();
+  };
 
   window.dashboardPingDevice = async (id) => {
     const device = mockDevices.find((d) => d.id === id);
@@ -1397,24 +1584,24 @@ function getDeviceParent(d) {
     if (sameGroupSw) return sameGroupSw;
   }
 
-  // Jika d adalah switch, sambungkan ke router utama jika tersedia
-  if (String(d.jenis || '').toLowerCase().includes('switch')) {
-    const devSub = getSubnetPrefix(d.ip);
-    const sameSubRouter = mockDevices.find((p) =>
+  // Auto fallback 3: Khusus CCTV tanpa parent eksplisit, sambungkan ke Router/Switch CCTV atau infrastruktur dalam jaringan
+  if (String(d.jenis || '').toLowerCase().includes('cctv')) {
+    const cctvRouter = mockDevices.find((p) =>
       p.id !== d.id &&
-      String(p.jenis || '').toLowerCase().includes('router') &&
-      getSubnetPrefix(p.ip) === devSub &&
+      ['router', 'switch', 'gateway'].some((k) => String(p.jenis || '').toLowerCase().includes(k)) &&
+      (String(p.nama || '').toLowerCase().includes('cctv') || String(p.deskripsi || '').toLowerCase().includes('cctv')) &&
       !wouldCauseCycle(d.id, p.id)
     );
-    if (sameSubRouter) return sameSubRouter;
-
-    const mainRouter = mockDevices.find((p) =>
-      p.id !== d.id &&
-      String(p.jenis || '').toLowerCase().includes('router') &&
-      !wouldCauseCycle(d.id, p.id)
-    );
-    if (mainRouter) return mainRouter;
+    if (cctvRouter) return cctvRouter;
   }
+
+  // Auto fallback 4: Jika masih belum punya parent dan bukan router/gateway, sambungkan ke router/switch manapun agar tidak berdiri sebagai orphan root
+  const anyInfra = mockDevices.find((p) =>
+    p.id !== d.id &&
+    ['router', 'gateway', 'switch'].some((k) => String(p.jenis || '').toLowerCase().includes(k)) &&
+    !wouldCauseCycle(d.id, p.id)
+  );
+  if (anyInfra) return anyInfra;
 
   return null;
 }
@@ -1459,25 +1646,50 @@ function computeMapLayout(w, h, force = false) {
   );
 
   const hasWanCloud = rootRouters.length > 0;
-  const SLOT_WIDTH = 140;
-  const HORIZONTAL_GAP = 36;
-  const LEVEL_GAP = 135;
-  // Jika ada WAN Cloud di atas router, beri ruang vertikal di tingkat atas
-  const TOP_MARGIN = hasWanCloud ? 140 : 80;
+  const CARD_W = 144;
+  const CARD_H = 44;
+  const HORIZONTAL_GAP = 20;
+  const VERTICAL_GAP = 16;
+  const LEVEL_GAP = 95;
+  const TOP_MARGIN = hasWanCloud ? 120 : 70;
 
-  // Hitung lebar setiap subtree secara rekursif
+  // Hitung lebar setiap subtree secara rekursif (dukungan Shelf Grid Kompak untuk pure leaf clusters & Natural Tree untuk cabang campuran)
   function measureSubtree(node) {
-    const children = childrenMap.get(node.id) || [];
-    if (children.length === 0) {
-      node._subtreeWidth = SLOT_WIDTH;
-      return SLOT_WIDTH;
+    const allChildren = childrenMap.get(node.id) || [];
+    if (allChildren.length === 0) {
+      node._subtreeWidth = CARD_W;
+      node._isLeafShelf = false;
+      return CARD_W;
     }
-    let total = 0;
-    children.forEach((c, idx) => {
-      total += measureSubtree(c);
-      if (idx < children.length - 1) total += HORIZONTAL_GAP;
+
+    const allLeaves = allChildren.every((c) => (childrenMap.get(c.id) || []).length === 0);
+
+    // Pure leaf cluster dengan banyak node (seperti Router CCTV >= 4 kamera): simpan dalam Shelf Grid kompak 4 kolom
+    if (allLeaves && allChildren.length >= 4) {
+      const cols = Math.min(4, Math.ceil(Math.sqrt(allChildren.length * 1.5)));
+      node._subtreeWidth = cols * CARD_W + (cols - 1) * HORIZONTAL_GAP;
+      node._isLeafShelf = true;
+      node._cols = cols;
+      return node._subtreeWidth;
+    }
+
+    // Cabang hierarkis berimbang (seperti Router Kantor Induk dan Switch):
+    node._isLeafShelf = false;
+    // Urutkan anak: Infrastructure/switch/router diutamakan/dikelompokkan rapi, disusul lainnya
+    allChildren.sort((a, b) => {
+      const isInfraA = ['switch', 'router', 'gateway', 'hub'].some((k) => String(a.jenis || '').toLowerCase().includes(k)) ? 1 : 0;
+      const isInfraB = ['switch', 'router', 'gateway', 'hub'].some((k) => String(b.jenis || '').toLowerCase().includes(k)) ? 1 : 0;
+      if (isInfraA !== isInfraB) return isInfraB - isInfraA;
+      return (a.nama || '').localeCompare(b.nama || '');
     });
-    node._subtreeWidth = Math.max(SLOT_WIDTH, total);
+
+    let totalW = 0;
+    allChildren.forEach((c, idx) => {
+      totalW += measureSubtree(c);
+      if (idx < allChildren.length - 1) totalW += HORIZONTAL_GAP;
+    });
+
+    node._subtreeWidth = Math.max(CARD_W, totalW);
     return node._subtreeWidth;
   }
 
@@ -1493,7 +1705,7 @@ function computeMapLayout(w, h, force = false) {
 
   // Posisikan secara rekursif mengakar ke bawah
   function positionSubtree(node, startX, depth) {
-    const children = childrenMap.get(node.id) || [];
+    const allChildren = childrenMap.get(node.id) || [];
     const width = node._subtreeWidth;
     const x = startX + width / 2;
     const y = TOP_MARGIN + depth * LEVEL_GAP;
@@ -1504,16 +1716,79 @@ function computeMapLayout(w, h, force = false) {
       node.mapPos = { ...customNodePositions[node.id] };
     }
 
-    let childStartX = startX;
-    children.forEach((ch) => {
-      positionSubtree(ch, childStartX, depth + 1);
-      childStartX += ch._subtreeWidth + HORIZONTAL_GAP;
+    if (allChildren.length === 0) return;
+
+    if (node._isLeafShelf) {
+      const cols = node._cols || 4;
+      const shelfW = cols * CARD_W + (cols - 1) * HORIZONTAL_GAP;
+      const shelfStartX = startX + (width - shelfW) / 2;
+      const shelfStartY = TOP_MARGIN + (depth + 1) * LEVEL_GAP;
+
+      allChildren.sort((a, b) => (a.grup || 'Umum').localeCompare(b.grup || 'Umum'));
+      allChildren.forEach((leaf, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const lx = shelfStartX + col * (CARD_W + HORIZONTAL_GAP) + CARD_W / 2;
+        const ly = shelfStartY + row * (CARD_H + VERTICAL_GAP);
+
+        if (force || !customNodePositions[leaf.id]) {
+          leaf.mapPos = { x: lx, y: ly };
+        } else {
+          leaf.mapPos = { ...customNodePositions[leaf.id] };
+        }
+      });
+      return;
+    }
+
+    // Posisikan anak secara berdampingan simetris di bawah parent
+    let childX = startX;
+    allChildren.forEach((c) => {
+      positionSubtree(c, childX, depth + 1);
+      childX += c._subtreeWidth + HORIZONTAL_GAP;
     });
   }
 
   roots.forEach((r) => {
     positionSubtree(r, currentRootX, 0);
     currentRootX += r._subtreeWidth + HORIZONTAL_GAP * 2.5;
+  });
+
+  // Hitung Boundary Box untuk setiap kluster lokasi/grup (minimal 2 perangkat per grup)
+  groupBoundaries = [];
+  const groupMap = new Map();
+  mockDevices.forEach((d) => {
+    if (!d.mapPos) return;
+    const g = d.grup || 'Umum';
+    if (!groupMap.has(g)) groupMap.set(g, []);
+    groupMap.get(g).push(d);
+  });
+
+  groupMap.forEach((devs, groupName) => {
+    if (devs.length < 2) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    devs.forEach((d) => {
+      const isInfra = ['switch', 'router', 'gateway', 'server'].some((k) => String(d.jenis || '').toLowerCase().includes(k));
+      const hw = (d._cardWidth || (isInfra ? 156 : 144)) / 2;
+      const hh = (d._cardHeight || (isInfra ? 48 : 44)) / 2;
+      minX = Math.min(minX, d.mapPos.x - hw);
+      maxX = Math.max(maxX, d.mapPos.x + hw);
+      minY = Math.min(minY, d.mapPos.y - hh);
+      maxY = Math.max(maxY, d.mapPos.y + hh);
+    });
+
+    const bw = maxX - minX;
+    const bh = maxY - minY;
+    if (bw < 1600 && bh < 1200) {
+      groupBoundaries.push({
+        grup: groupName,
+        minX: minX - 16,
+        maxX: maxX + 16,
+        minY: minY - 26,
+        maxY: maxY + 16,
+        count: devs.length,
+        onlineCount: devs.filter((d) => d.status === 'online').length,
+      });
+    }
   });
 
   // Konfigurasi simpul WAN Cloud & Inter-Router Trunk jika ada router gateway
@@ -1558,27 +1833,81 @@ function fitToScreen(w, h) {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   mockDevices.forEach((d) => {
     if (!d.mapPos) return;
-    minX = Math.min(minX, d.mapPos.x - 70);
-    maxX = Math.max(maxX, d.mapPos.x + 70);
+    minX = Math.min(minX, d.mapPos.x - 75);
+    maxX = Math.max(maxX, d.mapPos.x + 75);
     minY = Math.min(minY, d.mapPos.y - 45);
-    maxY = Math.max(maxY, d.mapPos.y + 65);
+    maxY = Math.max(maxY, d.mapPos.y + 45);
   });
   if (wanNode) {
     minX = Math.min(minX, wanNode.x - wanNode.w / 2 - 20);
     maxX = Math.max(maxX, wanNode.x + wanNode.w / 2 + 20);
     minY = Math.min(minY, wanNode.y - 25);
   }
+  groupBoundaries.forEach((gb) => {
+    minX = Math.min(minX, gb.minX - 10);
+    maxX = Math.max(maxX, gb.maxX + 10);
+    minY = Math.min(minY, gb.minY - 10);
+    maxY = Math.max(maxY, gb.maxY + 10);
+  });
   if (minX === Infinity) {
     mapTransform = { x: 0, y: 0, scale: 1 };
     return;
   }
   const treeW = maxX - minX;
   const treeH = maxY - minY;
-  const padding = 60;
+  const padding = 50;
   const scaleX = (w - padding * 2) / Math.max(100, treeW);
   const scaleY = (h - padding * 2) / Math.max(100, treeH);
-  // Auto scale sesuai kebutuhan 100+ devices, min 0.22, max 1.05
-  const targetScale = Math.max(0.22, Math.min(1.05, Math.min(scaleX, scaleY)));
+  // Auto scale sesuai kebutuhan compact layout, min 0.35, max 1.25
+  const targetScale = Math.max(0.35, Math.min(1.25, Math.min(scaleX, scaleY)));
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  mapTransform.scale = targetScale;
+  mapTransform.x = w / 2 - centerX * targetScale;
+  mapTransform.y = h / 2 - centerY * targetScale;
+}
+
+function fitToFilteredNodes(filterGroup, filterJenis) {
+  const canvas = document.getElementById('networkCanvas');
+  if (!canvas) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  if (filterGroup === 'all' && filterJenis === 'all') {
+    fitToScreen(w, h);
+    return;
+  }
+
+  const matching = mockDevices.filter((d) => {
+    if (!d.mapPos) return false;
+    const matchGrp = filterGroup === 'all' || (d.grup || 'Umum') === filterGroup;
+    let matchType = true;
+    if (filterJenis === 'cctv') matchType = String(d.jenis || '').toLowerCase().includes('cctv');
+    else if (filterJenis === 'infra') matchType = ['router', 'switch', 'gateway', 'access point', 'ap'].some(k => String(d.jenis || '').toLowerCase().includes(k));
+    else if (filterJenis === 'komputer') matchType = String(d.jenis || '').toLowerCase().includes('komputer');
+    return matchGrp && matchType;
+  });
+
+  if (matching.length === 0) {
+    fitToScreen(w, h);
+    return;
+  }
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  matching.forEach((d) => {
+    minX = Math.min(minX, d.mapPos.x - 75);
+    maxX = Math.max(maxX, d.mapPos.x + 75);
+    minY = Math.min(minY, d.mapPos.y - 35);
+    maxY = Math.max(maxY, d.mapPos.y + 35);
+  });
+
+  const boxW = Math.max(160, maxX - minX);
+  const boxH = Math.max(120, maxY - minY);
+  const padding = 65;
+  const scaleX = (w - padding * 2) / boxW;
+  const scaleY = (h - padding * 2) / boxH;
+  const targetScale = Math.max(0.5, Math.min(1.3, Math.min(scaleX, scaleY)));
 
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
@@ -1606,9 +1935,9 @@ function findNodeAt(vx, vy) {
     const d = mockDevices[i];
     if (!d.mapPos) continue;
     const isInfra = ['switch', 'router', 'gateway', 'server'].some((k) => String(d.jenis || '').toLowerCase().includes(k));
-    const hitRadius = isInfra ? 26 : 20;
-    const dist = Math.hypot(d.mapPos.x - vx, d.mapPos.y - vy);
-    if (dist <= hitRadius) {
+    const halfW = (d._cardWidth || (isInfra ? 156 : 144)) / 2 + 3;
+    const halfH = (d._cardHeight || (isInfra ? 48 : 44)) / 2 + 3;
+    if (Math.abs(d.mapPos.x - vx) <= halfW && Math.abs(d.mapPos.y - vy) <= halfH) {
       return { type: 'device', data: d };
     }
   }
@@ -1681,6 +2010,7 @@ function showDeviceMapModal(d) {
     `,
     showConfirmButton: false,
     showCloseButton: true,
+    target: document.fullscreenElement || document.querySelector('.network-map-wrapper') || 'body',
     background: '#1a1d2e',
     color: '#e2e8f0',
     width: 440,
@@ -1706,32 +2036,33 @@ function showDeviceMapModal(d) {
 }
 
 function showWanCloudModal(w) {
+  const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
   const routers = w.routers || [];
   const routerListHtml = routers.map((r) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:rgba(255,255,255,0.04); border-radius:6px; margin-top:4px; border:1px solid rgba(255,255,255,0.06);">
-      <span style="font-weight:600; color:#f1f5f9;">${getNodeIcon(r.jenis)} ${r.nama}</span>
-      <span style="font-family:monospace; color:#38bdf8;">${cleanDeviceIp(r.ip)}</span>
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 12px; background:${isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)'}; border-radius:8px; margin-top:6px; border:1px solid ${isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)'};">
+      <span style="font-weight:600; color:${isLight ? '#0f172a' : '#f1f5f9'};">${getNodeIcon(r.jenis)} ${r.nama}</span>
+      <span style="font-family:monospace; color:${isLight ? '#0284c7' : '#38bdf8'}; font-weight:600;">${cleanDeviceIp(r.ip)}</span>
     </div>
   `).join('');
 
   Swal.fire({
     title: '☁️ Internet / WAN Cloud Backbone',
     html: `
-      <div style="text-align:left; font-size:0.86rem; display:flex; flex-direction:column; gap:10px; padding:6px 0;">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
-          <span style="color:#94a3b8;">Arsitektur Uplink</span>
-          <span style="color:#38bdf8; font-weight:700;">${routers.length > 1 ? `Multi-Gateway Redundan (${routers.length} Router)` : 'Single Gateway Uplink'}</span>
+      <div style="text-align:left; font-size:0.86rem; display:flex; flex-direction:column; gap:12px; padding:4px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid ${isLight ? '#e2e8f0' : 'var(--border-color)'}; padding-bottom:8px;">
+          <span style="color:${isLight ? '#64748b' : '#94a3b8'};">Arsitektur Uplink</span>
+          <span style="color:${isLight ? '#0284c7' : '#38bdf8'}; font-weight:700;">${routers.length > 1 ? `Multi-Gateway Redundan (${routers.length} Router)` : 'Single Gateway Uplink'}</span>
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="color:#94a3b8;">Status Konektivitas Luar</span>
-          <span style="color:${w.status === 'online' ? '#22c55e' : '#ef4444'}; font-weight:700;">● ${w.status.toUpperCase()}</span>
+          <span style="color:${isLight ? '#64748b' : '#94a3b8'};">Status Konektivitas Luar</span>
+          <span style="color:${w.status === 'online' ? '#16a34a' : '#dc2626'}; font-weight:700;">● ${w.status.toUpperCase()}</span>
         </div>
-        <div style="margin-top:6px;">
-          <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:4px; font-weight:600;">Router Gateway Aktif:</div>
+        <div style="margin-top:2px;">
+          <div style="font-size:0.75rem; color:${isLight ? '#64748b' : '#94a3b8'}; margin-bottom:4px; font-weight:600;">Router Gateway Aktif:</div>
           ${routerListHtml}
         </div>
         ${routers.length > 1 ? `
-        <div style="margin-top:6px; padding:8px 10px; border-radius:6px; background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.4); color:#e9d5ff; font-size:0.78rem;">
+        <div style="margin-top:4px; padding:10px 12px; border-radius:8px; background:${isLight ? '#f3e8ff' : 'rgba(168,85,247,0.15)'}; border:1px solid ${isLight ? '#d8b4fe' : 'rgba(168,85,247,0.4)'}; color:${isLight ? '#6b21a8' : '#e9d5ff'}; font-size:0.78rem; line-height:1.45;">
           ⚡ <strong>Inter-Router HA Trunk Redundansi</strong>: Jalur sinkronisasi failover / HA antar router gateway aktif di peta visual.
         </div>
         ` : ''}
@@ -1739,8 +2070,9 @@ function showWanCloudModal(w) {
     `,
     showConfirmButton: false,
     showCloseButton: true,
-    background: '#1a1d2e',
-    color: '#e2e8f0',
+    target: document.fullscreenElement || document.querySelector('.network-map-wrapper') || 'body',
+    background: isLight ? '#ffffff' : '#1a1d2e',
+    color: isLight ? '#0f172a' : '#e2e8f0',
     width: 440,
   });
 }
@@ -2094,12 +2426,34 @@ function initNetworkMap() {
   document.getElementById('map-zoom-out')?.addEventListener('click', () => {
     mapTransform.scale = Math.max(0.18, mapTransform.scale * 0.83);
   });
+  document.getElementById('map-filter-group')?.addEventListener('change', (e) => {
+    mapFilterGroup = e.target.value;
+    fitToFilteredNodes(mapFilterGroup, mapFilterJenis);
+  });
+
+  document.getElementById('map-filter-jenis')?.addEventListener('change', (e) => {
+    mapFilterJenis = e.target.value;
+    fitToFilteredNodes(mapFilterGroup, mapFilterJenis);
+  });
+
   document.getElementById('map-fit-screen')?.addEventListener('click', () => {
     updateCanvasDimensions(false);
-    fitToScreen(canvas.width, canvas.height);
+    fitToFilteredNodes(mapFilterGroup, mapFilterJenis);
   });
+
   document.getElementById('map-reset')?.addEventListener('click', () => {
+    mapFilterGroup = 'all';
+    mapFilterJenis = 'all';
+    const grp = document.getElementById('map-filter-group');
+    if (grp) grp.value = 'all';
+    const jns = document.getElementById('map-filter-jenis');
+    if (jns) jns.value = 'all';
+    const sch = document.getElementById('map-search-input');
+    if (sch) sch.value = '';
+    mapSearchQuery = '';
     mapTransform = { x: 0, y: 0, scale: 1 };
+    updateCanvasDimensions(false);
+    fitToScreen(canvas.width, canvas.height);
   });
   document.getElementById('map-auto-layout')?.addEventListener('click', () => {
     customNodePositions = {};
@@ -2111,23 +2465,77 @@ function initNetworkMap() {
       title: 'Topologi berhasil diselaraskan otomatis!',
       timer: 1500,
       showConfirmButton: false,
+      target: document.fullscreenElement || document.querySelector('.network-map-wrapper') || 'body',
       background: '#1a1d2e',
       color: '#e2e8f0',
     });
   });
 
-  // Fullscreen toggle
-  document.getElementById('map-fullscreen')?.addEventListener('click', () => {
+  // Fullscreen toggle (Native Browser Fullscreen API + Fallback CSS)
+  const toggleMapFullscreen = async () => {
     const wrapper = document.querySelector('.network-map-wrapper');
     if (!wrapper) return;
-    wrapper.classList.toggle('fullscreen');
-    const isFs = wrapper.classList.contains('fullscreen');
-    const btn = document.getElementById('map-fullscreen');
-    if (btn) btn.innerHTML = isFs ? '✕ Keluar Layar Penuh' : '⛶ Layar Penuh';
-    setTimeout(() => {
-      updateCanvasDimensions(false);
-    }, 120);
-  });
+
+    const isCurrentlyFs = Boolean(document.fullscreenElement) || wrapper.classList.contains('fullscreen');
+
+    if (!isCurrentlyFs) {
+      wrapper.classList.add('fullscreen');
+      document.body.classList.add('map-fullscreen-active');
+      const btn = document.getElementById('map-fullscreen');
+      if (btn) btn.innerHTML = '✕ Keluar Layar Penuh';
+      try {
+        if (wrapper.requestFullscreen) {
+          await wrapper.requestFullscreen();
+        }
+      } catch (err) {
+        // Fallback jika API native diblokir, CSS class tetap aktif
+      }
+    } else {
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      } catch (err) {}
+      wrapper.classList.remove('fullscreen');
+      document.body.classList.remove('map-fullscreen-active');
+      const btn = document.getElementById('map-fullscreen');
+      if (btn) btn.innerHTML = '⛶ Layar Penuh';
+    }
+
+    requestAnimationFrame(() => {
+      updateCanvasDimensions(true);
+      setTimeout(() => updateCanvasDimensions(true), 180);
+    });
+  };
+
+  document.getElementById('map-fullscreen')?.addEventListener('click', toggleMapFullscreen);
+
+  // Sync event saat user keluar dari fullscreen (misal via tombol ESC keyboard)
+  const onMapFsChange = () => {
+    const wrapper = document.querySelector('.network-map-wrapper');
+    if (!wrapper) return;
+    const isNativeFs = Boolean(document.fullscreenElement);
+    if (!isNativeFs) {
+      wrapper.classList.remove('fullscreen');
+      document.body.classList.remove('map-fullscreen-active');
+      const btn = document.getElementById('map-fullscreen');
+      if (btn) btn.innerHTML = '⛶ Layar Penuh';
+    } else {
+      wrapper.classList.add('fullscreen');
+      document.body.classList.add('map-fullscreen-active');
+      const btn = document.getElementById('map-fullscreen');
+      if (btn) btn.innerHTML = '✕ Keluar Layar Penuh';
+    }
+    requestAnimationFrame(() => {
+      updateCanvasDimensions(true);
+      setTimeout(() => updateCanvasDimensions(true), 180);
+    });
+  };
+
+  if (!window._mapFsAttached) {
+    window._mapFsAttached = true;
+    document.addEventListener('fullscreenchange', onMapFsChange);
+  }
 
   // Search input filter
   document.getElementById('map-search-input')?.addEventListener('input', (e) => {
@@ -2198,6 +2606,72 @@ function drawMap(ctx, w, h) {
   const currentScale = mapTransform.scale;
   const isSearchActive = mapSearchQuery.length > 0;
 
+  // 00. Draw Group Boundary Boxes (Kluster Lokasi / Kantor)
+  groupBoundaries.forEach((gb) => {
+    const isFiltered = mapFilterGroup !== 'all' && mapFilterGroup !== gb.grup;
+    const isHighlighted = mapFilterGroup === gb.grup;
+
+    ctx.save();
+    const bw = gb.maxX - gb.minX;
+    const bh = gb.maxY - gb.minY;
+
+    if (isFiltered) {
+      ctx.globalAlpha = 0.14;
+    }
+
+    const fillColor = isHighlighted
+      ? (isLight ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.12)')
+      : (isLight ? 'rgba(15, 23, 42, 0.02)' : 'rgba(255, 255, 255, 0.02)');
+    const borderColor = isHighlighted
+      ? '#6366f1'
+      : (isLight ? 'rgba(148, 163, 184, 0.45)' : 'rgba(99, 102, 241, 0.28)');
+
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = isHighlighted ? 1.8 : 1.2;
+    ctx.setLineDash(isHighlighted ? [] : [6, 4]);
+
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(gb.minX, gb.minY, bw, bh, 10);
+    } else {
+      ctx.rect(gb.minX, gb.minY, bw, bh);
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    // Group Title Pill Tag di pojok kiri atas
+    ctx.setLineDash([]);
+    const tagH = 18;
+    ctx.font = 'bold 9.5px Inter, sans-serif';
+    const tagText = `📍 ${gb.grup} (${gb.onlineCount}/${gb.count})`;
+    const tagW = ctx.measureText(tagText).width + 16;
+
+    ctx.fillStyle = isHighlighted
+      ? '#6366f1'
+      : (isLight ? '#e2e8f0' : 'rgba(30, 41, 59, 0.90)');
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(gb.minX + 8, gb.minY - 9, tagW, tagH, 5);
+    } else {
+      ctx.rect(gb.minX + 8, gb.minY - 9, tagW, tagH);
+    }
+    ctx.fill();
+
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = isHighlighted
+      ? '#ffffff'
+      : (isLight ? '#334155' : '#cbd5e1');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tagText, gb.minX + 8 + tagW / 2, gb.minY);
+
+    ctx.restore();
+  });
+
   // 0a. WAN Uplink Links (Internet / Cloud -> Router Gateways)
   if (wanNode && wanNode.routers && wanNode.routers.length > 0) {
     wanNode.routers.forEach((r) => {
@@ -2205,7 +2679,7 @@ function drawMap(ctx, w, h) {
       const wx = wanNode.x;
       const wy = wanNode.y + wanNode.h / 2;
       const rx = r.mapPos.x;
-      const ry = r.mapPos.y - 18;
+      const ry = r.mapPos.y - (r._cardHeight ? r._cardHeight / 2 : 22);
       const midY = (wy + ry) / 2;
 
       ctx.save();
@@ -2244,9 +2718,9 @@ function drawMap(ctx, w, h) {
       const { from, to, label } = link;
       if (!from.mapPos || !to.mapPos) return;
 
-      const fx = from.mapPos.x + 18;
+      const fx = from.mapPos.x + (from._cardWidth ? from._cardWidth / 2 : 72);
       const fy = from.mapPos.y;
-      const tx = to.mapPos.x - 18;
+      const tx = to.mapPos.x - (to._cardWidth ? to._cardWidth / 2 : 72);
       const ty = to.mapPos.y;
       const midX = (fx + tx) / 2;
       const midY = (fy + ty) / 2 - 16;
@@ -2276,7 +2750,7 @@ function drawMap(ctx, w, h) {
       ctx.restore();
 
       // Label badge inter-router di tengah
-      if (currentScale >= 0.5) {
+      if (currentScale >= 0.45) {
         ctx.save();
         ctx.font = 'bold 9px Inter, sans-serif';
         const txt = label || '⚡ HA Sync';
@@ -2313,15 +2787,28 @@ function drawMap(ctx, w, h) {
     const parent = d._effectiveParent || getDeviceParent(d);
     if (!parent || !parent.mapPos) return;
 
+    const isFilteredOut = (mapFilterGroup !== 'all' && (d.grup || 'Umum') !== mapFilterGroup) ||
+      (mapFilterJenis === 'cctv' && !String(d.jenis || '').toLowerCase().includes('cctv')) ||
+      (mapFilterJenis === 'infra' && !['router', 'switch', 'gateway', 'access point', 'ap'].some((k) => String(d.jenis || '').toLowerCase().includes(k))) ||
+      (mapFilterJenis === 'komputer' && !String(d.jenis || '').toLowerCase().includes('komputer'));
+
+    const parentH = parent._cardHeight || (['switch', 'router', 'gateway', 'server'].some((k) => String(parent.jenis || '').toLowerCase().includes(k)) ? 48 : 44);
+    const childH = d._cardHeight || 44;
+
     const px = parent.mapPos.x;
-    const py = parent.mapPos.y + 14;
+    const py = parent.mapPos.y + parentH / 2;
     const cx = d.mapPos.x;
-    const cy = d.mapPos.y - 14;
+    const cy = d.mapPos.y - childH / 2;
     const midY = (py + cy) / 2;
 
     const devSub = getSubnetPrefix(d.ip);
     const parentSub = getSubnetPrefix(parent.ip);
     const isL3 = devSub && parentSub && devSub !== parentSub;
+
+    ctx.save();
+    if (isFilteredOut) {
+      ctx.globalAlpha = 0.12;
+    }
 
     ctx.beginPath();
     ctx.moveTo(px, py);
@@ -2350,107 +2837,152 @@ function drawMap(ctx, w, h) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+    ctx.restore();
   });
 
-  // 2. Draw Devices with Level of Detail (LOD) Multi-Skala
+  // 2. Draw Devices as Modern Kapsul / Badge Cards
   mockDevices.forEach((d) => {
     if (!d.mapPos) return;
     const isInfra = ['switch', 'router', 'gateway', 'server'].some((k) => String(d.jenis || '').toLowerCase().includes(k));
-    const color = d.status === 'online' ? '#22c55e' : (d.status === 'offline' ? '#ef4444' : '#eab308');
+    const isOnline = d.status === 'online';
+    const isOffline = d.status === 'offline';
+    const statusColor = isOnline ? '#22c55e' : (isOffline ? '#ef4444' : '#eab308');
+    const statusGlow = isOnline ? 'rgba(34, 197, 94, 0.35)' : (isOffline ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.35)');
+
+    const isFilteredOut = (mapFilterGroup !== 'all' && (d.grup || 'Umum') !== mapFilterGroup) ||
+      (mapFilterJenis === 'cctv' && !String(d.jenis || '').toLowerCase().includes('cctv')) ||
+      (mapFilterJenis === 'infra' && !['router', 'switch', 'gateway', 'access point', 'ap'].some((k) => String(d.jenis || '').toLowerCase().includes(k))) ||
+      (mapFilterJenis === 'komputer' && !String(d.jenis || '').toLowerCase().includes('komputer'));
 
     const isSearchMatch = isSearchActive && (
       (d.nama || '').toLowerCase().includes(mapSearchQuery) ||
       (d.ip || '').toLowerCase().includes(mapSearchQuery)
     );
 
-    // Search focus ring
+    const cardW = isInfra ? 156 : 144;
+    const cardH = isInfra ? 48 : 44;
+    const cardX = d.mapPos.x - cardW / 2;
+    const cardY = d.mapPos.y - cardH / 2;
+    d._cardWidth = cardW;
+    d._cardHeight = cardH;
+
+    ctx.save();
+    if (isFilteredOut) {
+      ctx.globalAlpha = 0.14;
+    }
+
+    // Search focus pulsing outer ring
     if (isSearchMatch) {
       const ringPulse = ((now / 800) % 1);
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(d.mapPos.x, d.mapPos.y, 22 + ringPulse * 16, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(56, 189, 248, ${0.85 * (1 - ringPulse)})`;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(cardX - 4 - ringPulse * 8, cardY - 4 - ringPulse * 8, cardW + 8 + ringPulse * 16, cardH + 8 + ringPulse * 16, 12);
+      } else {
+        ctx.rect(cardX - 4 - ringPulse * 8, cardY - 4 - ringPulse * 8, cardW + 8 + ringPulse * 16, cardH + 8 + ringPulse * 16);
+      }
       ctx.stroke();
       ctx.restore();
     }
 
-    if (currentScale < 0.42) {
-      // === LOD 3: MACRO RINGKAS (100+ Perangkat Tanpa Teks Overlap) ===
-      ctx.save();
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = d.status === 'online' ? 8 : 4;
-      ctx.beginPath();
-      ctx.arc(d.mapPos.x, d.mapPos.y, isInfra ? 11 : 9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
-
-    // === LOD 2 & 1: Body Node ===
-    const radius = isInfra ? 17 : 14;
-
-    // Pulsing aura pada perangkat online
-    if (d.status === 'online') {
-      const pulsePhase = ((now / 1500) + d.id * 0.2) % 1;
-      ctx.beginPath();
-      ctx.arc(d.mapPos.x, d.mapPos.y, radius + pulsePhase * 9, 0, Math.PI * 2);
-      ctx.strokeStyle = isInfra ? `rgba(2, 132, 199, ${0.5 * (1 - pulsePhase)})` : `rgba(34, 197, 94, ${0.45 * (1 - pulsePhase)})`;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-
-    // Node Body
+    // A. Card Background & Shadow
     ctx.save();
-    ctx.shadowColor = d.status === 'online' ? (isInfra ? 'rgba(2,132,199,0.5)' : 'rgba(34,197,94,0.45)') : (d.status === 'offline' ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)');
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(d.mapPos.x, d.mapPos.y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.shadowColor = statusGlow;
+    ctx.shadowBlur = isOnline ? 8 : 4;
+    ctx.fillStyle = isLight
+      ? (isOnline ? '#ffffff' : (isOffline ? '#fff1f2' : '#fefce8'))
+      : (isOnline ? 'rgba(15, 23, 42, 0.92)' : (isOffline ? 'rgba(35, 15, 18, 0.92)' : 'rgba(35, 30, 15, 0.92)'));
 
-    ctx.strokeStyle = isInfra ? '#38bdf8' : '#ffffff';
-    ctx.lineWidth = isInfra ? 2 : 1.4;
+    ctx.strokeStyle = isInfra
+      ? (isOnline ? '#38bdf8' : '#ef4444')
+      : (isOnline ? 'rgba(34, 197, 94, 0.65)' : (isOffline ? 'rgba(239, 68, 68, 0.7)' : 'rgba(234, 179, 8, 0.65)'));
+    ctx.lineWidth = isInfra ? 1.8 : 1.2;
+
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(cardX, cardY, cardW, cardH, 8);
+    } else {
+      ctx.rect(cardX, cardY, cardW, cardH);
+    }
+    ctx.fill();
     ctx.stroke();
     ctx.restore();
 
-    // Node Icon
-    ctx.fillStyle = '#ffffff';
-    ctx.font = isInfra ? '13px sans-serif' : '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(getNodeIcon(d.jenis), d.mapPos.x, d.mapPos.y + 4);
+    // B. Left Icon Bubble (Besar, tajam, dan kontras)
+    const bubbleRadius = isInfra ? 16 : 14.5;
+    const bubbleX = cardX + bubbleRadius + 7;
+    const bubbleY = d.mapPos.y;
 
-    // === LABEL TEXT (Disesuaikan LOD Skala) ===
-    if (currentScale >= 0.42 && currentScale < 0.75) {
-      // LOD 2: Tampilkan Icon + Nama Singkat (Sembunyikan IP)
-      ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
-      ctx.font = '600 9px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      const shortName = d.nama.length > 10 ? d.nama.substring(0, 9) + '…' : d.nama;
-      ctx.fillText(shortName, d.mapPos.x, d.mapPos.y + 24);
-    } else {
-      // LOD 1: Tampilkan Penuh (Nama + IP + Latency Badge)
-      ctx.fillStyle = isLight ? '#0f172a' : '#f1f5f9';
-      ctx.font = '600 9.5px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      const shortName = d.nama.length > 14 ? d.nama.substring(0, 13) + '…' : d.nama;
-      ctx.fillText(shortName, d.mapPos.x, d.mapPos.y + 25);
+    ctx.save();
+    ctx.fillStyle = isOnline
+      ? (isLight ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.22)')
+      : (isLight ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.25)');
+    ctx.beginPath();
+    ctx.arc(bubbleX, bubbleY, bubbleRadius, 0, Math.PI * 2);
+    ctx.fill();
 
-      ctx.fillStyle = isLight ? '#475569' : '#94a3b8';
-      ctx.font = '8.5px monospace';
-      ctx.fillText(cleanDeviceIp(d.ip), d.mapPos.x, d.mapPos.y + 36);
+    // Status dot at corner of bubble
+    ctx.fillStyle = statusColor;
+    ctx.beginPath();
+    ctx.arc(bubbleX + bubbleRadius * 0.72, bubbleY - bubbleRadius * 0.72, 3.5, 0, Math.PI * 2);
+    ctx.fill();
 
-      if (d.status === 'online') {
-        const msVal = (d.responseTime !== null && d.responseTime !== undefined && d.responseTime > 0) ? d.responseTime : 1;
-        ctx.fillStyle = '#4ade80';
-        ctx.font = 'bold 8px Inter, sans-serif';
-        ctx.fillText(`${msVal}ms`, d.mapPos.x, d.mapPos.y - 18);
-      }
+    // Pulsing aura on online devices
+    if (isOnline) {
+      const pulsePhase = ((now / 1500) + d.id * 0.2) % 1;
+      ctx.beginPath();
+      ctx.arc(bubbleX, bubbleY, bubbleRadius + pulsePhase * 5, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(34, 197, 94, ${0.45 * (1 - pulsePhase)})`;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
     }
+
+    // Emoji Icon inside bubble (Besar dan selalu terlihat jelas)
+    ctx.font = isInfra ? '17px sans-serif' : '15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(getNodeIcon(d.jenis), bubbleX, bubbleY + 0.5);
+    ctx.restore();
+
+    // C. Right Side: Text Information (Nama + IP + Latency)
+    const textStartX = bubbleX + bubbleRadius + 8;
+
+    // Line 1: Device Name
+    ctx.save();
+    ctx.font = isInfra ? 'bold 10.5px Inter, sans-serif' : '600 10px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isLight ? '#0f172a' : '#f8fafc';
+
+    let displayName = d.nama || 'Device';
+    if (displayName.length > 14) {
+      displayName = displayName.substring(0, 13) + '…';
+    }
+    ctx.fillText(displayName, textStartX, bubbleY - (isInfra ? 8 : 7));
+
+    // Line 2: IP Address
+    ctx.font = '9px monospace';
+    ctx.fillStyle = isLight ? '#475569' : '#94a3b8';
+    const cleanIp = cleanDeviceIp(d.ip);
+    let displayIpText = cleanIp;
+    if (displayIpText.length > 15) {
+      displayIpText = displayIpText.substring(0, 14) + '…';
+    }
+    ctx.fillText(displayIpText, textStartX, bubbleY + (isInfra ? 8 : 7));
+
+    // Latency badge / pill if online
+    if (isOnline) {
+      const ms = (d.responseTime !== null && d.responseTime !== undefined && d.responseTime > 0) ? d.responseTime : 1;
+      ctx.font = 'bold 8.5px Inter, sans-serif';
+      ctx.fillStyle = '#22c55e';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${ms}ms`, cardX + cardW - 7, bubbleY - (isInfra ? 8 : 7));
+    }
+    ctx.restore();
+
+    ctx.restore();
   });
 
   // 3. Draw WAN Cloud Node Body (Pusat Internet / Gateway Uplink)
@@ -2500,6 +3032,7 @@ function drawMap(ctx, w, h) {
 // ---- DETAIL MODAL DRILL-DOWN GLOBAL STATUS ----
 function showHourDetailModal(hourData) {
   if (!hourData) return;
+  const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
   const online = hourData.online || 0;
   const offline = hourData.offline || 0;
   const maintenance = hourData.maintenance || 0;
@@ -2520,16 +3053,16 @@ function showHourDetailModal(hourData) {
       badgeHtml = '<span class="chip chip-maintenance">🟡 Maintenance</span>';
       latencyText = 'Maint.';
     } else {
-      badgeHtml = '<span class="chip" style="background:rgba(148,163,184,0.15); color:var(--color-muted);">⚪ Belum Ada</span>';
+      badgeHtml = `<span class="chip" style="background:${isLight ? '#e2e8f0' : 'rgba(148,163,184,0.15)'}; color:var(--color-muted);">⚪ Belum Ada</span>`;
       latencyText = '-';
     }
 
     return `
-      <tr style="border-bottom:1px solid var(--border-color);">
+      <tr style="border-bottom:1px solid ${isLight ? '#e2e8f0' : 'var(--border-color)'};">
         <td style="padding:8px 10px; font-weight:600; color:var(--color-text); text-align:left;">
           ${getNodeIcon(d.jenis)} ${d.nama}
         </td>
-        <td style="padding:8px 10px; font-family:var(--font-mono); font-size:0.8rem; color:var(--color-muted);">${d.ip}</td>
+        <td style="padding:8px 10px; font-family:var(--font-mono); font-size:0.8rem; color:${isLight ? '#0284c7' : '#38bdf8'};" title="${d.ip}">${cleanDeviceIp(d.ip)}</td>
         <td style="padding:8px 10px; font-size:0.8rem; color:var(--color-muted);">${d.grup || 'Umum'}</td>
         <td style="padding:8px 10px;">${badgeHtml}</td>
         <td style="padding:8px 10px; font-family:var(--font-mono); font-size:0.8rem; color:${d.statusAtHour === 'online' ? 'var(--color-online)' : 'var(--color-muted)'};">${latencyText}</td>
@@ -2546,11 +3079,11 @@ function showHourDetailModal(hourData) {
         <span class="chip chip-online">🟢 Online: <b>${online}</b></span>
         <span class="chip chip-offline">🔴 Offline: <b>${offline}</b></span>
         ${maintenance > 0 ? `<span class="chip chip-maintenance">🟡 Maintenance: <b>${maintenance}</b></span>` : ''}
-        ${nodata > 0 ? `<span class="chip" style="background:rgba(148,163,184,0.15); color:var(--color-muted);">⚪ Belum Didaftarkan: <b>${nodata}</b></span>` : ''}
+        ${nodata > 0 ? `<span class="chip" style="background:${isLight ? '#f1f5f9' : 'rgba(148,163,184,0.15)'}; color:var(--color-muted);">⚪ Belum Didaftarkan: <b>${nodata}</b></span>` : ''}
       </div>
-      <div style="max-height:360px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; margin-top:10px;">
+      <div style="max-height:360px; overflow-y:auto; border:1px solid ${isLight ? '#e2e8f0' : 'var(--border-color)'}; border-radius:8px; margin-top:10px;">
         <table style="width:100%; border-collapse:collapse; font-size:0.82rem; text-align:left;">
-          <thead style="background:rgba(255,255,255,0.03); border-bottom:1px solid var(--border-color); color:var(--color-muted); position:sticky; top:0; z-index:1;">
+          <thead style="background:${isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)'}; border-bottom:1px solid ${isLight ? '#e2e8f0' : 'var(--border-color)'}; color:var(--color-muted); position:sticky; top:0; z-index:1;">
             <tr>
               <th style="padding:8px 10px;">Perangkat</th>
               <th style="padding:8px 10px;">IP Address</th>
@@ -2560,7 +3093,7 @@ function showHourDetailModal(hourData) {
             </tr>
           </thead>
           <tbody>
-            ${devices.length > 0 ? deviceRows : '<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--color-muted);">Tidak ada perangkat terdaftar pada jam ini</td></tr>'}
+            ${devices.length > 0 ? deviceRows : `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--color-muted);">Tidak ada perangkat terdaftar pada jam ini</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -2568,8 +3101,8 @@ function showHourDetailModal(hourData) {
     width: 660,
     showCloseButton: true,
     showConfirmButton: false,
-    background: 'var(--color-surface, #1a1d2e)',
-    color: 'var(--color-text, #e2e8f0)',
+    background: isLight ? '#ffffff' : '#1a1d2e',
+    color: isLight ? '#0f172a' : '#e2e8f0',
   });
 }
 
@@ -2592,7 +3125,8 @@ function initTimeline() {
         const icon = isOnline ? '🟢' : isMaint ? '🟡' : '🔴';
         const statusText = isOnline ? 'Online' : isMaint ? 'Maintenance' : 'Offline';
         const isSelected = String(d.id) === currentVal;
-        return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${d.ip}) — ${statusText}</option>`;
+        const displayIp = cleanDeviceIp(d.ip);
+        return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${displayIp}) — ${statusText}</option>`;
       }).join('');
 
       if (!select.value && mockDevices.length > 0) {

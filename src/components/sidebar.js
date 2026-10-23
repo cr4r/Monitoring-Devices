@@ -102,7 +102,7 @@ export function renderSidebar() {
   return `
     <aside class="sidebar" id="sidebar">
       <a class="sidebar-logo" href="#/dashboard">
-        <div class="sidebar-logo-icon">
+        <div class="sidebar-logo-icon ${appLogo ? 'has-custom-logo' : ''}" ${appLogo ? 'style="background:transparent !important; box-shadow:none !important;"' : ''}>
           ${appLogo ? `<img src="${appLogo}" class="custom-app-logo" style="width:32px;height:32px;object-fit:contain;border-radius:6px;" alt="Logo" />` : '📡'}
         </div>
         <div class="sidebar-logo-text">

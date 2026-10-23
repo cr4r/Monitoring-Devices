@@ -48,7 +48,9 @@
   box-shadow: var(--shadow-glow-accent);
 }
 
-.sidebar-logo-icon.has-custom-logo {
+.sidebar-logo-icon.has-custom-logo,
+.sidebar-logo-icon:has(img),
+.sidebar-logo-icon:has(.custom-app-logo) {
   background: transparent !important;
   box-shadow: none !important;
 }
@@ -740,25 +742,48 @@
   transition: all 0.25s ease;
 }
 
+/* Map Fullscreen Active Isolation */
+body.map-fullscreen-active {
+  overflow: hidden !important;
+}
+
+body.map-fullscreen-active .page-container {
+  transform: none !important;
+  animation: none !important;
+}
+
+.network-map-wrapper:fullscreen,
 .network-map-wrapper.fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  border-radius: 0;
-  border: none;
-  padding: 16px;
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  z-index: 999999 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  padding: 16px 20px !important;
+  background: var(--bg-primary) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
 }
 
+.network-map-wrapper:fullscreen .canvas-container,
 .network-map-wrapper.fullscreen .canvas-container {
-  flex: 1;
-  height: auto !important;
+  flex: 1 1 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
 }
 
+.network-map-wrapper:fullscreen #networkCanvas,
 .network-map-wrapper.fullscreen #networkCanvas {
+  width: 100% !important;
   height: 100% !important;
+  display: block !important;
 }
 
 .network-map-toolbar {
@@ -807,6 +832,24 @@
   font-size: 0.75rem;
   color: var(--color-muted);
   pointer-events: none;
+}
+
+.map-toolbar-group select.form-control {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  height: 31px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--color-heading);
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.map-toolbar-group select.form-control:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  outline: none;
 }
 
 #networkCanvas {

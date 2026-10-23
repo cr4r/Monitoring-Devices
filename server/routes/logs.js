@@ -9,21 +9,46 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// GET /api/logs/devices — Mengambil daftar instansi perangkat yang pernah tercatat di log (aktif maupun terhapus)
+// GET /api/logs/devices — Mengambil seluruh daftar perangkat terdaftar & arsip perangkat yang pernah tercatat di log
 router.get('/devices', authenticateToken, (req, res) => {
   const devices = query(`
     SELECT 
+      d.id as device_id,
+      d.nama as device_name,
+      d.ip as device_ip,
+      d.jenis as device_jenis,
+      d.grup as device_grup,
+      d.created_at as device_created_at,
+      1 as is_active,
+      MIN(l.waktu) as log_pertama,
+      MAX(l.waktu) as log_terakhir,
+      COUNT(l.id) as total_log
+    FROM devices d
+    LEFT JOIN device_status_logs l ON l.device_id = d.id
+    WHERE d.is_active = 1
+    GROUP BY d.id
+
+    UNION ALL
+
+    SELECT 
       l.device_id,
-      COALESCE(d.nama, l.device_name) as device_name,
-      COALESCE(d.ip, l.device_ip) as device_ip,
-      COALESCE(d.created_at, l.device_created_at) as device_created_at,
-      CASE WHEN d.id IS NOT NULL THEN 1 ELSE 0 END as is_active,
+      COALESCE(l.device_name, 'Perangkat Terhapus') as device_name,
+      COALESCE(l.device_ip, '-') as device_ip,
+      CASE 
+        WHEN l.device_ip LIKE 'rtsp%' OR l.device_ip LIKE 'rstp%' THEN 'CCTV Hikvision'
+        WHEN LOWER(l.device_name) LIKE '%cctv%' OR LOWER(l.device_name) LIKE '%cam%' THEN 'CCTV Hikvision'
+        ELSE 'Arsip'
+      END as device_jenis,
+      'Arsip' as device_grup,
+      l.device_created_at,
+      0 as is_active,
       MIN(l.waktu) as log_pertama,
       MAX(l.waktu) as log_terakhir,
       COUNT(l.id) as total_log
     FROM device_status_logs l
-    LEFT JOIN devices d ON d.id = l.device_id
+    WHERE l.device_id IS NOT NULL AND l.device_id NOT IN (SELECT id FROM devices WHERE is_active = 1)
     GROUP BY l.device_id
+
     ORDER BY is_active DESC, device_name ASC
   `);
   res.json({ success: true, data: devices });
@@ -112,10 +137,41 @@ router.get('/', authenticateToken, (req, res) => {
   const total = countRow ? countRow.total : 0;
 
   // Ambil data halaman aktif
-  const data = query(
-    `SELECT * FROM ${tableName} ${whereSql} ORDER BY waktu DESC, id DESC LIMIT ? OFFSET ?`,
-    [...params, limitNum, offset]
-  );
+  let data;
+  if (type === 'status') {
+    const rows = query(
+      `SELECT * FROM ${tableName} ${whereSql} ORDER BY waktu DESC, id DESC LIMIT ? OFFSET ?`,
+      [...params, limitNum, offset]
+    );
+    const activeDevices = query('SELECT id, jenis FROM devices');
+    const devJenisMap = new Map(activeDevices.map((d) => [d.id, d.jenis]));
+    data = rows.map((r) => {
+      let j = devJenisMap.get(r.device_id);
+      if (!j) {
+        const ipLow = (r.device_ip || '').toLowerCase();
+        const nameLow = (r.device_name || '').toLowerCase();
+        if (ipLow.startsWith('rtsp') || ipLow.startsWith('rstp') || nameLow.includes('cctv') || nameLow.includes('cam')) {
+          j = 'CCTV Hikvision';
+        } else if (nameLow.includes('router') || nameLow.includes('gateway')) {
+          j = 'Router';
+        } else if (nameLow.includes('switch') || nameLow.includes('hub')) {
+          j = 'Switch';
+        } else if (nameLow.includes('server')) {
+          j = 'Server';
+        } else if (nameLow.includes('access point') || nameLow.includes('wifi') || nameLow.includes('ap')) {
+          j = 'Access Point';
+        } else {
+          j = 'Komputer';
+        }
+      }
+      return { ...r, jenis: j };
+    });
+  } else {
+    data = query(
+      `SELECT * FROM ${tableName} ${whereSql} ORDER BY waktu DESC, id DESC LIMIT ? OFFSET ?`,
+      [...params, limitNum, offset]
+    );
+  }
 
   // Hitung jumlah baris per kategori tab untuk badge
   const statusCount = queryOne('SELECT count(*) as c FROM device_status_logs')?.c || 0;

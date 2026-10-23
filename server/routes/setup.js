@@ -69,6 +69,7 @@ router.post('/', (req, res) => {
 
     const {
       nama,
+      username,
       email,
       password,
       confirmPassword,
@@ -101,6 +102,7 @@ router.post('/', (req, res) => {
 
     // 3. Simpan Superadmin
     const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = (username || cleanEmail.split('@')[0] || 'admin').trim().toLowerCase();
     const cleanNama = nama.trim();
     const salt = bcrypt.genSaltSync(10);
     const passwordHash = bcrypt.hashSync(password, salt);
@@ -113,10 +115,11 @@ router.post('/', (req, res) => {
       .join('');
 
     const userResult = run(
-      `INSERT INTO users (nama, email, password_hash, role, avatar, status, notif_settings, created_at, updated_at)
-       VALUES (?, ?, ?, 'admin', ?, 'aktif', ?, datetime('now'), datetime('now'))`,
+      `INSERT INTO users (nama, username, email, password_hash, role, avatar, status, notif_settings, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'admin', ?, 'aktif', ?, datetime('now'), datetime('now'))`,
       [
         cleanNama,
+        cleanUsername,
         cleanEmail,
         passwordHash,
         initials || 'AD',

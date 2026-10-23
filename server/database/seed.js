@@ -17,6 +17,7 @@ export async function seedDatabase() {
     const defaultUsers = [
       {
         nama: 'Admin',
+        username: 'admin',
         email: 'admin@kantor.com',
         password: 'admin123',
         role: 'admin',
@@ -25,6 +26,7 @@ export async function seedDatabase() {
       },
       {
         nama: 'Budi Santoso',
+        username: 'teknisi',
         email: 'teknisi@kantor.com',
         password: 'teknisi123',
         role: 'teknisi',
@@ -33,6 +35,7 @@ export async function seedDatabase() {
       },
       {
         nama: 'Citra Dewi',
+        username: 'viewer',
         email: 'viewer@kantor.com',
         password: 'viewer123',
         role: 'viewer',
@@ -47,13 +50,13 @@ export async function seedDatabase() {
       const existing = queryOne('SELECT id FROM users WHERE email = ?', [u.email]);
       if (!existing) {
         run(
-          `INSERT INTO users (nama, email, password_hash, role, avatar, status, notif_settings)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [u.nama, u.email, hash, u.role, u.avatar, u.status, JSON.stringify({ enabled: true })]
+          `INSERT INTO users (nama, username, email, password_hash, role, avatar, status, notif_settings)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [u.nama, u.username, u.email, hash, u.role, u.avatar, u.status, JSON.stringify({ enabled: true })]
         );
-        console.log(`[Seed]: Pengguna default ${u.email} berhasil ditambahkan.`);
+        console.log(`[Seed]: Pengguna default ${u.username} (${u.email}) berhasil ditambahkan.`);
       } else {
-        run('UPDATE users SET nama = ?, password_hash = ? WHERE email = ?', [u.nama, hash, u.email]);
+        run('UPDATE users SET nama = ?, username = ?, password_hash = ? WHERE email = ?', [u.nama, u.username, hash, u.email]);
       }
     }
   } else {
@@ -63,11 +66,11 @@ export async function seedDatabase() {
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync('admin123', salt);
       run(
-        `INSERT INTO users (nama, email, password_hash, role, avatar, status, notif_settings)
-         VALUES ('Admin', 'admin@kantor.com', ?, 'admin', 'AD', 'aktif', ?)`,
+        `INSERT INTO users (nama, username, email, password_hash, role, avatar, status, notif_settings)
+         VALUES ('Admin', 'admin', 'admin@kantor.com', ?, 'admin', 'AD', 'aktif', ?)`,
         [hash, JSON.stringify({ enabled: true, push: true, sound: true })]
       );
-      console.log('✅ [MonDev]: Pengguna default Admin (admin@kantor.com) otomatis diinisialisasi.');
+      console.log('✅ [MonDev]: Pengguna default Admin (admin / admin@kantor.com) otomatis diinisialisasi.');
     }
   }
 
@@ -158,11 +161,15 @@ export async function seedDemoData() {
   }
 
   const sampleLogs = [
+    [1, 'Router Gateway Utama', '192.168.1.1', 'Offline', 'Online', 'PING', '1 ms', 'Router Gateway Utama (192.168.1.1) terhubung stabil ke uplink ISP.'],
+    [2, 'Core Switch Lt. 2', '192.168.1.2', 'Offline', 'Online', 'PING', '2 ms', 'Core Switch Lt. 2 (192.168.1.2) aktif mengalirkan trunk VLAN.'],
+    [3, 'PC Server File', '192.168.1.10', 'Offline', 'Online', 'PING', '1 ms', 'PC Server File (192.168.1.10) aktif melayani SMB share.'],
     [4, 'PC Marketing 01', '192.168.1.30', 'Online', 'Offline', 'PING', 'Timeout', 'PC Marketing 01 (192.168.1.30) tidak merespons ping. Status berubah menjadi Offline.'],
     [13, 'CCTV Gudang Barang', '192.168.2.103', 'Online', 'Offline', 'ISAPI', 'Connection Refused', 'CCTV Gudang Barang (192.168.2.103) tidak dapat dihubungi via ISAPI. Status berubah menjadi Offline.'],
     [5, 'PC Gudang', '192.168.2.50', 'Online', 'Maintenance', 'Manual', '-', 'PC Gudang (192.168.2.50) masuk mode Maintenance oleh Budi Santoso. Alasan: Penggantian RAM dan SSD.'],
     [16, 'CCTV Parkiran Belakang', '192.168.1.106', 'Online', 'Maintenance', 'Manual', '-', 'CCTV Parkiran Belakang (192.168.1.106) masuk mode Maintenance. Alasan: Pembersihan lensa dan kalibrasi sudut kamera.'],
     [1, 'PC Akuntansi 01', '192.168.1.20', 'Offline', 'Online', 'PING', '4 ms', 'PC Akuntansi 01 (192.168.1.20) kembali merespons ping. Status berubah menjadi Online.'],
+    [18, 'Access Point Lt. 1', '192.168.1.15', 'Offline', 'Online', 'PING', '3 ms', 'Access Point Lt. 1 (192.168.1.15) online dan menyiarkan SSID kantor.'],
   ];
 
   for (const [did, dname, dip, prev, curr, met, resp, msg] of sampleLogs) {

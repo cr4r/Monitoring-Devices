@@ -515,6 +515,13 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
 
   const newId = result.lastInsertRowid;
 
+  // Catat initial status log agar perangkat langsung muncul di Log Status Sistem
+  run(
+    `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+     VALUES (?, ?, ?, datetime('now'), '-', 'offline', ?, '-', ?)`,
+    [newId, nama.trim(), ip.trim(), cleanMetode, `Perangkat ${nama.trim()} (${ip.trim()}) didaftarkan ke sistem. Menunggu pemantauan.`]
+  );
+
   // Catat konfigurasi log
   run(
     `INSERT INTO config_logs (user_id, user_nama, aksi, device_id, device_nama, detail)
@@ -968,6 +975,13 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
 
         targetId = Number(result.lastInsertRowid);
         imported++;
+
+        // Catat log status inisial perangkat impor
+        run(
+          `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+           VALUES (?, ?, ?, datetime('now'), 'Inisialisasi', 'Offline', ?, '-', ?)`,
+          [targetId, namaClean, ipClean, cleanMetode || 'PING', `Perangkat baru ${namaClean} (${ipClean}) diimpor ke sistem via CSV.`]
+        );
       }
 
       ipToIdMap.set(ipClean, targetId);

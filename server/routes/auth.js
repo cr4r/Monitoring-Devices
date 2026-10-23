@@ -14,12 +14,13 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 
 router.post('/login', loginRateLimiter, async (req, res) => {
-  const { email, password } = req.body;
+  const { username, email, password } = req.body;
+  const identifier = (username || email || '').trim();
 
-  if (!email || !password) {
+  if (!identifier || !password) {
     return res.status(400).json({
       success: false,
-      message: 'Email dan kata sandi wajib diisi.',
+      message: 'Username dan kata sandi wajib diisi.',
     });
   }
 
@@ -40,7 +41,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     }
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanIdentifier = identifier.toLowerCase();
 
   const userCountRow = queryOne('SELECT COUNT(*) as count FROM users');
   if (!userCountRow || userCountRow.count === 0) {
@@ -51,13 +52,13 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     });
   }
 
-  const user = queryOne('SELECT * FROM users WHERE email = ?', [cleanEmail]);
+  const user = queryOne('SELECT * FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?', [cleanIdentifier, cleanIdentifier]);
 
   if (!user) {
-    recordFailedLogin(cleanEmail);
+    recordFailedLogin(cleanIdentifier);
     return res.status(401).json({
       success: false,
-      message: 'Email atau kata sandi tidak sesuai.',
+      message: 'Username atau kata sandi tidak sesuai.',
     });
   }
 
@@ -71,7 +72,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
   const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
   if (!isPasswordValid) {
     const { maxAttempts, lockoutMins } = getSecuritySettings();
-    const entry = recordFailedLogin(cleanEmail);
+    const entry = recordFailedLogin(cleanIdentifier);
     const attemptsLeft = maxAttempts - entry.count;
     return res.status(401).json({
       success: false,
@@ -82,7 +83,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
   }
 
   // Berhasil login: reset failure counter
-  resetFailedLogin(cleanEmail);
+  resetFailedLogin(cleanIdentifier);
 
   // Perbarui last_login dan ip_akses
   const ip = clientIp;
@@ -103,6 +104,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
   const token = jwt.sign(
     {
       id: user.id,
+      username: user.username,
       email: user.email,
       nama: user.nama,
       role: user.role,
@@ -117,6 +119,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     token,
     user: {
       id: user.id,
+      username: user.username,
       email: user.email,
       nama: user.nama,
       role: user.role,
@@ -127,7 +130,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
 
 router.get('/me', authenticateToken, (req, res) => {
   const user = queryOne(
-    `SELECT id, nama, email, role, avatar, status, last_login, created_at FROM users WHERE id = ?`,
+    `SELECT id, nama, username, email, role, avatar, status, last_login, created_at FROM users WHERE id = ?`,
     [req.user.id]
   );
 
