@@ -534,10 +534,20 @@ export async function apiCleanLogs(retentionDays = 90) {
       },
     };
   }
+
+  const payload = typeof retentionDays === 'object' && retentionDays !== null
+    ? retentionDays
+    : { retentionDays };
+
   return request('/settings/clean-logs', {
     method: 'POST',
-    body: JSON.stringify({ retentionDays }),
+    body: JSON.stringify(payload),
   });
+}
+
+export async function apiPreviewCleanLogs(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return request(`/settings/clean-logs/preview?${query}`, { method: 'GET' });
 }
 
 // ---- WEBSOCKET REAL-TIME LISTENER ----

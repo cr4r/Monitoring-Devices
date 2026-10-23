@@ -78,13 +78,14 @@ export async function seedDatabase() {
     const defaultSettings = [
       // Umum
       ['umum', 'app_name', 'MonDev'],
-      ['umum', 'theme', 'dark'],
+      ['umum', 'theme', 'auto'],
       ['umum', 'timezone', 'Asia/Jakarta'],
       ['umum', 'language', 'id'],
       ['umum', 'dashboard_refresh_seconds', '30'],
       // Monitoring
-      ['monitoring', 'global_ping_timeout_ms', '2000'],
-      ['monitoring', 'global_retry_count', '3'],
+      ['monitoring', 'ping_timeout_ms', '2000'],
+      ['monitoring', 'ping_retry_count', '3'],
+      ['monitoring', 'engine_active', 'true'],
       ['monitoring', 'packet_size_bytes', '32'],
       ['monitoring', 'default_rtsp_port', '554'],
       // Notifikasi
@@ -101,7 +102,9 @@ export async function seedDatabase() {
       // Log & Backup
       ['log_backup', 'retention_days', '90'],
       ['log_backup', 'auto_backup_enabled', 'true'],
-      ['log_backup', 'backup_schedule', 'daily_midnight'],
+      ['log_backup', 'auto_delete_logs_enabled', 'true'],
+      ['log_backup', 'backup_schedule', 'daily'],
+      ['log_backup', 'backup_target_path', ''],
       // Laporan Terjadwal
       ['laporan', 'auto_weekly_report', 'true'],
       ['laporan', 'report_recipients', 'it-reports@kantor.com'],

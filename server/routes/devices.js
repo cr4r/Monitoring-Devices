@@ -4,7 +4,7 @@
 // ================================================================
 
 import express from 'express';
-import { query, queryOne, run } from '../database/db.js';
+import { query, queryOne, run, getSystemSetting } from '../database/db.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { probeDevice, getIsapiDeviceInfo, parseRtspUrl } from '../services/hikvisionService.js';
 import { digestClient } from '../services/digestClient.js';
@@ -718,9 +718,12 @@ router.post('/ping-all', authenticateToken, requireRole(['admin', 'teknisi']), a
           [timeMs, dev.id]
         );
       } else {
+        const retryThreshold = parseInt(getSystemSetting('ping_retry_count', '3'), 10) || 3;
+        const newFailures = Math.min(99, (dev.consecutive_failures || 0) + 1);
+        const shouldBeOffline = newFailures >= retryThreshold;
         run(
-          `UPDATE devices SET response_time_ms = 0, last_check = datetime('now'), status = 'offline', consecutive_failures = consecutive_failures + 1 WHERE id = ?`,
-          [dev.id]
+          `UPDATE devices SET response_time_ms = 0, last_check = datetime('now'), consecutive_failures = ?, status = CASE WHEN ? THEN 'offline' ELSE status END WHERE id = ?`,
+          [newFailures, shouldBeOffline ? 1 : 0, dev.id]
         );
       }
 

@@ -4,12 +4,16 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
+import { navigate } from '../router.js';
 import { mockDevices, getStatusCounts, getGroups, updateDeviceStatus, syncDevicesFromApi, cleanDeviceIp, parseSqliteUtc, formatTimeAgo } from '../data/mock-devices.js';
 import { apiPingDevice, apiSetMaintenance, apiFinishMaintenance, apiGetDevice, apiPingAllDevices } from '../api.js';
 import { renderTimeline24h, renderAggregateTimeline, destroyAllCharts } from '../components/charts.js';
 import { getTimeline24h } from '../data/mock-reports.js';
 import { getSession } from '../main.js';
+import { exportReportPdf } from '../services/pdfService.js';
+import { getAppSetting } from '../settingsManager.js';
 
+let currentNavigate = null;
 let currentFilter = { kategori: 'all', status: 'all', grup: 'all', search: '' };
 let currentTab = 'kartu';
 let canvasCtx = null;
@@ -39,10 +43,11 @@ export function renderDashboard() {
           <h1 class="page-title">📊 Dashboard</h1>
           <p class="page-subtitle">Status real-time semua device jaringan kantor</p>
         </div>
-        <div class="page-actions">
-          <div class="live-indicator">
-            <span class="live-dot"></span>
-            <span style="font-size:0.8rem; font-weight:600; color:var(--color-online);">LIVE</span>
+          <div class="live-indicator" id="monitoring-engine-indicator" title="${getAppSetting('engine_active', 'true') === 'true' ? 'Engine monitoring aktif memantau perangkat' : 'Engine monitoring dihentikan sementara di pengaturan'}">
+            <span class="live-dot" id="monitoring-engine-dot" style="${getAppSetting('engine_active', 'true') === 'true' ? '' : 'background:#eab308; box-shadow:none;'}"></span>
+            <span id="monitoring-engine-text" style="font-size:0.8rem; font-weight:600; color:${getAppSetting('engine_active', 'true') === 'true' ? 'var(--color-online)' : '#eab308'};">
+              ${getAppSetting('engine_active', 'true') === 'true' ? 'LIVE' : 'PAUSED'}
+            </span>
           </div>
           <button class="btn btn-secondary btn-sm" id="ping-all-btn" title="Ping serentak seluruh perangkat">📡 Ping All</button>
           <button class="btn btn-secondary btn-sm" id="refresh-btn" title="Muat ulang & verifikasi koneksi seluruh perangkat">🔄 Refresh</button>
@@ -51,35 +56,48 @@ export function renderDashboard() {
 
       <!-- Stats -->
       <div class="stats-grid">
-        <div class="stat-card total">
-          <div class="stat-icon total">📡</div>
+        <div class="stat-card total" data-stat-type="total" role="button" tabindex="0" title="Klik untuk rincian inventaris total perangkat">
+          <div class="stat-icon total">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+          </div>
           <div class="stat-info">
             <div class="stat-value" id="stat-total-val">${counts.total}</div>
             <div class="stat-label">Total Device</div>
+            <div class="stat-sub">Inventaris terpantau</div>
+            <div class="stat-card-hint"><span>Rincian inventaris</span> ➔</div>
           </div>
         </div>
-        <div class="stat-card online-stat">
-          <div class="stat-icon online-stat">🟢</div>
+        <div class="stat-card online-stat" data-stat-type="online" role="button" tabindex="0" title="Klik untuk rincian performa node online & latensi">
+          <div class="stat-icon online-stat">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+          </div>
           <div class="stat-info">
             <div class="stat-value text-online" id="stat-online-val">${counts.online}</div>
             <div class="stat-label">Online</div>
             <div class="stat-sub" id="stat-uptime-sub">${uptimePct}% dari total</div>
+            <div class="stat-card-hint"><span>Telemetri & SLA</span> ➔</div>
           </div>
         </div>
-        <div class="stat-card offline-stat">
-          <div class="stat-icon offline-stat">🔴</div>
+        <div class="stat-card offline-stat" data-stat-type="offline" role="button" tabindex="0" title="Klik untuk rincian diagnostik perangkat offline">
+          <div class="stat-icon offline-stat">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          </div>
           <div class="stat-info">
             <div class="stat-value text-offline" id="stat-offline-val">${counts.offline}</div>
             <div class="stat-label">Offline</div>
             <div class="stat-sub">Perlu perhatian</div>
+            <div class="stat-card-hint" style="color:var(--color-offline);"><span>Diagnostik</span> ➔</div>
           </div>
         </div>
-        <div class="stat-card maintenance-stat">
-          <div class="stat-icon maintenance-stat">🟡</div>
+        <div class="stat-card maintenance-stat" data-stat-type="maintenance" role="button" tabindex="0" title="Klik untuk rincian jadwal pemeliharaan">
+          <div class="stat-icon maintenance-stat">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+          </div>
           <div class="stat-info">
             <div class="stat-value text-maintenance" id="stat-maint-val">${counts.maintenance}</div>
             <div class="stat-label">Maintenance</div>
             <div class="stat-sub">Mode terjadwal</div>
+            <div class="stat-card-hint" style="color:var(--color-maintenance);"><span>Jadwal servis</span> ➔</div>
           </div>
         </div>
       </div>
@@ -370,7 +388,515 @@ function getFilteredDevices() {
   });
 }
 
+function renderStatModalDeviceItems(devices, isLight) {
+  if (!devices || devices.length === 0) {
+    return `<div style="text-align:center; padding:16px; color:var(--color-muted); font-size:0.8rem;">Tidak ada perangkat yang cocok</div>`;
+  }
+  return devices.map((d) => {
+    const isOnline = d.status === 'online';
+    const isMaint = d.status === 'maintenance';
+    const statusColor = isOnline ? '#22c55e' : (isMaint ? '#eab308' : '#ef4444');
+    const statusText = isOnline ? 'Online' : (isMaint ? 'Maint' : 'Offline');
+    const resp = isOnline && d.responseTime !== null && d.responseTime !== undefined ? `${d.responseTime}ms` : (isOnline ? '1ms' : 'RTO');
+
+    return `
+      <div class="stat-modal-device-item">
+        <div style="display:flex; align-items:center; gap:9px; min-width:0; flex:1;">
+          <span style="font-size:1.15rem; flex-shrink:0;">${getNodeIcon(d.jenis)}</span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-weight:600; color:var(--color-heading); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.82rem;">${d.nama}</div>
+            <div style="font-family:monospace; font-size:0.72rem; color:var(--color-muted);">${cleanDeviceIp(d.ip)} · ${d.grup || 'Umum'} / ${d.lokasi || 'Lokasi'}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+          <span style="background:${statusColor}22; color:${statusColor}; border:1px solid ${statusColor}55; padding:2px 8px; border-radius:999px; font-size:0.68rem; font-weight:700;">
+            ● ${statusText} ${isOnline ? `· ${resp}` : ''}
+          </span>
+          <button class="btn btn-secondary btn-sm stat-modal-detail-btn" data-device-id="${d.id}" onclick="Swal.close(); window.dashboardDetailDevice && window.dashboardDetailDevice(${d.id});" style="padding:3px 8px; font-size:0.72rem;" title="Buka Detail Perangkat">
+            🔍 Detail
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function showStatsDetailModal(type) {
+  const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
+  const counts = getStatusCounts();
+  const uptimePct = counts.total > 0 ? Math.round((counts.online / counts.total) * 100) : 0;
+
+  let modalTitle = '';
+  let modalSubtitle = '';
+  let badgeColor = '';
+  let badgeIcon = '';
+  let contentHtml = '';
+  let customDidOpen = null;
+
+  let filteredDevices = [];
+  if (type === 'total') filteredDevices = [...mockDevices];
+  else if (type === 'online') filteredDevices = mockDevices.filter((d) => d.status === 'online');
+  else if (type === 'offline') filteredDevices = mockDevices.filter((d) => d.status === 'offline');
+  else if (type === 'maintenance') filteredDevices = mockDevices.filter((d) => d.status === 'maintenance');
+
+  if (type === 'total') {
+    badgeIcon = '📡';
+    badgeColor = '#6366f1';
+    modalTitle = `Inventaris Seluruh Perangkat (${mockDevices.length})`;
+    modalSubtitle = 'Distribusi aset terpasang, pemetaan subnet, dan status operasional real-time.';
+
+    const typeCounts = {};
+    mockDevices.forEach((d) => {
+      const j = (d.jenis || 'Lainnya').toLowerCase();
+      let key = 'Lainnya';
+      if (j.includes('router') || j.includes('gateway')) key = 'Router / Gateway';
+      else if (j.includes('switch') || j.includes('hub')) key = 'Switch / Hub';
+      else if (j.includes('komputer') || j.includes('pc') || j.includes('laptop')) key = 'Komputer / PC';
+      else if (j.includes('cctv') || j.includes('camera') || j.includes('kamera')) key = 'CCTV / IP Cam';
+      else if (j.includes('printer')) key = 'Printer';
+      else if (j.includes('ap') || j.includes('access point') || j.includes('wifi')) key = 'Access Point';
+      else if (j.includes('server')) key = 'Server';
+      typeCounts[key] = (typeCounts[key] || 0) + 1;
+    });
+
+    const subnets = {};
+    mockDevices.forEach((d) => {
+      const sub = getSubnetPrefix(d.ip);
+      if (sub) subnets[sub] = (subnets[sub] || 0) + 1;
+    });
+
+    const categoryChips = Object.entries(typeCounts).map(([cat, c]) => `
+      <div style="background:${isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}; padding:4px 8px; border-radius:6px; font-size:0.75rem; border:1px solid ${isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)'}; display:flex; align-items:center; gap:5px;">
+        <span>${getNodeIcon(cat)}</span>
+        <span style="color:var(--color-heading); font-weight:600;">${cat}</span>
+        <span style="background:${badgeColor}22; color:${badgeColor}; padding:1px 6px; border-radius:10px; font-weight:700; font-size:0.7rem;">${c}</span>
+      </div>
+    `).join('');
+
+    const subnetChips = Object.entries(subnets).map(([sub, count]) => `
+      <span style="font-family:monospace; font-size:0.75rem; background:${isLight ? '#f8fafc' : 'rgba(56,189,248,0.1)'}; color:${isLight ? '#0284c7' : '#38bdf8'}; border:1px solid ${isLight ? '#cbd5e1' : 'rgba(56,189,248,0.25)'}; padding:2px 8px; border-radius:4px;">
+        ${sub}.x (${count})
+      </span>
+    `).join('');
+
+    contentHtml = `
+      <div class="stat-modal-body">
+        <div class="stat-modal-kpi-grid">
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #6366f1;">
+            <span class="stat-modal-kpi-val" style="color:#6366f1;">${counts.total}</span>
+            <span class="stat-modal-kpi-label">Total Node</span>
+          </div>
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #22c55e;">
+            <span class="stat-modal-kpi-val text-online">${counts.online}</span>
+            <span class="stat-modal-kpi-label">Online (${uptimePct}%)</span>
+          </div>
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #ef4444;">
+            <span class="stat-modal-kpi-val text-offline">${counts.offline}</span>
+            <span class="stat-modal-kpi-label">Offline</span>
+          </div>
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #eab308;">
+            <span class="stat-modal-kpi-val text-maintenance">${counts.maintenance}</span>
+            <span class="stat-modal-kpi-label">Maintenance</span>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase; margin-bottom:6px;">Distribusi Kategori Perangkat:</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${categoryChips || '<span style="color:#94a3b8;">Belum ada kategori</span>'}
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase; margin-bottom:6px;">Sebaran Subnet Jaringan:</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${subnetChips || '<span style="color:#94a3b8;">Tidak ada subnet valid</span>'}
+          </div>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase;">Daftar Perangkat (${filteredDevices.length}):</span>
+            <input type="text" id="stat-modal-search" placeholder="🔍 Cari nama/IP..." style="padding:4px 8px; font-size:0.75rem; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-primary); color:var(--color-heading); width:160px;" />
+          </div>
+          <div class="stat-modal-device-list" id="stat-modal-dev-list">
+            ${renderStatModalDeviceItems(filteredDevices, isLight)}
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:8px; border-top:1px solid var(--border-color); padding-top:12px;">
+          <button id="modal-filter-btn" class="btn btn-secondary btn-sm" style="flex:1;">🃏 Tampilkan di Dashboard</button>
+          <button id="modal-nav-dev-btn" class="btn btn-primary btn-sm" style="flex:1;">📂 Buka Menu Perangkat ➔</button>
+        </div>
+      </div>
+    `;
+
+    customDidOpen = () => {
+      document.getElementById('modal-filter-btn')?.addEventListener('click', () => {
+        currentFilter = { kategori: 'all', status: 'all', grup: 'all', search: '' };
+        const elStatus = document.getElementById('filter-status');
+        const elKat = document.getElementById('filter-kategori');
+        const elGrup = document.getElementById('filter-grup');
+        const elSearch = document.getElementById('dashboard-search');
+        if (elStatus) elStatus.value = 'all';
+        if (elKat) elKat.value = 'all';
+        if (elGrup) elGrup.value = 'all';
+        if (elSearch) elSearch.value = '';
+        const grid = document.getElementById('devices-grid');
+        const countDisplay = document.getElementById('device-count-display');
+        if (grid) grid.innerHTML = renderDeviceCards(mockDevices);
+        if (countDisplay) countDisplay.innerHTML = `Menampilkan <strong>${mockDevices.length}</strong> device`;
+        document.getElementById('tab-kartu')?.click();
+        Swal.close();
+      });
+      document.getElementById('modal-nav-dev-btn')?.addEventListener('click', () => {
+        Swal.close();
+        navigate('devices');
+      });
+    };
+  } else if (type === 'online') {
+    badgeIcon = '🟢';
+    badgeColor = '#22c55e';
+    modalTitle = `Node Online Aktif (${counts.online})`;
+    modalSubtitle = 'Konektivitas stabil merespons probe telemetri ICMP / TCP / RTSP secara real-time.';
+
+    const onlineDevs = mockDevices.filter((d) => d.status === 'online');
+    const latencies = onlineDevs.map((d) => d.responseTime).filter((r) => r !== null && r !== undefined);
+    const avgLatency = latencies.length > 0 ? (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(1) : 0;
+    const fastestDev = latencies.length > 0 ? [...onlineDevs].sort((a, b) => (a.responseTime ?? 999) - (b.responseTime ?? 999))[0] : null;
+
+    const fastCount = onlineDevs.filter((d) => (d.responseTime ?? 0) <= 10).length;
+    const normalCount = onlineDevs.filter((d) => (d.responseTime ?? 0) > 10 && (d.responseTime ?? 0) <= 50).length;
+    const highCount = onlineDevs.filter((d) => (d.responseTime ?? 0) > 50).length;
+
+    contentHtml = `
+      <div class="stat-modal-body">
+        <div class="stat-modal-kpi-grid">
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #22c55e;">
+            <span class="stat-modal-kpi-val text-online">${counts.online}</span>
+            <span class="stat-modal-kpi-label">Perangkat Aktif</span>
+          </div>
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #38bdf8;">
+            <span class="stat-modal-kpi-val" style="color:#38bdf8;">${uptimePct}%</span>
+            <span class="stat-modal-kpi-label">SLA Uptime</span>
+          </div>
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #a855f7;">
+            <span class="stat-modal-kpi-val" style="color:#a855f7;">${avgLatency} <small style="font-size:0.7rem;">ms</small></span>
+            <span class="stat-modal-kpi-label">Rata-rata Latensi</span>
+          </div>
+          <div class="stat-modal-kpi-card" style="border-left:3px solid #eab308;">
+            <span class="stat-modal-kpi-val" style="color:#eab308; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fastestDev ? fastestDev.nama : '—'}</span>
+            <span class="stat-modal-kpi-label">Tercepat (${fastestDev ? fastestDev.responseTime : 0}ms)</span>
+          </div>
+        </div>
+
+        <div style="background:${isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)'}; border:1px solid var(--border-color); border-radius:8px; padding:10px;">
+          <div style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase; margin-bottom:8px;">Kualitas Respons Jitter:</div>
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; background:${isLight ? '#ecfdf5' : 'rgba(34,197,94,0.1)'}; border:1px solid rgba(34,197,94,0.3); border-radius:6px; padding:6px 8px; text-align:center;">
+              <div style="color:#22c55e; font-weight:700; font-size:1.1rem;">${fastCount}</div>
+              <div style="font-size:0.68rem; color:#22c55e;">⚡ Sangat Cepat (&le;10ms)</div>
+            </div>
+            <div style="flex:1; background:${isLight ? '#eff6ff' : 'rgba(56,189,248,0.1)'}; border:1px solid rgba(56,189,248,0.3); border-radius:6px; padding:6px 8px; text-align:center;">
+              <div style="color:#38bdf8; font-weight:700; font-size:1.1rem;">${normalCount}</div>
+              <div style="font-size:0.68rem; color:#38bdf8;">📶 Normal (11-50ms)</div>
+            </div>
+            <div style="flex:1; background:${isLight ? '#fef3c7' : 'rgba(234,179,8,0.1)'}; border:1px solid rgba(234,179,8,0.3); border-radius:6px; padding:6px 8px; text-align:center;">
+              <div style="color:#eab308; font-weight:700; font-size:1.1rem;">${highCount}</div>
+              <div style="font-size:0.68rem; color:#eab308;">⚠️ Perlu Cek (>50ms)</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase;">Daftar Node Online (${filteredDevices.length}):</span>
+            <input type="text" id="stat-modal-search" placeholder="🔍 Cari nama/IP..." style="padding:4px 8px; font-size:0.75rem; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-primary); color:var(--color-heading); width:160px;" />
+          </div>
+          <div class="stat-modal-device-list" id="stat-modal-dev-list">
+            ${renderStatModalDeviceItems(filteredDevices, isLight)}
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:8px; border-top:1px solid var(--border-color); padding-top:12px;">
+          <button id="modal-filter-online-btn" class="btn btn-secondary btn-sm" style="flex:1;">🃏 Filter Kartu: Hanya Online</button>
+          <button id="modal-ping-all-online-btn" class="btn btn-success btn-sm" style="flex:1;">📡 Probe Seluruh Node Online</button>
+        </div>
+      </div>
+    `;
+
+    customDidOpen = () => {
+      document.getElementById('modal-filter-online-btn')?.addEventListener('click', () => {
+        currentFilter.status = 'online';
+        const elStatus = document.getElementById('filter-status');
+        if (elStatus) elStatus.value = 'online';
+        const grid = document.getElementById('devices-grid');
+        const countDisplay = document.getElementById('device-count-display');
+        const f = getFilteredDevices();
+        if (grid) grid.innerHTML = renderDeviceCards(f);
+        if (countDisplay) countDisplay.innerHTML = `Menampilkan <strong>${f.length}</strong> device`;
+        document.getElementById('tab-kartu')?.click();
+        Swal.close();
+      });
+      document.getElementById('modal-ping-all-online-btn')?.addEventListener('click', () => {
+        Swal.close();
+        document.getElementById('ping-all-btn')?.click();
+      });
+    };
+  } else if (type === 'offline') {
+    badgeIcon = '🔴';
+    badgeColor = '#ef4444';
+    modalTitle = `Diagnostik Perangkat Offline (${counts.offline})`;
+    modalSubtitle = 'Peringatan kegagalan respons koneksi, potensi gangguan jalur uplink, dan packet loss.';
+
+    const offlineDevs = mockDevices.filter((d) => d.status === 'offline');
+    const isZeroOffline = offlineDevs.length === 0;
+
+    contentHtml = `
+      <div class="stat-modal-body">
+        ${isZeroOffline ? `
+          <div style="text-align:center; padding:24px 16px; background:${isLight ? '#ecfdf5' : 'rgba(34,197,94,0.1)'}; border:1px solid rgba(34,197,94,0.3); border-radius:10px;">
+            <div style="font-size:2.5rem; margin-bottom:8px;">🎉</div>
+            <div style="font-weight:700; color:#22c55e; font-size:1.1rem;">Kondisi Jaringan Prima!</div>
+            <div style="color:var(--color-muted); font-size:0.8rem; margin-top:4px;">Tidak ada node perangkat yang offline atau mengalami pemutusan koneksi saat ini.</div>
+          </div>
+        ` : `
+          <div class="stat-modal-kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="stat-modal-kpi-card" style="border-left:3px solid #ef4444;">
+              <span class="stat-modal-kpi-val text-offline">${counts.offline} Node</span>
+              <span class="stat-modal-kpi-label">Terputus Total</span>
+            </div>
+            <div class="stat-modal-kpi-card" style="border-left:3px solid #f97316;">
+              <span class="stat-modal-kpi-val" style="color:#f97316;">${Math.round((counts.offline / (counts.total || 1)) * 100)}%</span>
+              <span class="stat-modal-kpi-label">Rasio Gangguan</span>
+            </div>
+            <div class="stat-modal-kpi-card" style="border-left:3px solid #eab308;">
+              <span class="stat-modal-kpi-val text-maintenance">${counts.maintenance} Node</span>
+              <span class="stat-modal-kpi-label">Sedang Servis</span>
+            </div>
+          </div>
+
+          <div style="background:${isLight ? '#fef2f2' : 'rgba(239,68,68,0.12)'}; border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:10px 12px; color:${isLight ? '#991b1b' : '#fca5a5'}; font-size:0.8rem;">
+            ⚠️ <strong>Tindakan Rekomendasi:</strong> Periksa kabel LAN, adaptor PoE/daya, atau port switch uplink untuk memulihkan koneksi perangkat di bawah ini.
+          </div>
+
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase;">Daftar Node Offline (${filteredDevices.length}):</span>
+              <input type="text" id="stat-modal-search" placeholder="🔍 Cari nama/IP..." style="padding:4px 8px; font-size:0.75rem; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-primary); color:var(--color-heading); width:160px;" />
+            </div>
+            <div class="stat-modal-device-list" id="stat-modal-dev-list">
+              ${renderStatModalDeviceItems(filteredDevices, isLight)}
+            </div>
+          </div>
+        `}
+
+        <div style="display:flex; gap:8px; margin-top:8px; border-top:1px solid var(--border-color); padding-top:12px;">
+          ${!isZeroOffline ? `
+            <button id="modal-filter-offline-btn" class="btn btn-secondary btn-sm" style="flex:1;">🃏 Filter Kartu: Offline</button>
+            <button id="modal-ping-all-offline-btn" class="btn btn-danger btn-sm" style="flex:1;">📡 Probe Node Offline</button>
+            <button id="modal-export-incident-btn" class="btn btn-primary btn-sm" style="flex:1;">📄 Ekspor PDF</button>
+          ` : `
+            <button onclick="Swal.close()" class="btn btn-primary btn-sm" style="flex:1;">Tutup</button>
+          `}
+        </div>
+      </div>
+    `;
+
+    customDidOpen = () => {
+      document.getElementById('modal-filter-offline-btn')?.addEventListener('click', () => {
+        currentFilter.status = 'offline';
+        const elStatus = document.getElementById('filter-status');
+        if (elStatus) elStatus.value = 'offline';
+        const grid = document.getElementById('devices-grid');
+        const countDisplay = document.getElementById('device-count-display');
+        const f = getFilteredDevices();
+        if (grid) grid.innerHTML = renderDeviceCards(f);
+        if (countDisplay) countDisplay.innerHTML = `Menampilkan <strong>${f.length}</strong> device`;
+        document.getElementById('tab-kartu')?.click();
+        Swal.close();
+      });
+
+      document.getElementById('modal-ping-all-offline-btn')?.addEventListener('click', async () => {
+        Swal.close();
+        Swal.fire({
+          title: 'Memeriksa Ulang Perangkat Offline...',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading(),
+          background: isLight ? '#ffffff' : '#1a1d2e',
+          color: isLight ? '#0f172a' : '#e2e8f0',
+        });
+        for (const d of offlineDevs) {
+          await apiPingDevice(d.id).catch(() => {});
+        }
+        await syncDevicesFromApi().catch(() => {});
+        const grid = document.getElementById('devices-grid');
+        const countDisplay = document.getElementById('device-count-display');
+        const f = getFilteredDevices();
+        if (grid) grid.innerHTML = renderDeviceCards(f);
+        if (countDisplay) countDisplay.innerHTML = `Menampilkan <strong>${f.length}</strong> device`;
+        Swal.fire({
+          icon: 'success',
+          title: 'Pengecekan Selesai',
+          text: 'Status perangkat offline telah diverifikasi ulang.',
+          timer: 1800,
+          showConfirmButton: false,
+          background: isLight ? '#ffffff' : '#1a1d2e',
+          color: isLight ? '#0f172a' : '#e2e8f0',
+        });
+      });
+
+      document.getElementById('modal-export-incident-btn')?.addEventListener('click', async () => {
+        try {
+          const incidents = offlineDevs.map((d) => ({
+            device_nama: d.nama,
+            mulai: d.lastOnline || new Date().toISOString(),
+            waktu_selesai: null,
+            durasi_menit: null,
+            penyebab: 'Packet Loss / Timeout probe',
+          }));
+          await exportReportPdf('insiden', incidents, { incidents });
+          Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'success',
+            title: 'Laporan insiden offline berhasil diunduh.',
+            timer: 2000,
+            showConfirmButton: false,
+            background: isLight ? '#ffffff' : '#1a1d2e',
+            color: isLight ? '#0f172a' : '#e2e8f0',
+          });
+        } catch (err) {
+          Swal.fire({ icon: 'error', title: 'Gagal Ekspor PDF', text: err.message, background: isLight ? '#ffffff' : '#1a1d2e', color: isLight ? '#0f172a' : '#e2e8f0' });
+        }
+      });
+    };
+  } else if (type === 'maintenance') {
+    badgeIcon = '🟡';
+    badgeColor = '#eab308';
+    modalTitle = `Status Pemeliharaan Sistem (${counts.maintenance})`;
+    modalSubtitle = 'Perangkat yang berada dalam mode isolasi maintenance terjadwal.';
+
+    const maintDevs = mockDevices.filter((d) => d.status === 'maintenance');
+    const isZeroMaint = maintDevs.length === 0;
+
+    contentHtml = `
+      <div class="stat-modal-body">
+        ${isZeroMaint ? `
+          <div style="text-align:center; padding:24px 16px; background:${isLight ? '#fefce8' : 'rgba(234,179,8,0.1)'}; border:1px solid rgba(234,179,8,0.3); border-radius:10px;">
+            <div style="font-size:2.5rem; margin-bottom:8px;">✨</div>
+            <div style="font-weight:700; color:#eab308; font-size:1.1rem;">Tidak Ada Pemeliharaan Aktif</div>
+            <div style="color:var(--color-muted); font-size:0.8rem; margin-top:4px;">Seluruh perangkat berada dalam status pemantauan operasional reguler.</div>
+          </div>
+        ` : `
+          <div class="stat-modal-kpi-grid" style="grid-template-columns: repeat(2, 1fr);">
+            <div class="stat-modal-kpi-card" style="border-left:3px solid #eab308;">
+              <span class="stat-modal-kpi-val text-maintenance">${counts.maintenance} Node</span>
+              <span class="stat-modal-kpi-label">Mode Pemeliharaan</span>
+            </div>
+            <div class="stat-modal-kpi-card" style="border-left:3px solid #38bdf8;">
+              <span class="stat-modal-kpi-val" style="color:#38bdf8;">Terjadwal</span>
+              <span class="stat-modal-kpi-label">Status Isolasi Alarm</span>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:0.75rem; font-weight:700; color:var(--color-muted); text-transform:uppercase;">Daftar Node Maintenance (${filteredDevices.length}):</span>
+              <input type="text" id="stat-modal-search" placeholder="🔍 Cari nama/IP..." style="padding:4px 8px; font-size:0.75rem; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-primary); color:var(--color-heading); width:160px;" />
+            </div>
+            <div class="stat-modal-device-list" id="stat-modal-dev-list">
+              ${renderStatModalDeviceItems(filteredDevices, isLight)}
+            </div>
+          </div>
+        `}
+
+        <div style="display:flex; gap:8px; margin-top:8px; border-top:1px solid var(--border-color); padding-top:12px;">
+          ${!isZeroMaint ? `
+            <button id="modal-filter-maint-btn" class="btn btn-secondary btn-sm" style="flex:1;">🃏 Filter Kartu: Hanya Maintenance</button>
+            <button id="modal-nav-dev-maint-btn" class="btn btn-warning btn-sm" style="flex:1;">🔧 Kelola di Menu Perangkat ➔</button>
+          ` : `
+            <button onclick="Swal.close()" class="btn btn-primary btn-sm" style="flex:1;">Tutup</button>
+          `}
+        </div>
+      </div>
+    `;
+
+    customDidOpen = () => {
+      document.getElementById('modal-filter-maint-btn')?.addEventListener('click', () => {
+        currentFilter.status = 'maintenance';
+        const elStatus = document.getElementById('filter-status');
+        if (elStatus) elStatus.value = 'maintenance';
+        const grid = document.getElementById('devices-grid');
+        const countDisplay = document.getElementById('device-count-display');
+        const f = getFilteredDevices();
+        if (grid) grid.innerHTML = renderDeviceCards(f);
+        if (countDisplay) countDisplay.innerHTML = `Menampilkan <strong>${f.length}</strong> device`;
+        document.getElementById('tab-kartu')?.click();
+        Swal.close();
+      });
+      document.getElementById('modal-nav-dev-maint-btn')?.addEventListener('click', () => {
+        Swal.close();
+        navigate('devices');
+      });
+    };
+  }
+
+  Swal.fire({
+    title: `
+      <div style="display:flex; align-items:center; gap:10px; font-size:1.15rem; text-align:left;">
+        <span style="background:${badgeColor}22; color:${badgeColor}; width:38px; height:38px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; font-size:1.3rem; border:1px solid ${badgeColor}55;">
+          ${badgeIcon}
+        </span>
+        <div>
+          <div style="color:var(--color-heading); font-weight:700;">${modalTitle}</div>
+          <div style="font-size:0.75rem; font-weight:normal; color:var(--color-muted); margin-top:2px;">${modalSubtitle}</div>
+        </div>
+      </div>
+    `,
+    html: contentHtml,
+    showConfirmButton: false,
+    showCloseButton: true,
+    width: 620,
+    background: isLight ? '#ffffff' : '#1a1d2e',
+    color: isLight ? '#0f172a' : '#e2e8f0',
+    didOpen: () => {
+      const searchInput = document.getElementById('stat-modal-search');
+      const listContainer = document.getElementById('stat-modal-dev-list');
+      if (searchInput && listContainer) {
+        searchInput.addEventListener('input', (e) => {
+          const q = (e.target.value || '').trim().toLowerCase();
+          const matched = filteredDevices.filter((d) =>
+            (d.nama || '').toLowerCase().includes(q) || (d.ip || '').toLowerCase().includes(q)
+          );
+          listContainer.innerHTML = renderStatModalDeviceItems(matched, isLight);
+        });
+      }
+
+      // Event delegation untuk tombol detail pada setiap item perangkat di modal
+      const modalPopup = Swal.getPopup();
+      if (modalPopup) {
+        modalPopup.addEventListener('click', (e) => {
+          const detailBtn = e.target.closest('.stat-modal-detail-btn');
+          if (detailBtn) {
+            const devId = detailBtn.getAttribute('data-device-id');
+            Swal.close();
+            if (devId) {
+              navigate('device-detail', { id: devId });
+            }
+          }
+        });
+      }
+
+      if (typeof customDidOpen === 'function') {
+        customDidOpen();
+      }
+    },
+  });
+}
+
 export function initDashboardEvents(navigate) {
+  currentNavigate = navigate;
   // Tab switching
   document.querySelectorAll('.tab-btn[data-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -581,6 +1107,21 @@ export function initDashboardEvents(navigate) {
 
   // Refresh button: jalankan sinkronisasi dengan probe aktif
   document.getElementById('refresh-btn')?.addEventListener('click', () => handleFullNetworkScan(false));
+
+  // Stat cards click to open modern detail modal
+  document.querySelectorAll('.stat-card[data-stat-type]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const type = card.getAttribute('data-stat-type');
+      if (type) showStatsDetailModal(type);
+    });
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const type = card.getAttribute('data-stat-type');
+        if (type) showStatsDetailModal(type);
+      }
+    });
+  });
 
   // Sinkronkan stat awal saat event dipasang
   updateDashboardStats();

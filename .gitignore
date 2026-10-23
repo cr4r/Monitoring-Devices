@@ -25,14 +25,28 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 data/backups/
+server/data/*.db
+server/data/*.db-journal
+server/data/*.db-wal
+server/data/*.db-shm
+server/data/backups/
+**/data/*.db*
+**/backups/
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
 
-# SSL / TLS Private Keys & Certificates (pertahankan .gitkeep)
+# SSL / TLS Private Keys & Certificates
 ssl/*.key
 ssl/*.crt
 ssl/*.pem
 ssl/*.pfx
+server/ssl/*.key
+server/ssl/*.crt
+server/ssl/*.pem
 !ssl/.gitkeep
+!server/ssl/.gitkeep
 
 # Logs & Debugging
 logs/

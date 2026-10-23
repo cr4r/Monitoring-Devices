@@ -4,7 +4,7 @@
 // ================================================================
 
 import Swal from 'sweetalert2';
-import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiRestoreBackup, apiCleanLogs, apiGetLogsStats } from '../api.js';
+import { apiGetSettings, apiUpdateSettings, apiTriggerBackup, apiRestoreBackup, apiCleanLogs, apiGetLogsStats, apiPreviewCleanLogs } from '../api.js';
 import { applySystemSettings } from '../settingsManager.js';
 import { applyTheme, getSavedTheme } from '../themeManager.js';
 
@@ -13,7 +13,7 @@ let stagedLogo = undefined;
 let currentSettings = {
   app_name: 'MonDev',
   app_logo: '',
-  theme: 'dark',
+  theme: 'auto',
   timezone: 'Asia/Jakarta',
   language: 'id',
   default_ping_interval: '60',
@@ -404,7 +404,7 @@ function renderKeamanan() {
 
 function renderLog() {
   const retention = String(getVal('retention_days', '90'));
-  const autoDel = getVal('auto_backup_enabled', 'true') === 'true';
+  const autoDel = getVal('auto_delete_logs_enabled', getVal('auto_backup_enabled', 'true')) === 'true';
   const sched = getVal('backup_schedule', 'daily');
 
   return `
@@ -665,7 +665,8 @@ function bindSaveButtons() {
     }),
     'save-log-btn': () => ({
       retention_days: document.getElementById('set-log-retention')?.value,
-      auto_backup_enabled: String(document.getElementById('set-auto-delete')?.checked ?? true),
+      auto_delete_logs_enabled: String(document.getElementById('set-auto-delete')?.checked ?? true),
+      auto_backup_enabled: String(document.getElementById('set-backup-schedule')?.value !== 'none'),
       backup_schedule: document.getElementById('set-backup-schedule')?.value,
       backup_target_path: document.getElementById('set-backup-path')?.value,
     }),
@@ -989,13 +990,16 @@ function bindSaveButtons() {
               <label style="font-weight:600; color:var(--color-heading); display:block; margin-bottom:4px;">Pilih Kriteria Pembersihan:</label>
               <select class="form-control" id="swal-clean-retention" style="width:100%;">
                 <option value="0">⚠️ Semua Log (Hapus Total / Kosongkan Riwayat)</option>
+                <option value="h1">Lebih dari 1 jam lalu (Uji coba cepat)</option>
+                <option value="h6">Lebih dari 6 jam lalu</option>
+                <option value="h12">Lebih dari 12 jam lalu</option>
                 <option value="1">Lebih dari 1 hari lalu (Kemarin & sebelumnya)</option>
                 <option value="3">Lebih dari 3 hari lalu</option>
                 <option value="7">Lebih dari 7 hari lalu (1 minggu)</option>
                 <option value="14">Lebih dari 14 hari lalu (2 minggu)</option>
                 <option value="30" ${currentRetention === '30' ? 'selected' : ''}>Lebih dari 30 hari lalu (1 bulan)</option>
                 <option value="60" ${currentRetention === '60' ? 'selected' : ''}>Lebih dari 60 hari lalu (2 bulan)</option>
-                <option value="90" ${currentRetention === '90' || !['0','1','3','7','14','30','60','180'].includes(currentRetention) ? 'selected' : ''}>Lebih dari 90 hari lalu (3 bulan - standar)</option>
+                <option value="90" ${currentRetention === '90' || !['0','h1','h6','h12','1','3','7','14','30','60','180'].includes(currentRetention) ? 'selected' : ''}>Lebih dari 90 hari lalu (3 bulan - standar)</option>
                 <option value="180" ${currentRetention === '180' ? 'selected' : ''}>Lebih dari 180 hari lalu (6 bulan)</option>
               </select>
             </div>
@@ -1005,7 +1009,7 @@ function bindSaveButtons() {
           </div>
         `,
         icon: 'warning',
-        width: 500,
+        width: 520,
         showCancelButton: true,
         confirmButtonText: '🧹 Bersihkan Sekarang',
         cancelButtonText: 'Batal',
@@ -1017,25 +1021,43 @@ function bindSaveButtons() {
           const select = document.getElementById('swal-clean-retention');
           const hint = document.getElementById('swal-clean-hint');
 
-          const updateHint = () => {
+          const updateHint = async () => {
             if (!select || !hint) return;
-            const selDays = parseInt(select.value, 10);
+            const val = select.value;
+            const isHours = val.startsWith('h');
+            const num = parseInt(val.replace('h', ''), 10);
 
-            if (selDays === 0) {
+            if (val === '0') {
               hint.style.background = 'rgba(239, 68, 68, 0.12)';
               hint.style.border = '1px solid rgba(239, 68, 68, 0.3)';
               hint.style.color = '#fca5a5';
               hint.innerHTML = `⚠️ <b>Peringatan Hapus Total</b>: Seluruh <b>${stats.total}</b> baris log status, aktivitas, dan riwayat konfigurasi akan dikosongkan permanen.`;
-            } else if (stats.total > 0 && selDays > oldestDays) {
-              hint.style.background = 'rgba(245, 158, 11, 0.12)';
-              hint.style.border = '1px solid rgba(245, 158, 11, 0.3)';
-              hint.style.color = '#fcd34d';
-              hint.innerHTML = `ℹ️ <b>Catatan Penting</b>: Log tertua di sistem baru berumur <b>${oldestDesc}</b>. Memilih batas <b>${selDays} hari</b> akan menghasilkan <b>0 log dihapus</b> karena belum ada log yang melampaui batas tersebut. Pilih batas yang lebih kecil (misal 1 hari) atau <b>Semua Log</b> jika ingin mengosongkan.`;
-            } else {
-              hint.style.background = 'rgba(99, 102, 241, 0.1)';
-              hint.style.border = '1px solid rgba(99, 102, 241, 0.25)';
-              hint.style.color = '#c7d2fe';
-              hint.innerHTML = `✓ Seluruh log yang tercatat lebih dari <b>${selDays} hari</b> yang lalu akan dihapus permanen untuk menghemat ruang disk.`;
+              return;
+            }
+
+            hint.style.background = 'rgba(99, 102, 241, 0.08)';
+            hint.style.border = '1px solid rgba(99, 102, 241, 0.2)';
+            hint.style.color = '#c7d2fe';
+            hint.innerHTML = `⏳ Menghitung baris log yang cocok...`;
+
+            try {
+              const previewQuery = isHours ? { hours: num } : { days: num };
+              const prev = await apiPreviewCleanLogs(previewQuery);
+              const matchTotal = prev.total || 0;
+
+              if (matchTotal === 0) {
+                hint.style.background = 'rgba(245, 158, 11, 0.12)';
+                hint.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+                hint.style.color = '#fcd34d';
+                hint.innerHTML = `ℹ️ <b>Hasil Evaluasi: 0 baris log cocok</b>. Seluruh log yang tercatat saat ini masih lebih baru dari batas <b>${isHours ? num + ' jam' : num + ' hari'}</b> lalu (log tertua berumur ${oldestDesc}). Tidak ada log yang akan dihapus. Pilih kriteria lebih singkat atau <b>Semua Log</b> jika ingin mengosongkan riwayat.`;
+              } else {
+                hint.style.background = 'rgba(16, 185, 129, 0.12)';
+                hint.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                hint.style.color = '#6ee7b7';
+                hint.innerHTML = `✓ <b>${matchTotal} baris log ditemukan</b> yang lebih lama dari <b>${isHours ? num + ' jam' : num + ' hari'}</b> lalu (${prev.statusLogs || 0} status, ${prev.activityLogs || 0} aktivitas, ${prev.configLogs || 0} config). Baris-baris ini akan dihapus permanen.`;
+              }
+            } catch {
+              hint.innerHTML = `✓ Seluruh log yang tercatat lebih dari <b>${isHours ? num + ' jam' : num + ' hari'}</b> lalu akan dibersihkan.`;
             }
           };
 
@@ -1046,7 +1068,10 @@ function bindSaveButtons() {
 
       if (isConfirmed) {
         const select = document.getElementById('swal-clean-retention');
-        const days = select ? parseInt(select.value, 10) : 90;
+        const val = select ? select.value : '90';
+        const isHours = val.startsWith('h');
+        const num = parseInt(val.replace('h', ''), 10);
+        const cleanPayload = isHours ? { retentionHours: num } : { retentionDays: num };
 
         Swal.fire({
           title: 'Membersihkan Log...',
@@ -1058,9 +1083,9 @@ function bindSaveButtons() {
         });
 
         try {
-          const res = await apiCleanLogs(days);
+          const res = await apiCleanLogs(cleanPayload);
           const del = res.deleted || {};
-          window.dispatchEvent(new CustomEvent('devwatch:logs_updated', { detail: { action: 'clean_logs', days } }));
+          window.dispatchEvent(new CustomEvent('devwatch:logs_updated', { detail: { action: 'clean_logs', ...cleanPayload } }));
 
           Swal.fire({
             icon: 'success',

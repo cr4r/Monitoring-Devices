@@ -10,7 +10,7 @@ import { applyTheme, getSavedTheme } from './themeManager.js';
 let cachedSettings = {
   app_name: 'MonDev',
   app_logo: '',
-  theme: 'dark',
+  theme: 'auto',
   timezone: 'Asia/Jakarta',
   language: 'id',
   default_ping_interval: '60',

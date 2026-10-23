@@ -12,7 +12,7 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   jwtSecret: process.env.JWT_SECRET || 'devwatch-secret-jwt-key-2026-secure-token',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
-  dbPath: path.resolve(__dirname, process.env.DB_PATH || '../data/devwatch.db'),
+  dbPath: path.resolve(__dirname, process.env.DB_PATH || 'data/devwatch.db'),
   pingTimeoutMs: parseInt(process.env.PING_TIMEOUT_MS || '2000', 10),
   defaultIntervalSeconds: parseInt(process.env.DEFAULT_INTERVAL_SECONDS || '60', 10),
   consecutiveFailureThreshold: parseInt(process.env.FAILURE_THRESHOLD || '3', 10),

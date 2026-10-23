@@ -74,6 +74,18 @@ try {
     `);
     db.exec('PRAGMA foreign_keys = ON;');
   }
+
+  // Pastikan kunci konfigurasi monitoring & log penting selalu ada di sistem
+  const missingDefaults = [
+    ['monitoring', 'ping_timeout_ms', '2000'],
+    ['monitoring', 'ping_retry_count', '3'],
+    ['monitoring', 'engine_active', 'true'],
+    ['log_backup', 'auto_delete_logs_enabled', 'true'],
+    ['log_backup', 'backup_schedule', 'daily'],
+  ];
+  for (const [kat, key, val] of missingDefaults) {
+    db.prepare('INSERT OR IGNORE INTO system_settings (kategori, kunci, nilai) VALUES (?, ?, ?)').run(kat, key, val);
+  }
 } catch (migErr) {
   console.warn('[DB Migration Warning]:', migErr.message);
 }

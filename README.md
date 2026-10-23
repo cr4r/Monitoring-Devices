@@ -27,6 +27,8 @@ Aplikasi ini mengusung antarmuka modern bertema gelap (*Dark Glassmorphism*) yan
 | ![Log Sistem](images/04-system-logs.png) | ![Laporan SLA](images/13-laporan-sla-export.png) |
 | **Cadangan Basis Data SQLite & Retensi Log** | **Dialog Interaktif SweetAlert2 (Hasil Ping)** |
 | ![Pengaturan Backup](images/12-backup-system.png) | ![SweetAlert Ping](images/06-sweetalert-ping.png) |
+| **Tampilan Mode Terang (Light Theme Dashboard)** | **Pengaturan Sistem Mode Terang (Light Settings)** |
+| ![Dashboard Mode Terang](images/14-light-theme-dashboard.png) | ![Pengaturan Mode Terang](images/15-light-theme-settings.png) |
 
 ---
 
@@ -299,16 +301,35 @@ npm run seed
 ```
 
 ### Langkah 5: Jalankan Aplikasi
-Pilih mode eksekusi yang diinginkan:
 
-#### Opsi A: Mode Produksi Mandiri (Fullstack Terintegrasi)
+#### ⚡ Cara Instan: Gunakan Skrip Peluncur Otomatis Sekali Klik
+```bash
+# Pengguna Windows (Command Prompt / Dobel klik berkas):
+start.cmd
+# atau
+start.bat
+
+# Pengguna Linux / macOS:
+chmod +x start.sh
+./start.sh
+```
+*Skrip peluncur otomatis memeriksa Node.js, menginstal dependensi jika belum ada, menyalin `.env`, menyemai database, melakukan build jika perlu, lalu membuka peramban secara otomatis ke `http://localhost:3000`.*
+
+#### 🛠️ Cara Manual: Pilih Mode Eksekusi yang Diinginkan
+##### Opsi A: Mode Produksi Mandiri (Fullstack Terintegrasi)
 ```bash
 npm run build
 npm start
 ```
 Aplikasi langsung aktif dan siap diakses di: **`http://localhost:3000`**
 
-#### Opsi B: Mode Pengembangan (Vite HMR Live-Reload)
+##### Opsi B: Mode Pengembangan Simultan (Dual-Dev)
+```bash
+npm run dev:all
+```
+*Menjalankan backend server (port 3000) dan Vite frontend (port 5173) secara bersamaan dalam satu terminal.*
+
+##### Opsi C: Mode Pengembangan Manual (2 Terminal)
 ```bash
 # Terminal 1: Backend Server (Port 3000)
 npm run server
@@ -316,22 +337,27 @@ npm run server
 # Terminal 2: Frontend Vite Dev Server (Port 5173)
 npm run dev
 ```
-Akses di: **`http://localhost:5173`** (panggilan API & WebSocket otomatis diteruskan ke backend).
+Akses di: **`http://localhost:5173`** (panggilan API & WebSocket otomatis diteruskan ke backend via Vite proxy).
 
 ---
 
-### Daftar Perintah NPM Lengkap
+### Daftar Perintah Skrip & NPM Lengkap
 
 | Perintah | Fungsi | Keterangan |
 |---|---|---|
-| `npm start` | Menjalankan server produksi | Menyajikan frontend statis & backend terintegrasi di port 3000 |
-| `npm run dev` | Menjalankan Vite dev server | Hot Module Replacement (HMR) untuk pengembangan antarmuka |
-| `npm run build` | Membuat bundel produksi | Mengompilasi kode frontend ke folder `dist/` |
-| `npm run server` | Menjalankan backend saja | Express server + WebSocket worker di port 3000 |
-| `npm run seed` | Reset basis data SQLite | Mengisi ulang 20 perangkat demo dan akun bawaan |
+| `start.cmd` / `start.bat` | **Peluncur Instan Windows** | Memeriksa dependensi, database, build, dan menjalankan server serta membuka browser |
+| `start.sh` | **Peluncur Instan Linux/macOS** | Menyiapkan environment dan menjalankan server di platform Unix |
+| `npm start` | Menjalankan server produksi | Menyajikan frontend statis `dist/` & backend terintegrasi di port 3000 |
+| `npm run dev:all` | **Dual-Dev Launcher** | Menjalankan server backend (port 3000) dan Vite (port 5173) serentak |
+| `npm run dev` | Menjalankan Vite dev server | Hot Module Replacement (HMR) untuk pengembangan antarmuka di port 5173 |
+| `npm run server` | Menjalankan backend saja | Express server + WebSocket worker + Scheduler di port 3000 |
+| `npm run build` | Membuat bundel produksi | Mengompilasi kode frontend ke folder `dist/` dengan vendor chunk splitting |
+| `npm run clean` | **Bersihkan Direktori Build** | Menghapus folder `dist/` dan cache sementara |
+| `npm run seed` | Reset basis data SQLite | Mengisi ulang 20 perangkat demo, pengaturan sistem, dan akun bawaan |
+| `npm run seed:demo` | Semai data historis log | Menyemai data log demo dan riwayat latensi |
 | `npm run test:load` | **Uji Beban (Load Test)** | Menguji performa konkurensi 250 perangkat & latensi SQLite |
 | `npm run cert:generate` | **Generator Sertifikat TLS** | Membuat sertifikat self-signed lokal (`ssl/server.key` & `ssl/server.crt`) |
-| `npm run service:install` | **Pasang Windows Service** | Mendaftarkan DevWatch sebagai background service otomatis di Windows |
+| `npm run service:install` | **Pasang Windows Service** | Mendaftarkan MonDev sebagai background service otomatis di Windows |
 | `npm run service:uninstall` | **Hapus Windows Service** | Menghapus background service dari Windows Services |
 
 ---

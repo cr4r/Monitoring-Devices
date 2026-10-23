@@ -56,3 +56,19 @@ export function broadcast(event, payload = {}) {
     }
   }
 }
+
+/**
+ * Tutup seluruh koneksi WebSocket aktif secara paksa dan aman
+ */
+export function closeWebSocket() {
+  if (!wss) return;
+  for (const client of wss.clients) {
+    try {
+      client.terminate();
+    } catch {}
+  }
+  try {
+    wss.close();
+  } catch {}
+}
+

@@ -17,7 +17,7 @@ export function getSavedTheme() {
       return saved;
     }
   } catch {}
-  return 'dark';
+  return 'auto';
 }
 
 /**

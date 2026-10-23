@@ -13,8 +13,9 @@ import { fileURLToPath } from 'url';
 
 import { config } from './config.js';
 import { seedDatabase } from './database/seed.js';
-import { initWebSocket } from './services/websocketService.js';
+import { initWebSocket, closeWebSocket } from './services/websocketService.js';
 import { startMonitoringWorker, stopMonitoringWorker } from './services/monitoringWorker.js';
+import { startScheduler, stopScheduler } from './services/schedulerService.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 // Route modules
@@ -107,8 +108,9 @@ async function startServer() {
     // 2. Inisialisasi WebSocket
     initWebSocket(server);
 
-    // 3. Jalankan Monitoring Worker
+    // 3. Jalankan Monitoring Worker & Scheduler Terjadwal
     startMonitoringWorker(5000);
+    startScheduler(60000);
 
     server.on('error', (err) => {
       console.error('HTTP Server Error:', err);
@@ -140,13 +142,40 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // Penanganan Graceful Shutdown
+let isShuttingDown = false;
+
 function handleShutdown() {
-  console.log('\nMenerima sinyal terminasi. Menutup server dengan aman...');
-  stopMonitoringWorker();
-  server.close(() => {
-    console.log('Server DevWatch telah ditutup.');
+  if (isShuttingDown) {
     process.exit(0);
-  });
+  }
+  isShuttingDown = true;
+
+  console.log('\nMenerima sinyal terminasi. Menutup server dengan aman...');
+
+  // Fallback pengaman batas waktu jika ada soket yang lambat menutup
+  const forceExitTimer = setTimeout(() => {
+    process.exit(0);
+  }, 1500);
+  forceExitTimer.unref();
+
+  stopMonitoringWorker();
+  stopScheduler();
+  closeWebSocket();
+
+  if (server) {
+    if (typeof server.closeIdleConnections === 'function') {
+      try { server.closeIdleConnections(); } catch {}
+    }
+    if (typeof server.closeAllConnections === 'function') {
+      try { server.closeAllConnections(); } catch {}
+    }
+    server.close(() => {
+      console.log('Server DevWatch telah ditutup.');
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
 }
 
 process.on('SIGINT', handleShutdown);

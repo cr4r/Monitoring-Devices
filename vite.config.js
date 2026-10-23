@@ -19,10 +19,13 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    chunkSizeWarningLimit: 1000,
+    target: 'es2022',
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
         manualChunks: {
+          'vendor-chart': ['chart.js'],
+          'vendor-jspdf': ['jspdf'],
           'vendor-html2canvas': ['html2canvas'],
           'vendor-swal': ['sweetalert2'],
           'vendor-papa': ['papaparse'],

@@ -169,7 +169,7 @@ export async function runMonitoringCycle() {
           });
         } else {
           // PERANGKAT GAGAL MERESPONS
-          const newFailures = (dev.consecutive_failures || 0) + 1;
+          const newFailures = Math.min(99, (dev.consecutive_failures || 0) + 1);
           const shouldBeOffline = newFailures >= retryCount;
           const wasOnline = dev.status === 'online';
 

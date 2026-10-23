@@ -6,6 +6,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { DatabaseSync } from 'node:sqlite';
 import { db, query, queryOne, run } from '../database/db.js';
 import { config } from '../config.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
@@ -170,13 +171,14 @@ router.post('/backup', authenticateToken, requireRole(['admin']), (req, res) => 
       type: 'full',
       timestamp: now.toISOString(),
       tables: {
-        devices: query('SELECT * FROM devices WHERE is_active = 1'),
+        devices: query('SELECT * FROM devices'),
         system_settings: query('SELECT * FROM system_settings'),
         users: query('SELECT id, nama, email, password_hash, role, avatar, status, notif_settings FROM users'),
         device_status_logs: query('SELECT * FROM device_status_logs ORDER BY id ASC'),
         user_activity_logs: query('SELECT * FROM user_activity_logs ORDER BY id ASC'),
         config_logs: query('SELECT * FROM config_logs ORDER BY id ASC'),
         incidents: query('SELECT * FROM incidents ORDER BY id ASC'),
+        weekly_reports: query('SELECT * FROM weekly_reports ORDER BY id ASC'),
       },
     };
     fs.writeFileSync(jsonTarget, JSON.stringify(fullDump, null, 2), 'utf8');
@@ -276,11 +278,137 @@ router.post('/restore', authenticateToken, requireRole(['admin']), async (req, r
       } catch {
         // Berkas biner SQLite
         if (buf.length > 16 && buf.toString('utf8', 0, 16).startsWith('SQLite format 3')) {
-          fs.writeFileSync(config.dbPath, buf);
+          const tempFile = path.join(backupDir, `temp_restore_${Date.now()}.sqlite`);
+          fs.writeFileSync(tempFile, buf);
+          let srcDb;
+          try {
+            srcDb = new DatabaseSync(tempFile);
+            const srcTables = srcDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((t) => t.name);
+
+            db.exec('BEGIN TRANSACTION;');
+            try {
+              if (srcTables.includes('devices')) {
+                run('DELETE FROM devices');
+                const devRows = srcDb.prepare('SELECT * FROM devices').all();
+                for (const d of devRows) {
+                  run(
+                    `INSERT INTO devices (id, nama, ip, hostname, jenis, metode, port, password_encrypted, interval_detik, grup, lokasi, deskripsi, status, target_sla, is_active, consecutive_failures, parent_id, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                      d.id, d.nama, d.ip, d.hostname || null, d.jenis || 'Komputer', d.metode || 'PING', d.port || null,
+                      d.password_encrypted || null, d.interval_detik || 60, d.grup || 'Umum', d.lokasi || 'Kantor',
+                      d.deskripsi || null, d.status || 'offline', d.target_sla || 99.0, d.is_active !== undefined ? d.is_active : 1,
+                      d.consecutive_failures || 0, d.parent_id || null, d.created_at || new Date().toISOString(), d.updated_at || new Date().toISOString()
+                    ]
+                  );
+                  restoredDevices++;
+                }
+              }
+
+              if (srcTables.includes('system_settings')) {
+                run('DELETE FROM system_settings');
+                const setRows = srcDb.prepare('SELECT * FROM system_settings').all();
+                for (const s of setRows) {
+                  run(
+                    `INSERT INTO system_settings (kategori, kunci, nilai, updated_at)
+                     VALUES (?, ?, ?, ?)`,
+                    [s.kategori, s.kunci, s.nilai, s.updated_at || new Date().toISOString()]
+                  );
+                  restoredSettings++;
+                }
+              }
+
+              if (srcTables.includes('users')) {
+                const userRows = srcDb.prepare('SELECT * FROM users').all();
+                for (const u of userRows) {
+                  const exists = queryOne('SELECT id FROM users WHERE email = ?', [u.email]);
+                  if (!exists) {
+                    run(
+                      `INSERT INTO users (nama, email, password_hash, role, avatar, status, notif_settings)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                      [u.nama, u.email, u.password_hash, u.role || 'viewer', u.avatar || null, u.status || 'aktif', u.notif_settings || null]
+                    );
+                    restoredUsers++;
+                  }
+                }
+              }
+
+              if (srcTables.includes('device_status_logs')) {
+                const statRows = srcDb.prepare('SELECT * FROM device_status_logs').all();
+                for (const log of statRows) {
+                  run(
+                    `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, waktu, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [log.device_id, log.device_name, log.device_ip, log.device_created_at || null, log.waktu, log.status_sebelumnya, log.status_baru, log.metode, log.response_time, log.pesan_log]
+                  );
+                  restoredLogs++;
+                }
+              }
+
+              if (srcTables.includes('user_activity_logs')) {
+                const actRows = srcDb.prepare('SELECT * FROM user_activity_logs').all();
+                for (const log of actRows) {
+                  run(
+                    `INSERT INTO user_activity_logs (user_id, user_email, user_nama, waktu, aksi, ip_akses, detail)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [log.user_id, log.user_email, log.user_nama, log.waktu, log.aksi, log.ip_akses, log.detail]
+                  );
+                  restoredLogs++;
+                }
+              }
+
+              if (srcTables.includes('config_logs')) {
+                const cfgRows = srcDb.prepare('SELECT * FROM config_logs').all();
+                for (const log of cfgRows) {
+                  run(
+                    `INSERT INTO config_logs (user_id, user_nama, waktu, aksi, device_id, device_nama, detail)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [log.user_id, log.user_nama, log.waktu, log.aksi, log.device_id, log.device_nama, log.detail]
+                  );
+                  restoredLogs++;
+                }
+              }
+
+              if (srcTables.includes('incidents')) {
+                run('DELETE FROM incidents');
+                const incRows = srcDb.prepare('SELECT * FROM incidents').all();
+                for (const inc of incRows) {
+                  run(
+                    `INSERT INTO incidents (id, device_id, waktu_mulai, waktu_selesai, durasi_menit, penyebab, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [inc.id, inc.device_id, inc.waktu_mulai, inc.waktu_selesai, inc.durasi_menit, inc.penyebab, inc.status]
+                  );
+                }
+              }
+
+              if (srcTables.includes('weekly_reports')) {
+                run('DELETE FROM weekly_reports');
+                const repRows = srcDb.prepare('SELECT * FROM weekly_reports').all();
+                for (const r of repRows) {
+                  run(
+                    `INSERT INTO weekly_reports (id, minggu_ke, tahun, periode_label, periode_mulai, periode_selesai, total_devices, online_devices, average_uptime, target_sla, total_incidents, total_downtime_hours, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [r.id, r.minggu_ke, r.tahun, r.periode_label, r.periode_mulai, r.periode_selesai, r.total_devices, r.online_devices, r.average_uptime, r.target_sla, r.total_incidents, r.total_downtime_hours, r.created_at]
+                  );
+                }
+              }
+
+              db.exec('COMMIT;');
+            } catch (txErr) {
+              db.exec('ROLLBACK;');
+              throw txErr;
+            }
+          } finally {
+            if (srcDb) {
+              try { srcDb.close(); } catch {}
+            }
+            try { fs.unlinkSync(tempFile); } catch {}
+          }
+
           run(
             `INSERT INTO config_logs (user_id, user_nama, aksi, detail)
              VALUES (?, ?, 'Restore Database', ?)`,
-            [req.user.id, req.user.nama, `Memulihkan database SQLite biner (${(buf.length / 1024).toFixed(1)} KB) dari ${filename || 'file'}`]
+            [req.user.id, req.user.nama, `Memulihkan database SQLite biner: ${restoredDevices} perangkat, ${restoredLogs} log, ${restoredSettings} pengaturan`]
           );
 
           broadcast('settings_updated', { action: 'restore' });
@@ -290,8 +418,9 @@ router.post('/restore', authenticateToken, requireRole(['admin']), async (req, r
           return res.json({
             success: true,
             type: 'sqlite',
-            message: 'Database SQLite berhasil dipulihkan secara penuh.',
+            message: `Database SQLite berhasil dipulihkan secara penuh (${restoredDevices} perangkat, ${restoredLogs} baris log).`,
             safetyCheckpoint: path.basename(safetyFile),
+            restored: { devices: restoredDevices, logs: restoredLogs, settings: restoredSettings, users: restoredUsers },
           });
         } else {
           return res.status(400).json({ success: false, message: 'Format berkas cadangan tidak valid (bukan JSON atau SQLite valid).' });
@@ -313,13 +442,13 @@ router.post('/restore', authenticateToken, requireRole(['admin']), async (req, r
         run('DELETE FROM devices');
         for (const d of tables.devices) {
           run(
-            `INSERT INTO devices (id, nama, ip, hostname, jenis, metode, port, interval_detik, grup, lokasi, deskripsi, status, target_sla, is_active, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO devices (id, nama, ip, hostname, jenis, metode, port, password_encrypted, interval_detik, grup, lokasi, deskripsi, status, target_sla, is_active, consecutive_failures, parent_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               d.id, d.nama, d.ip, d.hostname || null, d.jenis || 'Komputer', d.metode || 'PING', d.port || null,
-              d.interval_detik || 60, d.grup || 'Umum', d.lokasi || 'Kantor', d.deskripsi || null,
-              d.status || 'offline', d.target_sla || 99.0, d.is_active !== undefined ? d.is_active : 1,
-              d.created_at || new Date().toISOString(), d.updated_at || new Date().toISOString()
+              d.password_encrypted || null, d.interval_detik || 60, d.grup || 'Umum', d.lokasi || 'Kantor',
+              d.deskripsi || null, d.status || 'offline', d.target_sla || 99.0, d.is_active !== undefined ? d.is_active : 1,
+              d.consecutive_failures || 0, d.parent_id || null, d.created_at || new Date().toISOString(), d.updated_at || new Date().toISOString()
             ]
           );
           restoredDevices++;
@@ -355,9 +484,9 @@ router.post('/restore', authenticateToken, requireRole(['admin']), async (req, r
       if (Array.isArray(tables.device_status_logs)) {
         for (const log of tables.device_status_logs) {
           run(
-            `INSERT INTO device_status_logs (device_id, device_name, device_ip, waktu, status_sebelumnya, status_baru, metode, response_time, pesan_log)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [log.device_id, log.device_name, log.device_ip, log.waktu, log.status_sebelumnya, log.status_baru, log.metode, log.response_time, log.pesan_log]
+            `INSERT INTO device_status_logs (device_id, device_name, device_ip, device_created_at, waktu, status_sebelumnya, status_baru, metode, response_time, pesan_log)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [log.device_id, log.device_name, log.device_ip, log.device_created_at || null, log.waktu, log.status_sebelumnya, log.status_baru, log.metode, log.response_time, log.pesan_log]
           );
           restoredLogs++;
         }
@@ -382,6 +511,28 @@ router.post('/restore', authenticateToken, requireRole(['admin']), async (req, r
             [log.user_id, log.user_nama, log.waktu, log.aksi, log.device_id, log.device_nama, log.detail]
           );
           restoredLogs++;
+        }
+      }
+
+      if (Array.isArray(tables.incidents)) {
+        run('DELETE FROM incidents');
+        for (const inc of tables.incidents) {
+          run(
+            `INSERT INTO incidents (id, device_id, waktu_mulai, waktu_selesai, durasi_menit, penyebab, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [inc.id, inc.device_id, inc.waktu_mulai, inc.waktu_selesai, inc.durasi_menit, inc.penyebab, inc.status]
+          );
+        }
+      }
+
+      if (Array.isArray(tables.weekly_reports)) {
+        run('DELETE FROM weekly_reports');
+        for (const r of tables.weekly_reports) {
+          run(
+            `INSERT INTO weekly_reports (id, minggu_ke, tahun, periode_label, periode_mulai, periode_selesai, total_devices, online_devices, average_uptime, target_sla, total_incidents, total_downtime_hours, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [r.id, r.minggu_ke, r.tahun, r.periode_label, r.periode_mulai, r.periode_selesai, r.total_devices, r.online_devices, r.average_uptime, r.target_sla, r.total_incidents, r.total_downtime_hours, r.created_at]
+          );
         }
       }
 
@@ -450,25 +601,76 @@ router.get('/logs-stat', authenticateToken, (req, res) => {
   }
 });
 
+// GET /api/settings/clean-logs/preview — Pratinjau jumlah baris log yang akan terhapus berdasarkan kriteria
+router.get('/clean-logs/preview', authenticateToken, (req, res) => {
+  try {
+    const rawDays = req.query.days !== undefined ? req.query.days : req.query.retentionDays;
+    const rawHours = req.query.hours;
+    let days = rawDays !== undefined ? parseInt(rawDays, 10) : null;
+    let hours = rawHours !== undefined ? parseInt(rawHours, 10) : null;
+
+    let statusCount = 0;
+    let actCount = 0;
+    let cfgCount = 0;
+
+    if (days === 0) {
+      statusCount = queryOne('SELECT count(*) as c FROM device_status_logs')?.c || 0;
+      actCount = queryOne('SELECT count(*) as c FROM user_activity_logs')?.c || 0;
+      cfgCount = queryOne('SELECT count(*) as c FROM config_logs')?.c || 0;
+    } else if (hours && hours > 0) {
+      statusCount = queryOne(`SELECT count(*) as c FROM device_status_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' hours')`, [hours])?.c || 0;
+      actCount = queryOne(`SELECT count(*) as c FROM user_activity_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' hours')`, [hours])?.c || 0;
+      cfgCount = queryOne(`SELECT count(*) as c FROM config_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' hours')`, [hours])?.c || 0;
+    } else {
+      const d = days || 90;
+      statusCount = queryOne(`SELECT count(*) as c FROM device_status_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' days')`, [d])?.c || 0;
+      actCount = queryOne(`SELECT count(*) as c FROM user_activity_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' days')`, [d])?.c || 0;
+      cfgCount = queryOne(`SELECT count(*) as c FROM config_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' days')`, [d])?.c || 0;
+    }
+
+    res.json({
+      success: true,
+      days: days ?? 0,
+      hours: hours ?? 0,
+      total: statusCount + actCount + cfgCount,
+      statusLogs: statusCount,
+      activityLogs: actCount,
+      configLogs: cfgCount,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: `Gagal mempratinjau pembersihan log: ${err.message}` });
+  }
+});
+
 // POST /api/settings/clean-logs — Pembersihan riwayat log kadaluarsa sesuai batas retensi
 router.post('/clean-logs', authenticateToken, requireRole(['admin']), (req, res) => {
   try {
     const settings = getSystemSettingsObject();
     const rawDays = req.body.retentionDays !== undefined ? req.body.retentionDays : (settings.retention_days || '90');
-    const days = parseInt(rawDays, 10);
+    const rawHours = req.body.retentionHours;
+    const days = rawDays !== undefined ? parseInt(rawDays, 10) : null;
+    const hours = rawHours !== undefined ? parseInt(rawHours, 10) : null;
 
     let statusRes, actRes, cfgRes;
+    let labelKriteria = '';
 
     if (days === 0) {
       // Hapus total semua rekaman riwayat log
       statusRes = run('DELETE FROM device_status_logs');
       actRes = run('DELETE FROM user_activity_logs');
       cfgRes = run('DELETE FROM config_logs');
+      labelKriteria = 'seluruh riwayat log sistem';
+    } else if (hours && hours > 0) {
+      statusRes = run(`DELETE FROM device_status_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' hours')`, [hours]);
+      actRes = run(`DELETE FROM user_activity_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' hours')`, [hours]);
+      cfgRes = run(`DELETE FROM config_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' hours')`, [hours]);
+      labelKriteria = `log lama (> ${hours} jam)`;
     } else {
-      // Hapus berdasarkan batas waktu retensi hari
-      statusRes = run(`DELETE FROM device_status_logs WHERE waktu < datetime('now', '-${days} days')`);
-      actRes = run(`DELETE FROM user_activity_logs WHERE waktu < datetime('now', '-${days} days')`);
-      cfgRes = run(`DELETE FROM config_logs WHERE waktu < datetime('now', '-${days} days')`);
+      const d = days || 90;
+      statusRes = run(`DELETE FROM device_status_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' days')`, [d]);
+      actRes = run(`DELETE FROM user_activity_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' days')`, [d]);
+      cfgRes = run(`DELETE FROM config_logs WHERE datetime(replace(replace(waktu, 'T', ' '), 'Z', '')) < datetime('now', '-' || ? || ' days')`, [d]);
+      labelKriteria = `log lama (> ${d} hari)`;
     }
 
     const totalDeleted = (statusRes.changes || 0) + (actRes.changes || 0) + (cfgRes.changes || 0);
@@ -478,9 +680,7 @@ router.post('/clean-logs', authenticateToken, requireRole(['admin']), (req, res)
       db.exec('PRAGMA incremental_vacuum;');
     } catch {}
 
-    const detailPesan = days === 0
-      ? `Membersihkan seluruh riwayat log sistem (${totalDeleted} baris dihapus)`
-      : `Membersihkan ${totalDeleted} baris log lama (> ${days} hari)`;
+    const detailPesan = `Membersihkan ${totalDeleted} baris ${labelKriteria}`;
 
     run(
       `INSERT INTO config_logs (user_id, user_nama, aksi, detail)
@@ -490,14 +690,12 @@ router.post('/clean-logs', authenticateToken, requireRole(['admin']), (req, res)
 
     // Siarkan pembaruan log ke semua browser yang terhubung
     try {
-      broadcast('logs_updated', { action: 'clean_logs', deleted: totalDeleted, days });
+      broadcast('logs_updated', { action: 'clean_logs', deleted: totalDeleted, days, hours });
     } catch {}
 
     res.json({
       success: true,
-      message: days === 0
-        ? `Seluruh riwayat log berhasil dibersihkan (${totalDeleted} baris dihapus).`
-        : `Pembersihan berhasil. Sebanyak ${totalDeleted} entri log lama (> ${days} hari) telah dihapus.`,
+      message: `Pembersihan berhasil. Sebanyak ${totalDeleted} entri ${labelKriteria} telah dihapus.`,
       deleted: {
         statusLogs: statusRes.changes || 0,
         activityLogs: actRes.changes || 0,
