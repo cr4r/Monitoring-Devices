@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — pingService.js
+// DevWatch - pingService.js
 // Engine ICMP Ping berbasis utilitas sistem operasi asli (Windows / Linux)
 // ================================================================
 

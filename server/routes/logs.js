@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — routes/logs.js
+// DevWatch - routes/logs.js
 // Penampil 3 tab log sistem: Status, Aktivitas, dan Konfigurasi
 // ================================================================
 
@@ -9,7 +9,7 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// GET /api/logs/devices — Mengambil seluruh daftar perangkat terdaftar & arsip perangkat yang pernah tercatat di log
+// GET /api/logs/devices - Mengambil seluruh daftar perangkat terdaftar & arsip perangkat yang pernah tercatat di log
 router.get('/devices', authenticateToken, (req, res) => {
   const devices = query(`
     SELECT 

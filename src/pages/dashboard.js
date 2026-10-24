@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — dashboard.js
+// DevWatch - dashboard.js
 // Dashboard utama: stats, card view, network map, grafik timeline
 // ================================================================
 
@@ -19,6 +19,20 @@ let currentFilter = { kategori: 'all', status: 'all', grup: 'all', search: '' };
 let currentTab = 'kartu';
 let cardGroupMode = 'grup'; // 'grup' | 'jenis' | 'none'
 let collapsedGroups = new Set();
+
+// ---- CCTV DASHBOARD HUB STATE ----
+let cctvActiveCamId = null;
+let cctvViewMode = 'hero'; // 'hero' | 'quad'
+let cctvFilterGroup = 'all';
+let cctvFilterStatus = 'all';
+let cctvSearchQuery = '';
+let cctvCurrentRes = 'main'; // 'main' | 'sub' | 'mobile'
+let cctvAnimFrameId = null;
+let cctvQuadSlots = [null, null, null, null];
+let cctvRealFrames = {}; // camId -> HTMLImageElement
+let cctvRealOnline = {}; // camId -> boolean
+let cctvPtzPanelsOpen = false;
+let cctvPollingBusy = {}; // camId -> boolean
 
 function parseIpOctets(ipStr = '') {
   const clean = cleanDeviceIp(ipStr);
@@ -141,6 +155,9 @@ export function renderDashboard() {
           </button>
           <button class="tab-btn ${currentTab === 'timeline' ? 'active' : ''}" data-tab="timeline" id="tab-timeline">
             📉 Grafik Timeline
+          </button>
+          <button class="tab-btn ${currentTab === 'cctv' ? 'active' : ''}" data-tab="cctv" id="tab-cctv">
+            📹 Pengawasan CCTV
           </button>
         </div>
 
@@ -288,7 +305,7 @@ export function renderDashboard() {
     const icon = d.status === 'online' ? '🟢' : d.status === 'maintenance' ? '🟡' : '🔴';
     const statusText = d.status === 'online' ? 'Online' : d.status === 'maintenance' ? 'Maintenance' : 'Offline';
     const displayIp = cleanDeviceIp(d.ip);
-    return `<option value="${d.id}">${icon} ${d.nama} (${displayIp}) — ${statusText}</option>`;
+    return `<option value="${d.id}">${icon} ${d.nama} (${displayIp}) - ${statusText}</option>`;
   }).join('') : '<option value="">(Belum ada perangkat terdaftar)</option>'}
                   </select>
                 </div>
@@ -297,6 +314,11 @@ export function renderDashboard() {
                 <canvas id="timeline-chart"></canvas>
               </div>
             </div>
+          </div>
+
+          <!-- TAB: CCTV -->
+          <div class="tab-content ${currentTab === 'cctv' ? 'active' : ''}" id="tab-content-cctv">
+            ${renderCctvDashboardTab()}
           </div>
         </div>
       </div>
@@ -724,7 +746,7 @@ function showStatsDetailModal(type) {
             <span class="stat-modal-kpi-label">Rata-rata Latensi</span>
           </div>
           <div class="stat-modal-kpi-card" style="border-left:3px solid #eab308;">
-            <span class="stat-modal-kpi-val" style="color:#eab308; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fastestDev ? fastestDev.nama : '—'}</span>
+            <span class="stat-modal-kpi-val" style="color:#eab308; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fastestDev ? fastestDev.nama : '-'}</span>
             <span class="stat-modal-kpi-label">Tercepat (${fastestDev ? fastestDev.responseTime : 0}ms)</span>
           </div>
         </div>
@@ -1049,6 +1071,10 @@ export function initDashboardEvents(navigate) {
         cancelAnimationFrame(mapAnimId);
         mapAnimId = null;
       }
+      if (cctvAnimFrameId) {
+        cancelAnimationFrame(cctvAnimFrameId);
+        cctvAnimFrameId = null;
+      }
 
       if (currentTab === 'peta') {
         requestAnimationFrame(() => {
@@ -1056,6 +1082,7 @@ export function initDashboardEvents(navigate) {
         });
       }
       if (currentTab === 'timeline') initTimeline();
+      if (currentTab === 'cctv') renderCctvDashboardContent();
     });
   });
 
@@ -1147,7 +1174,7 @@ export function initDashboardEvents(navigate) {
       const statusText = isOnline ? 'Online' : isMaint ? 'Maintenance' : 'Offline';
       const isSelected = String(d.id) === currentVal;
       const displayIp = cleanDeviceIp(d.ip);
-      return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${displayIp}) — ${statusText}</option>`;
+      return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${displayIp}) - ${statusText}</option>`;
     }).join('');
 
     if (!select.value && mockDevices.length > 0) {
@@ -1168,6 +1195,7 @@ export function initDashboardEvents(navigate) {
         });
       }
       if (currentTab === 'timeline') initTimeline();
+      if (currentTab === 'cctv') renderCctvDashboardContent();
     })
     .catch((err) => {
       console.warn('Gagal memuat otomatis perangkat:', err);
@@ -1206,6 +1234,7 @@ export function initDashboardEvents(navigate) {
         });
       }
       if (currentTab === 'timeline') initTimeline();
+      if (currentTab === 'cctv') renderCctvDashboardContent();
 
       const onlineCount = res.online !== undefined ? res.online : mockDevices.filter((d) => d.status === 'online').length;
       const offlineCount = res.offline !== undefined ? res.offline : mockDevices.filter((d) => d.status === 'offline').length;
@@ -1291,6 +1320,7 @@ export function initDashboardEvents(navigate) {
     });
   }
   if (currentTab === 'timeline') initTimeline();
+  if (currentTab === 'cctv') initCctvDashboardTab();
 
   // Global device action handlers
   window.dashboardDetailDevice = (id) => navigate('device-detail', { id });
@@ -3072,7 +3102,7 @@ function showHourDetailModal(hourData) {
 
   Swal.fire({
     title: `<div style="font-size:1.15rem; font-weight:700; color:var(--color-heading); display:flex; align-items:center; justify-content:center; gap:8px;">
-      <span>🕒 Status Perangkat — Pukul ${hourData.hour}</span>
+      <span>🕒 Status Perangkat - Pukul ${hourData.hour}</span>
     </div>`,
     html: `
       <div style="margin-bottom:14px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap; font-size:0.8rem;">
@@ -3126,7 +3156,7 @@ function initTimeline() {
         const statusText = isOnline ? 'Online' : isMaint ? 'Maintenance' : 'Offline';
         const isSelected = String(d.id) === currentVal;
         const displayIp = cleanDeviceIp(d.ip);
-        return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${displayIp}) — ${statusText}</option>`;
+        return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${icon} ${d.nama} (${displayIp}) - ${statusText}</option>`;
       }).join('');
 
       if (!select.value && mockDevices.length > 0) {
@@ -3239,4 +3269,1052 @@ function initTimeline() {
   } else {
     renderTimeline24h('timeline-chart', []);
   }
+}
+
+// ================================================================
+// CCTV DASHBOARD OPERATIONS HUB FUNCTIONS
+// ================================================================
+
+const CCTV_QUAD_STORAGE_KEY = 'mondev_cctv_quad_slots';
+
+function loadCctvQuadSlotsFromStorage() {
+  const allCctv = getCctvDevices();
+  if (allCctv.length === 0) return;
+  try {
+    const raw = localStorage.getItem(CCTV_QUAD_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length === 4) {
+        cctvQuadSlots = parsed.map((id, idx) => {
+          const match = allCctv.find((c) => c.id === id);
+          return match ? match.id : (allCctv[idx] ? allCctv[idx].id : (allCctv[0] ? allCctv[0].id : null));
+        });
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Gagal membaca cctvQuadSlots dari storage:', err);
+  }
+  // Fallback: 4 kamera CCTV pertama
+  cctvQuadSlots = [0, 1, 2, 3].map((idx) => (allCctv[idx] ? allCctv[idx].id : (allCctv[0] ? allCctv[0].id : null)));
+}
+
+function saveCctvQuadSlotsToStorage() {
+  try {
+    localStorage.setItem(CCTV_QUAD_STORAGE_KEY, JSON.stringify(cctvQuadSlots));
+  } catch (err) {
+    console.warn('Gagal menyimpan cctvQuadSlots ke storage:', err);
+  }
+}
+
+function renderCctvDashboardContent() {
+  const container = document.getElementById('tab-content-cctv');
+  if (!container) return;
+  loadCctvQuadSlotsFromStorage();
+  container.innerHTML = renderCctvDashboardTab();
+  initCctvDashboardTab();
+}
+
+function getCctvDevices() {
+  return mockDevices.filter((d) => String(d.jenis || '').toLowerCase().includes('cctv'));
+}
+
+function getFilteredCctvDevices() {
+  const all = getCctvDevices();
+  return all.filter((d) => {
+    if (cctvFilterGroup !== 'all' && (d.grup || 'Umum') !== cctvFilterGroup) return false;
+    if (cctvFilterStatus !== 'all' && d.status !== cctvFilterStatus) return false;
+    if (cctvSearchQuery.length > 0) {
+      const q = cctvSearchQuery.toLowerCase();
+      const match = (d.nama || '').toLowerCase().includes(q) ||
+        (d.ip || '').toLowerCase().includes(q) ||
+        (d.lokasi || '').toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+}
+
+function renderCctvDashboardTab() {
+  const allCctv = getCctvDevices();
+  const filteredCctv = getFilteredCctvDevices();
+  const onlineCount = allCctv.filter((c) => c.status === 'online').length;
+  const offlineCount = allCctv.filter((c) => c.status === 'offline').length;
+  const avgLatency = Math.round(
+    allCctv.reduce((acc, c) => acc + (c.responseTime || 15), 0) / Math.max(1, allCctv.length)
+  );
+  const estBandwidth = (onlineCount * (cctvCurrentRes === 'main' ? 2.4 : (cctvCurrentRes === 'sub' ? 1.2 : 0.6))).toFixed(1);
+  const cctvGroups = [...new Set(allCctv.map((c) => c.grup || 'Umum'))].sort();
+
+  loadCctvQuadSlotsFromStorage();
+
+  if (!cctvActiveCamId && allCctv.length > 0) {
+    cctvActiveCamId = allCctv[0].id;
+  }
+  const activeCam = allCctv.find((c) => c.id === cctvActiveCamId) || allCctv[0];
+
+  return `
+    <div class="cctv-dashboard-hub">
+      <!-- 1. Telemetry Stats Bar -->
+      <div class="cctv-stats-bar">
+        <div class="cctv-stat-card">
+          <div class="cctv-stat-icon-wrap"><span class="cctv-stat-icon">📹</span></div>
+          <div class="cctv-stat-info">
+            <span class="cctv-stat-val" id="cctv-stat-total">${allCctv.length}</span>
+            <span class="cctv-stat-label">Total Kamera</span>
+          </div>
+        </div>
+        <div class="cctv-stat-card">
+          <div class="cctv-stat-icon-wrap online"><span class="cctv-stat-icon">🟢</span></div>
+          <div class="cctv-stat-info">
+            <span class="cctv-stat-val text-online" id="cctv-stat-online">${onlineCount}</span>
+            <span class="cctv-stat-label">Online Streaming</span>
+          </div>
+        </div>
+        <div class="cctv-stat-card">
+          <div class="cctv-stat-icon-wrap offline"><span class="cctv-stat-icon">🔴</span></div>
+          <div class="cctv-stat-info">
+            <span class="cctv-stat-val text-offline" id="cctv-stat-offline">${offlineCount}</span>
+            <span class="cctv-stat-label">Offline / Gangguan</span>
+          </div>
+        </div>
+        <div class="cctv-stat-card">
+          <div class="cctv-stat-icon-wrap speed"><span class="cctv-stat-icon">⚡</span></div>
+          <div class="cctv-stat-info">
+            <span class="cctv-stat-val text-accent" id="cctv-stat-ping">${avgLatency} ms</span>
+            <span class="cctv-stat-label">Rata-rata Ping</span>
+          </div>
+        </div>
+        <div class="cctv-stat-card">
+          <div class="cctv-stat-icon-wrap"><span class="cctv-stat-icon">🌐</span></div>
+          <div class="cctv-stat-info">
+            <span class="cctv-stat-val" style="color:#a855f7;" id="cctv-stat-bw">~${estBandwidth} Mbps</span>
+            <span class="cctv-stat-label">Est. Bandwidth Stream</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Command & Filter Bar -->
+      <div class="cctv-command-bar">
+        <div class="cctv-view-switcher">
+          <button class="cctv-switch-btn ${cctvViewMode === 'hero' ? 'active' : ''}" id="cctv-view-hero-btn" type="button" title="Tampilan Monitor Utama + Grid Kamera">
+            📺 Monitor Tunggal
+          </button>
+          <button class="cctv-switch-btn ${cctvViewMode === 'quad' ? 'active' : ''}" id="cctv-view-quad-btn" type="button" title="Tampilan Matrix Quad-Screen 4 Kamera">
+            🔲 Quad Matrix (4 Kamera)
+          </button>
+        </div>
+
+        <div class="cctv-filter-group">
+          <select class="form-control" id="cctv-group-filter" style="width:auto; font-size:0.8rem; height:34px;">
+            <option value="all" ${cctvFilterGroup === 'all' ? 'selected' : ''}>📍 Semua Lokasi</option>
+            ${cctvGroups.map((g) => `<option value="${g}" ${cctvFilterGroup === g ? 'selected' : ''}>${g}</option>`).join('')}
+          </select>
+
+          <select class="form-control" id="cctv-status-filter" style="width:auto; font-size:0.8rem; height:34px;">
+            <option value="all" ${cctvFilterStatus === 'all' ? 'selected' : ''}>⚡ Semua Status</option>
+            <option value="online" ${cctvFilterStatus === 'online' ? 'selected' : ''}>🟢 Online</option>
+            <option value="offline" ${cctvFilterStatus === 'offline' ? 'selected' : ''}>🔴 Offline</option>
+          </select>
+
+          <div class="cctv-search-box">
+            <span class="cctv-search-icon">🔍</span>
+            <input type="text" class="form-control" id="cctv-search-input" placeholder="Cari nama, IP, lokasi..." value="${cctvSearchQuery}" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Hero Monitor View (Single Camera Master Stream + Gallery) -->
+      <div id="cctv-hero-view-container" style="${cctvViewMode === 'hero' ? 'display:flex; flex-direction:column; gap:16px;' : 'display:none;'}">
+        ${activeCam ? `
+        <div class="cctv-hero-card">
+          <div class="cctv-hero-header">
+            <div class="cctv-hero-title-group">
+              <span class="cctv-hero-cam-name">
+                <span>📹</span>
+                <span id="cctv-hero-title-text">${activeCam.nama}</span>
+              </span>
+              <span class="cctv-hero-channel-badge" id="cctv-hero-channel-text">CH-${String(activeCam.id).padStart(2, '0')}</span>
+              <span class="cctv-card-live-tag" style="position:static;">
+                <span class="live-dot ${activeCam.status === 'online' ? '' : 'offline'}"></span>
+                <span id="cctv-hero-live-badge">${activeCam.status === 'online' ? 'LIVE 1080p' : 'OFFLINE'}</span>
+              </span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="cctv-resolution-selector" style="display:inline-flex; gap:3px;">
+                <button class="cctv-res-btn ${cctvCurrentRes === 'main' ? 'active' : ''}" data-res="main" id="cctv-res-main">1080p</button>
+                <button class="cctv-res-btn ${cctvCurrentRes === 'sub' ? 'active' : ''}" data-res="sub" id="cctv-res-sub">720p</button>
+                <button class="cctv-res-btn ${cctvCurrentRes === 'mobile' ? 'active' : ''}" data-res="mobile" id="cctv-res-mobile">480p</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="cctv-hero-viewport" id="cctv-hero-viewport">
+            <canvas id="cctv-hero-canvas" width="1280" height="720"></canvas>
+            <div class="cctv-hero-hud-nav">
+              <button class="cctv-nav-btn" id="cctv-hero-prev-btn" title="Kamera Sebelumnya">◀</button>
+              <button class="cctv-nav-btn" id="cctv-hero-next-btn" title="Kamera Berikutnya">▶</button>
+            </div>
+          </div>
+
+          <!-- PTZ Virtual D-Pad Panel (Toggleable) -->
+          <div class="cctv-ptz-panel ${cctvPtzPanelsOpen ? 'show' : ''}" id="cctv-ptz-panel">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:700; text-transform:uppercase; margin-right:12px;">🎮 Virtual PTZ Console:</div>
+            <div class="ptz-grid">
+              <div></div>
+              <button class="ptz-btn" data-ptz="up" title="Tilt Atas">▲</button>
+              <div></div>
+              <button class="ptz-btn" data-ptz="left" title="Pan Kiri">◀</button>
+              <button class="ptz-btn" data-ptz="center" title="Reset Tengah">⦿</button>
+              <button class="ptz-btn" data-ptz="right" title="Pan Kanan">▶</button>
+              <div></div>
+              <button class="ptz-btn" data-ptz="down" title="Tilt Bawah">▼</button>
+              <div></div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px; margin-left:8px;">
+              <button class="btn btn-secondary btn-sm ptz-zoom-btn" data-ptz="zoom-in" style="font-size:0.75rem; padding:4px 8px;">🔍 Zoom In (+)</button>
+              <button class="btn btn-secondary btn-sm ptz-zoom-btn" data-ptz="zoom-out" style="font-size:0.75rem; padding:4px 8px;">🔎 Zoom Out (-)</button>
+            </div>
+          </div>
+
+          <div class="cctv-hero-bottom-bar">
+            <div class="cctv-hero-telemetry-chips">
+              <span class="cctv-chip ip" id="cctv-hero-ip-chip">🌐 ${cleanDeviceIp(activeCam.ip)}</span>
+              <span class="cctv-chip">🔌 Port ${activeCam.port || 554} RTSP</span>
+              <span class="cctv-chip" id="cctv-hero-loc-chip">📍 ${activeCam.grup} · ${activeCam.lokasi || '-'}</span>
+              <span class="cctv-chip fps" id="cctv-hero-ping-chip">⚡ ${activeCam.responseTime || 15}ms</span>
+              <span class="cctv-chip" id="cctv-hero-bw-chip">📶 ${cctvCurrentRes === 'main' ? '4.25' : '1.80'} Mbps</span>
+            </div>
+
+            <div class="cctv-hero-actions">
+              <button class="btn btn-secondary btn-sm" id="cctv-hero-snapshot-btn" title="Ambil tangkapan layar PNG">
+                📸 Snapshot Frame
+              </button>
+              <button class="btn btn-secondary btn-sm" id="cctv-hero-ptz-toggle" title="Buka kontrol virtual Pan/Tilt/Zoom">
+                🎮 PTZ D-Pad
+              </button>
+              <button class="btn btn-secondary btn-sm" id="cctv-hero-fullscreen-btn" title="Layar penuh player">
+                ⛶ Layar Penuh
+              </button>
+              <button class="btn btn-primary btn-sm" id="cctv-hero-detail-btn" title="Buka halaman detail dan audit perangkat">
+                🔍 Buka Detail
+              </button>
+            </div>
+          </div>
+        </div>
+        ` : `
+        <div class="card" style="padding:32px; text-align:center; color:var(--color-muted);">
+          Tidak ada kamera CCTV yang cocok dengan filter.
+        </div>
+        `}
+
+        <!-- 4. Camera Cards Gallery (All CCTV Devices) -->
+        <div class="cctv-gallery-header">
+          <div class="cctv-gallery-title">
+            <span>📹 Daftar Seluruh Kamera CCTV</span>
+            <span class="cctv-hero-channel-badge">${filteredCctv.length} Kamera</span>
+          </div>
+          <div style="font-size:0.75rem; color:var(--color-muted);">
+            💡 Klik salah satu kartu kamera untuk langsung beralih menonton di Monitor Utama
+          </div>
+        </div>
+
+        <div class="cctv-gallery-grid" id="cctv-gallery-grid">
+          ${filteredCctv.map((c) => `
+            <div class="cctv-card-item ${c.id === cctvActiveCamId ? 'active-feed' : ''}" data-cam-id="${c.id}" id="cctv-card-${c.id}">
+              <div class="cctv-card-thumb-wrap">
+                <canvas id="cctv-thumb-${c.id}" width="320" height="180"></canvas>
+                <div class="cctv-card-live-tag">
+                  <span class="live-dot ${c.status === 'online' ? '' : 'offline'}"></span>
+                  <span>${c.status === 'online' ? 'LIVE' : 'OFFLINE'}</span>
+                </div>
+                ${c.id === cctvActiveCamId ? '<div class="cctv-card-active-pill" id="cctv-active-pill-' + c.id + '">SEDANG AKTIF</div>' : ''}
+              </div>
+              <div class="cctv-card-body">
+                <div class="cctv-card-name-row">
+                  <div class="cctv-card-name" title="${c.nama}">${c.nama}</div>
+                  <span class="cctv-hero-channel-badge">${c.status.toUpperCase()}</span>
+                </div>
+                <div class="cctv-card-loc">📍 ${c.grup || 'Umum'} · ${c.lokasi || '-'}</div>
+                <div class="cctv-card-meta-row">
+                  <span class="cctv-card-ip">${cleanDeviceIp(c.ip)}</span>
+                  <span class="cctv-card-latency">${c.responseTime || 15}ms</span>
+                </div>
+                <div class="cctv-card-footer">
+                  <button class="btn btn-primary btn-sm cctv-card-btn select-cam-btn" data-cam-id="${c.id}" type="button">
+                    ▶ Putar di Monitor
+                  </button>
+                  <button class="btn btn-secondary btn-sm cctv-card-btn detail-cam-btn" data-cam-id="${c.id}" type="button">
+                    🔍 Detail
+                  </button>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- 4. Quad Matrix View (4 Cameras Multi-Screen 2x2) -->
+      <div id="cctv-quad-view-container" style="${cctvViewMode === 'quad' ? 'display:block;' : 'display:none;'}">
+        <div class="cctv-quad-grid">
+          ${[0, 1, 2, 3].map((slotIdx) => {
+            const slotCamId = cctvQuadSlots[slotIdx] || (allCctv[slotIdx] ? allCctv[slotIdx].id : null);
+            const slotCam = allCctv.find((c) => c.id === slotCamId) || allCctv[slotIdx] || allCctv[0] || {};
+            return `
+              <div class="cctv-quad-slot" id="cctv-quad-slot-${slotIdx}">
+                <div class="cctv-quad-slot-header">
+                  <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+                    <span class="cctv-hero-channel-badge">SLOT ${slotIdx + 1}</span>
+                    <span class="live-dot ${slotCam.status === 'online' ? '' : 'offline'}" id="quad-slot-dot-${slotIdx}"></span>
+                    <span class="quad-slot-cam-name" id="quad-slot-title-${slotIdx}" title="${slotCam.nama || 'Pilih Kamera'}">
+                      ${slotCam.nama || 'Kamera ' + (slotIdx + 1)}
+                    </span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                    <button class="btn btn-secondary btn-sm quad-change-cam-btn" data-slot="${slotIdx}" type="button" title="Pilih kamera dari daftar lengkap">
+                      📋 Ganti Kamera
+                    </button>
+                    <button class="btn btn-secondary btn-sm quad-focus-btn" data-slot="${slotIdx}" data-cam-id="${slotCam.id || ''}" title="Fokuskan ke Monitor Utama" style="padding:2px 8px;">
+                      ⤢
+                    </button>
+                  </div>
+                </div>
+                <div class="cctv-quad-slot-viewport" data-slot="${slotIdx}" title="Klik untuk ganti kamera di Slot ${slotIdx + 1}">
+                  <canvas id="cctv-quad-canvas-${slotIdx}" width="640" height="360"></canvas>
+                  <div class="cctv-quad-slot-overlay">
+                    <button class="btn btn-primary btn-sm quad-change-cam-btn" data-slot="${slotIdx}" type="button" style="box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+                      🔄 Ganti Kamera
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function initCctvDashboardTab() {
+  const allCctv = getCctvDevices();
+  if (allCctv.length === 0) return;
+
+  loadCctvQuadSlotsFromStorage();
+
+  // View Mode Switcher
+  document.getElementById('cctv-view-hero-btn')?.addEventListener('click', () => {
+    cctvViewMode = 'hero';
+    document.getElementById('cctv-view-hero-btn')?.classList.add('active');
+    document.getElementById('cctv-view-quad-btn')?.classList.remove('active');
+    const heroBox = document.getElementById('cctv-hero-view-container');
+    const quadBox = document.getElementById('cctv-quad-view-container');
+    if (heroBox) heroBox.style.display = 'flex';
+    if (quadBox) quadBox.style.display = 'none';
+    if (cctvActiveCamId) pollCctvFrame(cctvActiveCamId);
+    requestAnimationFrame(() => renderAllCctvThumbnails());
+  });
+
+  document.getElementById('cctv-view-quad-btn')?.addEventListener('click', () => {
+    cctvViewMode = 'quad';
+    document.getElementById('cctv-view-quad-btn')?.classList.add('active');
+    document.getElementById('cctv-view-hero-btn')?.classList.remove('active');
+    const heroBox = document.getElementById('cctv-hero-view-container');
+    const quadBox = document.getElementById('cctv-quad-view-container');
+    if (heroBox) heroBox.style.display = 'none';
+    if (quadBox) quadBox.style.display = 'block';
+
+    // Poll all 4 quad cameras immediately
+    [0, 1, 2, 3].forEach((slotIdx) => {
+      const targetId = cctvQuadSlots[slotIdx];
+      if (targetId) pollCctvFrame(targetId);
+    });
+  });
+
+  // Filters
+  document.getElementById('cctv-group-filter')?.addEventListener('change', (e) => {
+    cctvFilterGroup = e.target.value;
+    refreshCctvGallery();
+  });
+
+  document.getElementById('cctv-status-filter')?.addEventListener('change', (e) => {
+    cctvFilterStatus = e.target.value;
+    refreshCctvGallery();
+  });
+
+  document.getElementById('cctv-search-input')?.addEventListener('input', (e) => {
+    cctvSearchQuery = (e.target.value || '').trim();
+    refreshCctvGallery();
+  });
+
+  // Resolution pills
+  ['main', 'sub', 'mobile'].forEach((res) => {
+    document.getElementById(`cctv-res-${res}`)?.addEventListener('click', () => {
+      cctvCurrentRes = res;
+      document.querySelectorAll('.cctv-res-btn').forEach((b) => b.classList.remove('active'));
+      document.getElementById(`cctv-res-${res}`)?.classList.add('active');
+      const bwChip = document.getElementById('cctv-hero-bw-chip');
+      if (bwChip) bwChip.textContent = `📶 ${res === 'main' ? '4.25' : (res === 'sub' ? '1.80' : '0.85')} Mbps`;
+      if (cctvActiveCamId) pollCctvFrame(cctvActiveCamId);
+    });
+  });
+
+  // Prev / Next camera
+  document.getElementById('cctv-hero-prev-btn')?.addEventListener('click', () => navigateHeroCctvCamera(-1));
+  document.getElementById('cctv-hero-next-btn')?.addEventListener('click', () => navigateHeroCctvCamera(1));
+
+  // Snapshot
+  document.getElementById('cctv-hero-snapshot-btn')?.addEventListener('click', snapshotCctvHeroCanvas);
+
+  // PTZ D-Pad Toggle
+  document.getElementById('cctv-hero-ptz-toggle')?.addEventListener('click', () => {
+    cctvPtzPanelsOpen = !cctvPtzPanelsOpen;
+    const panel = document.getElementById('cctv-ptz-panel');
+    if (panel) panel.classList.toggle('show', cctvPtzPanelsOpen);
+    const btn = document.getElementById('cctv-hero-ptz-toggle');
+    if (btn) btn.classList.toggle('btn-primary', cctvPtzPanelsOpen);
+  });
+
+  // PTZ Control Buttons
+  document.querySelectorAll('.ptz-btn, .ptz-zoom-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const action = btn.getAttribute('data-ptz');
+      const actionLabels = {
+        up: 'Tilt Atas +5°',
+        down: 'Tilt Bawah -5°',
+        left: 'Pan Kiri -10°',
+        right: 'Pan Kanan +10°',
+        center: 'Preset Posisi Tengah',
+        'zoom-in': 'Zoom In 1.5x',
+        'zoom-out': 'Zoom Out 1.0x',
+      };
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'info',
+        title: `PTZ: ${actionLabels[action] || action}`,
+        timer: 1000,
+        showConfirmButton: false,
+        background: '#1a1d2e',
+        color: '#e2e8f0',
+      });
+    });
+  });
+
+  // Fullscreen
+  document.getElementById('cctv-hero-fullscreen-btn')?.addEventListener('click', toggleCctvHeroFullscreen);
+
+  // Detail Device
+  document.getElementById('cctv-hero-detail-btn')?.addEventListener('click', () => {
+    if (cctvActiveCamId && currentNavigate) {
+      currentNavigate('device-detail', { id: cctvActiveCamId });
+    }
+  });
+
+  // Quad Slot Change Camera List Buttons (Header & Overlay)
+  document.querySelectorAll('.quad-change-cam-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const slotIdx = parseInt(btn.getAttribute('data-slot'), 10);
+      if (!isNaN(slotIdx)) {
+        openCctvSlotCameraPicker(slotIdx);
+      }
+    });
+  });
+
+  // Click on viewport directly to open picker
+  document.querySelectorAll('.cctv-quad-slot-viewport').forEach((vp) => {
+    vp.addEventListener('click', () => {
+      const slotIdx = parseInt(vp.getAttribute('data-slot'), 10);
+      if (!isNaN(slotIdx)) {
+        openCctvSlotCameraPicker(slotIdx);
+      }
+    });
+  });
+
+  document.querySelectorAll('.quad-focus-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const slotIdx = parseInt(btn.getAttribute('data-slot'), 10);
+      const camId = parseInt(btn.getAttribute('data-cam-id'), 10) || cctvQuadSlots[slotIdx];
+      if (camId) {
+        cctvViewMode = 'hero';
+        document.getElementById('cctv-view-hero-btn')?.click();
+        switchHeroCctvCamera(camId);
+      }
+    });
+  });
+
+  // Attach gallery cards click
+  attachCctvGalleryEvents();
+
+  // Render all thumbnails immediately without limit
+  requestAnimationFrame(() => {
+    renderAllCctvThumbnails();
+  });
+
+  // Start animation loop
+  startCctvRenderLoop();
+}
+
+function renderAllCctvThumbnails() {
+  const filtered = getFilteredCctvDevices();
+  filtered.forEach((c) => {
+    const thumbCanvas = document.getElementById(`cctv-thumb-${c.id}`);
+    if (thumbCanvas) {
+      drawCctvFeed(thumbCanvas, c, false);
+    }
+  });
+}
+
+function setQuadSlotCamera(slotIdx, camId) {
+  const allCctv = getCctvDevices();
+  const cam = allCctv.find((c) => c.id === camId);
+  if (!cam) return;
+
+  cctvQuadSlots[slotIdx] = cam.id;
+  saveCctvQuadSlotsToStorage();
+
+  const titleEl = document.getElementById(`quad-slot-title-${slotIdx}`);
+  if (titleEl) {
+    titleEl.textContent = cam.nama;
+    titleEl.title = cam.nama;
+  }
+
+  const dotEl = document.getElementById(`quad-slot-dot-${slotIdx}`);
+  if (dotEl) {
+    dotEl.className = `live-dot ${cam.status === 'online' ? '' : 'offline'}`;
+  }
+
+  const focusBtn = document.querySelector(`.quad-focus-btn[data-slot="${slotIdx}"]`);
+  if (focusBtn) {
+    focusBtn.setAttribute('data-cam-id', String(cam.id));
+  }
+
+  pollCctvFrame(cam.id);
+
+  const quadCanvas = document.getElementById(`cctv-quad-canvas-${slotIdx}`);
+  if (quadCanvas) {
+    drawCctvFeed(quadCanvas, cam, false);
+  }
+
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'success',
+    title: `Slot ${slotIdx + 1}: ${cam.nama}`,
+    timer: 1500,
+    showConfirmButton: false,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+  });
+}
+
+function openCctvSlotCameraPicker(slotIdx) {
+  const allCctv = getCctvDevices();
+  if (allCctv.length === 0) return;
+
+  const currentCamId = cctvQuadSlots[slotIdx];
+  const groups = ['all', ...new Set(allCctv.map((c) => c.grup || 'Umum'))].sort();
+
+  let activeGroupFilter = 'all';
+  let searchQuery = '';
+
+  const renderModalCameraList = () => {
+    const filtered = allCctv.filter((c) => {
+      if (activeGroupFilter !== 'all' && (c.grup || 'Umum') !== activeGroupFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const match = (c.nama || '').toLowerCase().includes(q) ||
+          (c.ip || '').toLowerCase().includes(q) ||
+          (c.lokasi || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      return `<div style="padding:24px; text-align:center; color:var(--color-muted); font-size:0.85rem;">Tidak ada kamera yang cocok dengan pencarian</div>`;
+    }
+
+    return filtered.map((c) => {
+      const isSelectedInThisSlot = c.id === currentCamId;
+      const otherSlotIdx = cctvQuadSlots.findIndex((id, idx) => idx !== slotIdx && id === c.id);
+      const isOtherSlot = otherSlotIdx !== -1;
+      const cleanIp = cleanDeviceIp(c.ip);
+
+      return `
+        <div class="cctv-picker-item ${isSelectedInThisSlot ? 'selected' : ''}" data-cam-id="${c.id}" style="
+          display:flex; align-items:center; justify-content:space-between; gap:12px;
+          padding:10px 14px; border-radius:10px; margin-bottom:8px; cursor:pointer;
+          background:${isSelectedInThisSlot ? 'rgba(99,102,241,0.2)' : 'rgba(15,23,42,0.6)'};
+          border:1px solid ${isSelectedInThisSlot ? '#6366f1' : 'rgba(255,255,255,0.08)'};
+          transition:all 0.15s ease;
+        ">
+          <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+            <div style="
+              width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+              background:${c.status === 'online' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'};
+              color:${c.status === 'online' ? '#4ade80' : '#f87171'}; font-size:1.1rem; flex-shrink:0;
+            ">📹</div>
+            <div style="text-align:left; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-weight:700; font-size:0.88rem; color:#f8fafc;">${c.nama}</span>
+                <span style="font-size:0.68rem; padding:1px 6px; border-radius:4px; font-weight:700; ${c.status === 'online' ? 'background:rgba(34,197,94,0.2); color:#4ade80;' : 'background:rgba(239,68,68,0.2); color:#f87171;'}">
+                  ${c.status.toUpperCase()}
+                </span>
+                ${isSelectedInThisSlot ? '<span style="font-size:0.65rem; background:#6366f1; color:#fff; padding:1px 6px; border-radius:4px; font-weight:700;">SLOT INI</span>' : ''}
+                ${isOtherSlot ? `<span style="font-size:0.65rem; background:rgba(148,163,184,0.2); color:#94a3b8; padding:1px 6px; border-radius:4px;">Aktif di Slot ${otherSlotIdx + 1}</span>` : ''}
+              </div>
+              <div style="font-size:0.75rem; color:#94a3b8; display:flex; gap:10px; margin-top:2px;">
+                <span>🌐 ${cleanIp}</span>
+                <span>📍 ${c.grup || 'Umum'} · ${c.lokasi || '-'}</span>
+                <span>⚡ ${c.responseTime || 15}ms</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" style="flex-shrink:0; font-size:0.75rem; padding:4px 10px; pointer-events:none;">
+            ${isSelectedInThisSlot ? '✓ Terpilih' : 'Pilih'}
+          </button>
+        </div>
+      `;
+    }).join('');
+  };
+
+  Swal.fire({
+    title: `📹 Pilih Kamera untuk SLOT ${slotIdx + 1}`,
+    html: `
+      <div style="text-align:left; font-size:0.8rem; color:#94a3b8; margin-bottom:12px;">
+        Klik salah satu kamera dari daftar di bawah untuk menampilkannya pada monitor Slot ${slotIdx + 1}. Pilihan akan otomatis tersimpan di memori browser.
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" id="cctv-picker-search" class="form-control" placeholder="🔍 Cari nama, IP, lokasi..." style="flex:1; font-size:0.82rem;" />
+        <select id="cctv-picker-group" class="form-control" style="width:auto; max-width:160px; font-size:0.82rem;">
+          ${groups.map((g) => `<option value="${g}">${g === 'all' ? 'Semua Lokasi' : g}</option>`).join('')}
+        </select>
+      </div>
+      <div id="cctv-picker-list" style="max-height:360px; overflow-y:auto; padding-right:4px;">
+        ${renderModalCameraList()}
+      </div>
+    `,
+    width: '680px',
+    showConfirmButton: false,
+    showCloseButton: true,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+    didOpen: () => {
+      const searchEl = document.getElementById('cctv-picker-search');
+      const groupEl = document.getElementById('cctv-picker-group');
+      const listEl = document.getElementById('cctv-picker-list');
+
+      const refreshList = () => {
+        if (listEl) {
+          listEl.innerHTML = renderModalCameraList();
+          attachPickerEvents();
+        }
+      };
+
+      searchEl?.addEventListener('input', (e) => {
+        searchQuery = (e.target.value || '').trim();
+        refreshList();
+      });
+
+      groupEl?.addEventListener('change', (e) => {
+        activeGroupFilter = e.target.value;
+        refreshList();
+      });
+
+      const attachPickerEvents = () => {
+        listEl?.querySelectorAll('.cctv-picker-item').forEach((item) => {
+          item.addEventListener('click', () => {
+            const camId = parseInt(item.getAttribute('data-cam-id'), 10);
+            if (camId) {
+              setQuadSlotCamera(slotIdx, camId);
+              Swal.close();
+            }
+          });
+        });
+      };
+
+      attachPickerEvents();
+    },
+  });
+}
+
+function attachCctvGalleryEvents() {
+  document.querySelectorAll('.cctv-card-item').forEach((card) => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.detail-cam-btn')) return;
+      const camId = parseInt(card.getAttribute('data-cam-id'), 10);
+      if (camId) {
+        switchHeroCctvCamera(camId);
+      }
+    });
+  });
+
+  document.querySelectorAll('.detail-cam-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const camId = parseInt(btn.getAttribute('data-cam-id'), 10);
+      if (camId && currentNavigate) {
+        currentNavigate('device-detail', { id: camId });
+      }
+    });
+  });
+}
+
+function refreshCctvGallery() {
+  const filteredCctv = getFilteredCctvDevices();
+  const grid = document.getElementById('cctv-gallery-grid');
+  if (!grid) return;
+
+  grid.innerHTML = filteredCctv.map((c) => `
+    <div class="cctv-card-item ${c.id === cctvActiveCamId ? 'active-feed' : ''}" data-cam-id="${c.id}" id="cctv-card-${c.id}">
+      <div class="cctv-card-thumb-wrap">
+        <canvas id="cctv-thumb-${c.id}" width="320" height="180"></canvas>
+        <div class="cctv-card-live-tag">
+          <span class="live-dot ${c.status === 'online' ? '' : 'offline'}"></span>
+          <span>${c.status === 'online' ? 'LIVE' : 'OFFLINE'}</span>
+        </div>
+        ${c.id === cctvActiveCamId ? '<div class="cctv-card-active-pill" id="cctv-active-pill-' + c.id + '">SEDANG AKTIF</div>' : ''}
+      </div>
+      <div class="cctv-card-body">
+        <div class="cctv-card-name-row">
+          <div class="cctv-card-name" title="${c.nama}">${c.nama}</div>
+          <span class="cctv-hero-channel-badge">${c.status.toUpperCase()}</span>
+        </div>
+        <div class="cctv-card-loc">📍 ${c.grup || 'Umum'} · ${c.lokasi || '-'}</div>
+        <div class="cctv-card-meta-row">
+          <span class="cctv-card-ip">${cleanDeviceIp(c.ip)}</span>
+          <span class="cctv-card-latency">${c.responseTime || 15}ms</span>
+        </div>
+        <div class="cctv-card-footer">
+          <button class="btn btn-primary btn-sm cctv-card-btn select-cam-btn" data-cam-id="${c.id}" type="button">
+            ▶ Putar di Monitor
+          </button>
+          <button class="btn btn-secondary btn-sm cctv-card-btn detail-cam-btn" data-cam-id="${c.id}" type="button">
+            🔍 Detail
+          </button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  attachCctvGalleryEvents();
+  requestAnimationFrame(() => {
+    renderAllCctvThumbnails();
+  });
+}
+
+function switchHeroCctvCamera(camId) {
+  const allCctv = getCctvDevices();
+  const cam = allCctv.find((c) => c.id === camId);
+  if (!cam) return;
+  cctvActiveCamId = cam.id;
+
+  const titleText = document.getElementById('cctv-hero-title-text');
+  if (titleText) titleText.textContent = cam.nama;
+
+  const channelText = document.getElementById('cctv-hero-channel-text');
+  if (channelText) channelText.textContent = `CH-${String(cam.id).padStart(2, '0')}`;
+
+  const liveBadge = document.getElementById('cctv-hero-live-badge');
+  if (liveBadge) liveBadge.textContent = cam.status === 'online' ? 'LIVE 1080p' : 'OFFLINE';
+
+  const ipChip = document.getElementById('cctv-hero-ip-chip');
+  if (ipChip) ipChip.textContent = `🌐 ${cleanDeviceIp(cam.ip)}`;
+
+  const locChip = document.getElementById('cctv-hero-loc-chip');
+  if (locChip) locChip.textContent = `📍 ${cam.grup} · ${cam.lokasi || '-'}`;
+
+  const pingChip = document.getElementById('cctv-hero-ping-chip');
+  if (pingChip) pingChip.textContent = `⚡ ${cam.responseTime || 15}ms`;
+
+  document.querySelectorAll('.cctv-card-item').forEach((card) => {
+    const cid = parseInt(card.getAttribute('data-cam-id'), 10);
+    if (cid === cam.id) {
+      card.classList.add('active-feed');
+      if (!card.querySelector('.cctv-card-active-pill')) {
+        const thumb = card.querySelector('.cctv-card-thumb-wrap');
+        if (thumb) {
+          const pill = document.createElement('div');
+          pill.className = 'cctv-card-active-pill';
+          pill.id = `cctv-active-pill-${cam.id}`;
+          pill.textContent = 'SEDANG AKTIF';
+          thumb.appendChild(pill);
+        }
+      }
+    } else {
+      card.classList.remove('active-feed');
+      const pill = card.querySelector('.cctv-card-active-pill');
+      if (pill) pill.remove();
+    }
+  });
+
+  pollCctvFrame(cam.id);
+}
+
+function navigateHeroCctvCamera(direction = 1) {
+  const allCctv = getFilteredCctvDevices();
+  if (allCctv.length === 0) return;
+  const currIdx = allCctv.findIndex((c) => c.id === cctvActiveCamId);
+  let nextIdx = currIdx + direction;
+  if (nextIdx < 0) nextIdx = allCctv.length - 1;
+  if (nextIdx >= allCctv.length) nextIdx = 0;
+  switchHeroCctvCamera(allCctv[nextIdx].id);
+}
+
+function snapshotCctvHeroCanvas() {
+  const canvas = document.getElementById('cctv-hero-canvas');
+  if (!canvas) return;
+  const allCctv = getCctvDevices();
+  const cam = allCctv.find((c) => c.id === cctvActiveCamId) || { nama: 'cctv' };
+  const safeName = (cam.nama || 'cctv').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `snapshot_${safeName}_${Date.now()}.png`;
+
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'success',
+    title: `Snapshot tersimpan: ${filename}`,
+    timer: 2000,
+    showConfirmButton: false,
+    background: '#1a1d2e',
+    color: '#e2e8f0',
+  });
+}
+
+function toggleCctvHeroFullscreen() {
+  const vp = document.getElementById('cctv-hero-viewport');
+  if (!vp) return;
+  if (!document.fullscreenElement) {
+    if (vp.requestFullscreen) vp.requestFullscreen().catch(() => {});
+    vp.classList.add('fullscreen');
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    vp.classList.remove('fullscreen');
+  }
+}
+
+function pollCctvFrame(camId) {
+  if (cctvPollingBusy[camId]) return;
+  cctvPollingBusy[camId] = true;
+
+  const img = cctvRealFrames[camId] || new Image();
+  cctvRealFrames[camId] = img;
+
+  fetch(`/api/devices/${camId}/live-frame?res=${cctvCurrentRes}&t=${Date.now()}`)
+    .then(async (res) => {
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          cctvRealOnline[camId] = true;
+          cctvPollingBusy[camId] = false;
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          cctvRealOnline[camId] = false;
+          cctvPollingBusy[camId] = false;
+        };
+        img.src = url;
+      } else {
+        cctvRealOnline[camId] = false;
+        cctvPollingBusy[camId] = false;
+      }
+    })
+    .catch(() => {
+      cctvRealOnline[camId] = false;
+      cctvPollingBusy[camId] = false;
+    });
+}
+
+function drawCctvFeed(canvas, cam, isHero = false) {
+  if (!canvas || !cam) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Clear & background
+  ctx.fillStyle = '#050811';
+  ctx.fillRect(0, 0, w, h);
+
+  // Real frame if available
+  const realImg = cctvRealFrames[cam.id];
+  const isReal = cctvRealOnline[cam.id];
+
+  if (realImg && isReal && realImg.complete && realImg.naturalWidth > 0) {
+    ctx.drawImage(realImg, 0, 0, w, h);
+  } else {
+    // Surveillance HUD Graphic Simulation
+    ctx.save();
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.lineWidth = 1;
+    const step = isHero ? 60 : 40;
+    for (let x = 0; x < w; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (let y = 0; y < h; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    // Dynamic scanning line
+    const scanY = (Date.now() / (isHero ? 20 : 30)) % h;
+    const scanGrad = ctx.createLinearGradient(0, scanY - 30, 0, scanY + 10);
+    scanGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
+    scanGrad.addColorStop(0.5, 'rgba(56, 189, 248, 0.15)');
+    scanGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+    ctx.fillStyle = scanGrad;
+    ctx.fillRect(0, scanY - 30, w, 40);
+
+    // Subtle noise particles
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+    const particleCount = isHero ? 30 : 15;
+    for (let i = 0; i < particleCount; i++) {
+      const rx = (Math.sin(Date.now() * 0.001 + i) * 0.5 + 0.5) * w;
+      const ry = (Math.cos(Date.now() * 0.001 + i * 2) * 0.5 + 0.5) * h;
+      ctx.fillRect(rx, ry, 2, 2);
+    }
+
+    // Crosshair in middle
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.lineWidth = 1.2;
+    const cx = w / 2;
+    const cy = h / 2;
+    const arm = isHero ? 24 : 14;
+    const gap = isHero ? 6 : 4;
+    ctx.beginPath();
+    ctx.moveTo(cx - arm, cy); ctx.lineTo(cx - gap, cy);
+    ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + arm, cy);
+    ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy - gap);
+    ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + arm);
+    ctx.stroke();
+
+    // Corner HUD brackets
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
+    ctx.lineWidth = 2;
+    const cornerSize = isHero ? 20 : 12;
+    const margin = isHero ? 16 : 8;
+    ctx.beginPath();
+    ctx.moveTo(margin, margin + cornerSize); ctx.lineTo(margin, margin); ctx.lineTo(margin + cornerSize, margin);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(w - margin - cornerSize, margin); ctx.lineTo(w - margin, margin); ctx.lineTo(w - margin, margin + cornerSize);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(margin, h - margin - cornerSize); ctx.lineTo(margin, h - margin); ctx.lineTo(margin + cornerSize, h - margin);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(w - margin - cornerSize, h - margin); ctx.lineTo(w - margin, h - margin); ctx.lineTo(w - margin, h - margin - cornerSize);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // OSD Watermark Text (Burnt into canvas)
+  ctx.save();
+  const fontSize = isHero ? 14 : 10;
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.fillStyle = '#f8fafc';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 4;
+
+  const now = new Date();
+  const timeStr = now.toISOString().replace('T', ' ').substring(0, 23);
+
+  // Top-left: Camera Name
+  ctx.textAlign = 'left';
+  ctx.fillText(cam.nama ? cam.nama.toUpperCase() : 'CCTV CAMERA', isHero ? 20 : 10, isHero ? 32 : 18);
+
+  // Top-right: Timestamp
+  ctx.textAlign = 'right';
+  ctx.fillText(timeStr, w - (isHero ? 20 : 10), isHero ? 32 : 18);
+
+  // Bottom-left: Codec & Resolution
+  ctx.font = `${isHero ? 12 : 9}px monospace`;
+  ctx.fillStyle = '#38bdf8';
+  ctx.textAlign = 'left';
+  const cleanIp = cleanDeviceIp(cam.ip);
+  ctx.fillText(`${cleanIp} · ${isHero ? (cctvCurrentRes === 'main' ? '1080p' : (cctvCurrentRes === 'sub' ? '720p' : '480p')) : '720p'} · H.264 · 25 FPS`, isHero ? 20 : 10, h - (isHero ? 20 : 10));
+
+  // Bottom-right: Live status & Bitrate
+  ctx.textAlign = 'right';
+  ctx.fillStyle = cam.status === 'online' ? '#4ade80' : '#f87171';
+  const bitRate = cam.status === 'online' ? (isHero && cctvCurrentRes === 'main' ? '4.25 Mbps' : '1.80 Mbps') : 'OFFLINE';
+  ctx.fillText(`● LIVE · ${bitRate} · ${cam.responseTime || 15} ms`, w - (isHero ? 20 : 10), h - (isHero ? 20 : 10));
+  ctx.restore();
+}
+
+function startCctvRenderLoop() {
+  if (cctvAnimFrameId) {
+    cancelAnimationFrame(cctvAnimFrameId);
+    cctvAnimFrameId = null;
+  }
+
+  let lastPollHero = 0;
+  let lastPollThumbs = 0;
+  let lastPollQuad = 0;
+  let quadPollSlot = 0;
+
+  function loop() {
+    if (currentTab !== 'cctv') return;
+
+    const allCctv = getCctvDevices();
+    const now = Date.now();
+
+    if (cctvViewMode === 'hero') {
+      const activeCam = allCctv.find((c) => c.id === cctvActiveCamId) || allCctv[0];
+      const heroCanvas = document.getElementById('cctv-hero-canvas');
+      if (heroCanvas && activeCam) {
+        drawCctvFeed(heroCanvas, activeCam, true);
+        if (now - lastPollHero > 2000) {
+          lastPollHero = now;
+          pollCctvFrame(activeCam.id);
+        }
+      }
+
+      // Update thumbnails in gallery (HUD scanline & clock tick)
+      if (now - lastPollThumbs > 250) {
+        lastPollThumbs = now;
+        const filtered = getFilteredCctvDevices();
+        filtered.forEach((c) => {
+          const thumbCanvas = document.getElementById(`cctv-thumb-${c.id}`);
+          if (thumbCanvas) {
+            drawCctvFeed(thumbCanvas, c, false);
+          }
+        });
+      }
+    } else {
+      // Quad view - draw 4 slots continuously
+      [0, 1, 2, 3].forEach((slotIdx) => {
+        const slotCamId = cctvQuadSlots[slotIdx] || (allCctv[slotIdx] ? allCctv[slotIdx].id : null);
+        const slotCam = allCctv.find((c) => c.id === slotCamId) || allCctv[slotIdx] || allCctv[0];
+        const quadCanvas = document.getElementById(`cctv-quad-canvas-${slotIdx}`);
+        if (quadCanvas && slotCam) {
+          drawCctvFeed(quadCanvas, slotCam, false);
+        }
+      });
+
+      // Adaptive staggered polling for the 4 quad cameras
+      if (now - lastPollQuad > 1500) {
+        lastPollQuad = now;
+        const targetSlot = quadPollSlot % 4;
+        quadPollSlot++;
+        const targetId = cctvQuadSlots[targetSlot] || (allCctv[targetSlot] ? allCctv[targetSlot].id : null);
+        if (targetId) {
+          pollCctvFrame(targetId);
+        }
+      }
+    }
+
+    cctvAnimFrameId = requestAnimationFrame(loop);
+  }
+
+  cctvAnimFrameId = requestAnimationFrame(loop);
 }

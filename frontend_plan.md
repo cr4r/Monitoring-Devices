@@ -1,4 +1,4 @@
-# Frontend Plan — DevWatch: Device Monitoring System
+# Frontend Plan - DevWatch: Device Monitoring System
 
 ## Goal
 
@@ -11,7 +11,7 @@ Scope: **pure frontend** dengan mock data (siap dihubungkan ke backend API Node.
 ## User Review Required
 
 > [!IMPORTANT]
-> Frontend ini menggunakan **mock data (JSON)** — belum terhubung ke backend. Semua API call akan di-stub dengan data dummy supaya UI bisa berjalan dan didemonstrasikan sebelum backend selesai.
+> Frontend ini menggunakan **mock data (JSON)** - belum terhubung ke backend. Semua API call akan di-stub dengan data dummy supaya UI bisa berjalan dan didemonstrasikan sebelum backend selesai.
 
 > [!IMPORTANT]
 > Stack pilihan: **Vite + Vanilla JS** (bukan Vue/React). Lebih ringan, sesuai PRD. Kalau user mau Vue.js ringan, konfirmasi dulu.
@@ -120,9 +120,9 @@ Animasi:
 | Maintenance | count status === 'maintenance' |
 
 **Tab view:**
-1. **Kartu Device** — grid responsive, filter, search
-2. **Peta Visual** — **Canvas HTML5** diagram node + garis koneksi (zoom/pan via mouse drag + scroll wheel)
-3. **Grafik Timeline** — Chart.js bar chart 24 jam per device
+1. **Kartu Device** - grid responsive, filter, search
+2. **Peta Visual** - **Canvas HTML5** diagram node + garis koneksi (zoom/pan via mouse drag + scroll wheel)
+3. **Grafik Timeline** - Chart.js bar chart 24 jam per device
 
 **Filter:** Kategori (PC/CCTV), Status, Grup/Lokasi  
 **Search:** Nama / IP address (live filter)
@@ -175,9 +175,9 @@ Animasi:
 ### 📈 Laporan (`reports.js`)
 
 **Tab:**
-1. Laporan Mingguan — tabel ringkasan + chart uptime
-2. Uptime/SLA — per device, pilih periode, badge warna
-3. Laporan Insiden — daftar offline events + durasi
+1. Laporan Mingguan - tabel ringkasan + chart uptime
+2. Uptime/SLA - per device, pilih periode, badge warna
+3. Laporan Insiden - daftar offline events + durasi
 
 **Export PDF** per laporan (header logo, tabel, grafik, footer halaman)
 
@@ -223,10 +223,10 @@ Setiap section: form field + tombol Simpan → SweetAlert success.
 }
 ```
 
-- **Chart.js** — grafik uptime & timeline
-- **SweetAlert2** — semua popup/notifikasi
-- **jsPDF + html2canvas** — export PDF
-- **Papa Parse** — parse CSV import
+- **Chart.js** - grafik uptime & timeline
+- **SweetAlert2** - semua popup/notifikasi
+- **jsPDF + html2canvas** - export PDF
+- **Papa Parse** - parse CSV import
 
 ---
 

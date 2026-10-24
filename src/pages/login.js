@@ -1,5 +1,5 @@
 // ================================================================
-// MonDev — login.js
+// MonDev - login.js
 // Halaman login dengan mock auth, rate limiting, SweetAlert2
 // ================================================================
 

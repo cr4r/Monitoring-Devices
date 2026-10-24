@@ -1,5 +1,5 @@
 /* ================================================================
-   DevWatch — components.css
+   DevWatch - components.css
    Reusable UI components: buttons, badges, cards, tables, modals,
    forms, tabs, pagination, alerts
    ================================================================ */
@@ -726,12 +726,13 @@ textarea.form-control {
 
 .tabs-nav {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   border-bottom: 1px solid var(--border-color);
-  padding: 0;
+  padding: 4px 6px 0 6px;
   background: var(--bg-secondary);
   border-radius: var(--border-radius) var(--border-radius) 0 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 
@@ -743,7 +744,7 @@ textarea.form-control {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 11px 18px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -756,6 +757,7 @@ textarea.form-control {
   white-space: nowrap;
   position: relative;
   top: 1px;
+  flex-shrink: 0;
 }
 
 .tab-btn:hover {
@@ -766,7 +768,50 @@ textarea.form-control {
 .tab-btn.active {
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
-  background: rgba(99, 102, 241, 0.06);
+  background: rgba(99, 102, 241, 0.08);
+  font-weight: 600;
+}
+
+/* Mobile Responsive Tabs Nav */
+@media (max-width: 768px) {
+  .tabs-nav {
+    padding: 6px;
+    gap: 6px;
+    border-radius: var(--border-radius);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    margin-bottom: 12px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .tab-btn {
+    top: 0;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border-bottom: none !important;
+    scroll-snap-align: start;
+  }
+
+  .tab-btn.active {
+    background: var(--color-accent) !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  }
+}
+
+@media (max-width: 480px) {
+  .tabs-nav {
+    padding: 4px;
+    gap: 4px;
+  }
+
+  .tab-btn {
+    padding: 7px 10px;
+    font-size: 0.74rem;
+    gap: 5px;
+  }
 }
 
 .tab-content {

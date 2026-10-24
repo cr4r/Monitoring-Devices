@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — setup.js
+// DevWatch - setup.js
 // Halaman Setup Awal Pertama Kali (First-Run Setup Wizard)
 // ================================================================
 

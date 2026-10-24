@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch / MonDev — scripts/clean.js
+// DevWatch / MonDev - scripts/clean.js
 // Membersihkan folder dist dan berkas sementara
 // ================================================================
 

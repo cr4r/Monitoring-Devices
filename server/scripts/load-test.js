@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — load-test.js
+// DevWatch - load-test.js
 // Skrip Pengujian Beban (Load & Stress Testing) untuk 200+ Perangkat
 // Mengukur: Throughput Probe, Concurrency, SQLite Latency, & Memory
 // ================================================================
@@ -11,7 +11,7 @@ const TOTAL_DEVICES = 250;
 const CONCURRENCY_LIMIT = 30;
 
 console.log('='.repeat(70));
-console.log('🚀 DEVAWATCH — LOAD & STRESS TESTING (200+ PERANGKAT)');
+console.log('🚀 DEVAWATCH - LOAD & STRESS TESTING (200+ PERANGKAT)');
 console.log('='.repeat(70));
 console.log(`Target Perangkat      : ${TOTAL_DEVICES} devices (Scope PRD: 100 devices)`);
 console.log(`Tingkat Konkurensi    : ${CONCURRENCY_LIMIT} concurrent worker pool`);

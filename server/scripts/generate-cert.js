@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — generate-cert.js
+// DevWatch - generate-cert.js
 // Pembuat Sertifikat SSL/TLS Mandiri (Self-Signed) untuk Lingkungan Lokal / Staging
 // ================================================================
 
@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 const sslDir = path.resolve(__dirname, '../../ssl');
 
 console.log('='.repeat(65));
-console.log('🔐 DEVAWATCH — GENERATOR SERTIFIKAT SSL/TLS MANDIRI');
+console.log('🔐 DEVAWATCH - GENERATOR SERTIFIKAT SSL/TLS MANDIRI');
 console.log('='.repeat(65));
 
 if (!fs.existsSync(sslDir)) {

@@ -1,5 +1,5 @@
 # 📋 Product Requirements Document (PRD)
-## DevWatch — Sistem Monitoring Device Jaringan
+## DevWatch - Sistem Monitoring Device Jaringan
 **Versi:** 1.0  
 **Tanggal:** 14 Oktober 2026  
 **Status:** Draft  
@@ -76,7 +76,7 @@
 | Metode | Keterangan | Prioritas |
 |--------|-----------|-----------|
 | **ICMP Ping** | Pengecekan dasar online/offline | Utama |
-| **Hikvision ISAPI** | REST API resmi Hikvision — ambil info device (model, status, storage) | Sekunder |
+| **Hikvision ISAPI** | REST API resmi Hikvision - ambil info device (model, status, storage) | Sekunder |
 | **RTSP Stream Check** | Verifikasi apakah stream video aktif | Opsional |
 | **ONVIF** | Protokol standar, kompatibilitas luas dengan brand lain | Opsional |
 
@@ -95,7 +95,7 @@
 [Reverse Proxy: Nginx / Caddy]
       │
       ▼
-[Node.js Express App — Windows Service]
+[Node.js Express App - Windows Service]
       │         │
       │         ▼
       │    [SQLite Database]
@@ -178,7 +178,7 @@
 **Alur Penggunaan:**
 1. Teknisi/Admin klik tombol "Set Maintenance" pada device
 2. Isi form: Alasan maintenance, estimasi selesai (tanggal & jam)
-3. Device masuk status 🟡 Maintenance — tidak memicu alert meski offline
+3. Device masuk status 🟡 Maintenance - tidak memicu alert meski offline
 4. Setelah estimasi waktu lewat → notifikasi ke Teknisi untuk konfirmasi selesai
 5. Teknisi klik "Selesai Maintenance" → device kembali ke monitoring normal
 6. Semua aktivitas maintenance tercatat di log
@@ -413,7 +413,7 @@ Teknisi melihat device akan dimatikan untuk maintenance
 
 ## 11. Milestone & Fase Pengembangan
 
-### Fase 1 — Core Foundation (Minggu 1–3)
+### Fase 1 - Core Foundation (Minggu 1–3)
 - [x] Setup project Node.js + Express + SQLite
 - [x] Setup Windows Service (node-windows / nssm)
 - [x] Sistem autentikasi (login, sesi, role)
@@ -421,26 +421,26 @@ Teknisi melihat device akan dimatikan untuk maintenance
 - [x] API endpoint status device
 - [x] Dashboard dasar (card view + status real-time)
 
-### Fase 2 — Fitur Utama (Minggu 4–6)
+### Fase 2 - Fitur Utama (Minggu 4–6)
 - [x] CRUD manajemen device di CMS
 - [x] Sistem log lengkap (3 jenis log)
 - [x] Push notification browser
 - [x] Maintenance Mode
 - [x] Filter & pencarian log
 
-### Fase 3 — Protokol Lanjutan (Minggu 7–8)
+### Fase 3 - Protokol Lanjutan (Minggu 7–8)
 - [x] Integrasi ISAPI Hikvision
 - [x] RTSP stream check
 - [x] ONVIF support
 - [x] Import device dari CSV
 
-### Fase 4 — Laporan & Analytics (Minggu 9–10)
+### Fase 4 - Laporan & Analytics (Minggu 9–10)
 - [x] Uptime Score & SLA Tracker
 - [x] Laporan mingguan otomatis
 - [x] Export PDF (laporan + log)
 - [x] Grafik timeline status
 
-### Fase 5 — Polish & Pengujian (Minggu 11–12)
+### Fase 5 - Polish & Pengujian (Minggu 11–12)
 - [x] Network topology map visual
 - [x] Pengaturan sistem lengkap
 - [x] Pengujian beban (load testing)
@@ -471,7 +471,7 @@ Teknisi melihat device akan dimatikan untuk maintenance
 | **ONVIF** | Standar industri untuk kamera IP agar kompatibel lintas merek |
 | **SQLite** | Database ringan yang disimpan dalam satu file, tidak perlu server database terpisah |
 | **Windows Service** | Program yang berjalan otomatis di background Windows sejak PC dinyalakan |
-| **SLA** | Service Level Agreement — target persentase uptime yang disepakati |
+| **SLA** | Service Level Agreement - target persentase uptime yang disepakati |
 | **JWT** | Metode autentikasi berbasis token untuk sesi pengguna |
 | **Push Notification** | Notifikasi yang muncul di browser meski halaman web tidak aktif |
 | **Maintenance Mode** | Status khusus device yang sedang dalam pemeliharaan, tidak memicu alert |
@@ -481,5 +481,5 @@ Teknisi melihat device akan dimatikan untuk maintenance
 *Dokumen ini merupakan living document dan akan diperbarui seiring progress pengembangan.*
 
 **Dibuat dengan:** Antigravity AI  
-**Proyek:** DevWatch — Device Monitoring System  
+**Proyek:** DevWatch - Device Monitoring System  
 **Lokasi Proyek:** `D:\Projek\WEB\Monitoring-Devices`

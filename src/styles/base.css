@@ -1,5 +1,5 @@
 /* ================================================================
-   DevWatch — base.css
+   DevWatch - base.css
    Design tokens, reset, typography, animasi global
    ================================================================ */
 
@@ -87,7 +87,7 @@
 /* --- Soft Light Mode Theme Tokens --- */
 :root[data-theme="light"],
 [data-theme="light"] {
-  /* Background — Soft Pearl Slate (Teduh di mata, tidak menyilaukan) */
+  /* Background - Soft Pearl Slate (Teduh di mata, tidak menyilaukan) */
   --bg-primary: #f6f8fb;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
@@ -100,7 +100,7 @@
   --bg-table-row: rgba(15, 23, 42, 0.015);
   --bg-table-row-hover: rgba(99, 102, 241, 0.05);
 
-  /* Status Colors — Kontras tinggi & lembut di latar terang */
+  /* Status Colors - Kontras tinggi & lembut di latar terang */
   --color-online: #16a34a;
   --color-online-dim: rgba(22, 163, 74, 0.1);
   --color-online-glow: rgba(22, 163, 74, 0.25);
@@ -118,7 +118,7 @@
   --color-accent-glow: rgba(79, 70, 229, 0.22);
   --color-accent-2: #7c3aed;
 
-  /* Typography / Text — Skala Slate (WCAG AAA) */
+  /* Typography / Text - Skala Slate (WCAG AAA) */
   --color-text: #334155;
   --color-text-secondary: #64748b;
   --color-muted: #94a3b8;

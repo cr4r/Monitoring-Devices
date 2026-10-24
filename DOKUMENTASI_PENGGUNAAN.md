@@ -1,5 +1,5 @@
 # 📖 Buku Panduan Penggunaan & Operasional DevWatch
-**Versi:** 1.0.0 (Fase 5 — Production Ready)  
+**Versi:** 1.0.0 (Fase 5 - Production Ready)  
 **Lingkungan:** Node.js 22+ / 24, SQLite WAL Mode, Windows Service / Linux Daemon, HTTPS  
 **Tanggal Rilis:** Oktober 2026  
 
@@ -99,10 +99,10 @@ Dashboard adalah pusat kendali visual utama DevWatch:
 ### Peta Topologi Visual (Network Topology Map)
 Klik tab **🗺️ Peta Visual** pada dashboard:
 1. **Hierarki Otomatis:**
-   - 🌐 **Gateway Router (`192.168.1.1`)** — Pintu gerbang utama koneksi WAN.
-   - 🔀 **Core Switch L3 (`192.168.1.2`)** — Tulang punggung distribusi jaringan kantor.
-   - 📦 **Group Switches (VLAN Hubs)** — Switch distribusi per divisi/lokasi (Server, CCTV, Office).
-   - 💻 / 📷 **End Devices** — Perangkat akhir komputer PC dan kamera CCTV.
+   - 🌐 **Gateway Router (`192.168.1.1`)** - Pintu gerbang utama koneksi WAN.
+   - 🔀 **Core Switch L3 (`192.168.1.2`)** - Tulang punggung distribusi jaringan kantor.
+   - 📦 **Group Switches (VLAN Hubs)** - Switch distribusi per divisi/lokasi (Server, CCTV, Office).
+   - 💻 / 📷 **End Devices** - Perangkat akhir komputer PC dan kamera CCTV.
 2. **Animasi Paket Real-Time:**
    - Sambungan online memancarkan partikel paket bergerak (*flowing data packets*).
    - Perangkat online memiliki cincin aura berdenyut (*pulsing ripple*).
@@ -304,4 +304,4 @@ Bagi Administrator IT atau DevOps yang ingin memasang dan mengompilasi sistem De
 👉 **[PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md](PANDUAN_BUILD_DAN_DEPLOY_PRODUKSI.md)**
 
 ---
-*DevWatch — Solusi Pemantauan Perangkat Jaringan Andal & Tangguh.*
+*DevWatch - Solusi Pemantauan Perangkat Jaringan Andal & Tangguh.*

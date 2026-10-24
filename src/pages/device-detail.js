@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — device-detail.js
+// DevWatch - device-detail.js
 // Halaman detail 1 device: status, uptime, riwayat insiden, maintenance
 // ================================================================
 
@@ -122,7 +122,7 @@ export function renderDeviceDetail(params = {}) {
           </div>
           <div class="device-detail-stat">
             <div class="device-detail-stat-val" style="color:var(--color-heading);">
-              ${device.status === 'online' ? `${device.responseTime} ms` : '—'}
+              ${device.status === 'online' ? `${device.responseTime} ms` : '-'}
             </div>
             <div class="device-detail-stat-label">Response Time</div>
           </div>
@@ -287,9 +287,9 @@ export function renderDeviceDetail(params = {}) {
             ${[
               ['Jenis', device.jenis === 'cctv' ? '📷 CCTV Hikvision' : (device.jenis || '💻 Komputer Kantor')],
               ['IP Address', `<span class="ip-text" title="${device.ip}">${cleanDeviceIp(device.ip)}</span>`],
-              ['Hostname', device.hostname || '—'],
+              ['Hostname', device.hostname || '-'],
               ['Metode Cek', device.metode.toUpperCase()],
-              ['Port', device.port || '—'],
+              ['Port', device.port || '-'],
               ['Interval', `${device.interval} detik`],
               ['Grup', device.grup],
               ['Lokasi', device.lokasi],
@@ -1247,7 +1247,7 @@ export function initDeviceDetailEvents(navigate) {
             <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; color:var(--color-text);">
               <div><span style="color:var(--color-muted);">Model:</span> <b>${m.model || 'Hikvision CCTV'}</b></div>
               <div><span style="color:var(--color-muted);">Firmware:</span> <b>${m.firmwareVersion || 'ISAPI v2.0'}</b></div>
-              <div><span style="color:var(--color-muted);">Serial:</span> <b>${m.serialNumber || '—'}</b></div>
+              <div><span style="color:var(--color-muted);">Serial:</span> <b>${m.serialNumber || '-'}</b></div>
               <div><span style="color:var(--color-muted);">Status ISAPI:</span> <span class="badge badge-online">Aktif</span></div>
             </div>
           `;

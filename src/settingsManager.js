@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — settingsManager.js
+// DevWatch - settingsManager.js
 // Pengelola pengaturan sistem dinamis (Nama Aplikasi, Zona Waktu, dsb)
 // ================================================================
 
@@ -56,7 +56,7 @@ export function applySystemSettings(newSettings = {}) {
   // 1. Terapkan bahasa ke i18n
   setLanguage(lang);
 
-  // 2. Terapkan tema sistem — JANGAN override preferensi user dari localStorage
+  // 2. Terapkan tema sistem - JANGAN override preferensi user dari localStorage
   // Jika user sudah pernah set tema (ada key di localStorage), hormati pilihan user
   // Hanya apply tema dari DB jika user belum pernah set preferensi sendiri
   const hasUserThemePref = !!localStorage.getItem('devwatch_theme');
@@ -66,7 +66,7 @@ export function applySystemSettings(newSettings = {}) {
 
   // 3. Ubah document.title browser
   if (typeof document !== 'undefined') {
-    document.title = `${appName} — Device Monitoring System`;
+    document.title = `${appName} - Device Monitoring System`;
 
     // 3. Ubah semua logo dan judul di antarmuka (Sidebar, Login, Footer)
     document.querySelectorAll('.sidebar-logo-name').forEach((el) => {
@@ -135,7 +135,7 @@ export function applySystemSettings(newSettings = {}) {
 }
 
 export function formatDateWithTz(dateInput, options = {}) {
-  if (!dateInput) return '—';
+  if (!dateInput) return '-';
   try {
     let str = String(dateInput).trim();
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(str)) {

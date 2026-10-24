@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — charts.js
+// DevWatch - charts.js
 // Chart.js wrappers: timeline 24h, uptime bar, weekly trend, incidents
 // Mendukung responsivitas tema otomatis (Dark / Soft Light Mode)
 // ================================================================
@@ -137,7 +137,7 @@ export function renderTimeline24h(canvasId, data) {
               if (d.status === 'online') {
                 const rt = d.responseTime || 1;
                 const jitterRating = rt <= 10 ? '⚡ Respons Sangat Cepat' : (rt <= 50 ? '📶 Normal' : '⚠️ Latensi Tinggi');
-                return [`🟢 Online — Latensi: ${rt} ms`, `📊 Kualitas: ${jitterRating}`];
+                return [`🟢 Online - Latensi: ${rt} ms`, `📊 Kualitas: ${jitterRating}`];
               }
               if (d.status === 'maintenance') {
                 return '🟡 Perangkat Sedang Maintenance';

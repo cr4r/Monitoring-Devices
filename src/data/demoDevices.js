@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — demoDevices.js
+// DevWatch - demoDevices.js
 // Kumpulan data dummy perangkat khusus untuk Mode Preview / Demo.
 // Tidak mengotori database riil SQLite.
 // ================================================================

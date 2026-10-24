@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — pdfService.js
+// DevWatch - pdfService.js
 // Pembuatan berkas PDF resmi untuk Laporan Sistem & Log Terfilter
 // Desain Modern, Berstandar Eksekutif & Canggih Berbasis jsPDF
 // ================================================================
@@ -145,7 +145,7 @@ function drawFooters(doc) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
-    doc.text(`${appName} Enterprise v2.4 — Laporan Kinerja Sistem Otomatis Berenkripsi`, 14, 288);
+    doc.text(`${appName} Enterprise v2.4 - Laporan Kinerja Sistem Otomatis Berenkripsi`, 14, 288);
     doc.text(`Halaman ${i} dari ${totalPages}`, 196, 288, { align: 'right' });
   }
 }
@@ -444,8 +444,8 @@ function renderIncidentTable(doc, startY, incidents) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.text(formatDateWithTz(inc.waktu_mulai || inc.mulai), 62, y + 3.4);
-    doc.text(inc.waktu_selesai ? formatDateWithTz(inc.waktu_selesai) : '— (Berjalan)', 98, y + 3.4);
-    doc.text(inc.durasi_menit ? `${inc.durasi_menit} mnt` : '—', 134, y + 3.4);
+    doc.text(inc.waktu_selesai ? formatDateWithTz(inc.waktu_selesai) : '- (Berjalan)', 98, y + 3.4);
+    doc.text(inc.durasi_menit ? `${inc.durasi_menit} mnt` : '-', 134, y + 3.4);
 
     // Status pill
     if (isAktif) {
@@ -670,7 +670,7 @@ export async function exportLogsPdf(activeTab, logs, filters = {}) {
       doc.setTextColor(71, 85, 105);
       doc.text(l.aksi || '', 122, y + 3.2);
       doc.setTextColor(100, 116, 139);
-      doc.text(l.ip || l.ip_akses || '—', 152, y + 3.2);
+      doc.text(l.ip || l.ip_akses || '-', 152, y + 3.2);
       doc.setTextColor(51, 65, 85);
       doc.text(doc.splitTextToSize(l.pesan || l.detail || '', 90)[0] || '', 190, y + 3.2);
     } else {
@@ -681,7 +681,7 @@ export async function exportLogsPdf(activeTab, logs, filters = {}) {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(71, 85, 105);
       doc.text(l.aksi || '', 108, y + 3.2);
-      doc.text(l.device || l.device_nama || '—', 148, y + 3.2);
+      doc.text(l.device || l.device_nama || '-', 148, y + 3.2);
       doc.setTextColor(51, 65, 85);
       doc.text(doc.splitTextToSize(l.detail || '', 85)[0] || '', 192, y + 3.2);
     }
@@ -698,7 +698,7 @@ export async function exportLogsPdf(activeTab, logs, filters = {}) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
-    doc.text(`${appName} Enterprise v2.4 — Log Audit Resmi Otomatis Berenkripsi`, 14, 204);
+    doc.text(`${appName} Enterprise v2.4 - Log Audit Resmi Otomatis Berenkripsi`, 14, 204);
     doc.text(`Halaman ${i} dari ${totalPages}`, 283, 204, { align: 'right' });
   }
 

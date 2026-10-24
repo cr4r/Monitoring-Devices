@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — install-service.js
+// DevWatch - install-service.js
 // Script instalasi background Windows Service untuk DevWatch
 // Jalankan via: npm run service:install (di terminal Administrator)
 // ================================================================
@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const serverScript = path.resolve(__dirname, '../index.js');
 
 console.log('========================================================');
-console.log('📡 DevWatch — Pemasangan Windows Service');
+console.log('📡 DevWatch - Pemasangan Windows Service');
 console.log('========================================================');
 console.log(`Lokasi Server Script: ${serverScript}`);
 
@@ -21,7 +21,7 @@ try {
 
   const svc = new Service({
     name: 'DevWatch Device Monitor',
-    description: 'DevWatch — Sistem Monitoring Jaringan & CCTV Kantor (Windows Service)',
+    description: 'DevWatch - Sistem Monitoring Jaringan & CCTV Kantor (Windows Service)',
     script: serverScript,
     nodeOptions: ['--harmony'],
     env: [

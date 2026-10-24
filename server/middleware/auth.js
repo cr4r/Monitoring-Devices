@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — auth.js (Middleware)
+// DevWatch - auth.js (Middleware)
 // Verifikasi token JWT & otorisasi berdasarkan peran (RBAC)
 // ================================================================
 

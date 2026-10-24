@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — main.js
+// DevWatch - main.js
 // Entry point: session management, router, page rendering
 // ================================================================
 
@@ -125,7 +125,7 @@ export async function validateServerSession() {
       }
     }
   } catch {
-    // Jaringan error — jangan logout, mungkin server sedang restart
+    // Jaringan error - jangan logout, mungkin server sedang restart
   }
 }
 
@@ -221,7 +221,7 @@ async function handleRoute() {
   // Mencegah user berada di halaman protected dengan sesi expired
   if (isLoggedIn && route !== 'login') {
     await validateServerSession();
-    // Cek ulang setelah validasi — mungkin sudah di-logout oleh validateServerSession
+    // Cek ulang setelah validasi - mungkin sudah di-logout oleh validateServerSession
     if (!getSession()) return;
   }
 
@@ -272,7 +272,7 @@ window.addEventListener('devwatch:session_change', (e) => {
     // User logged out
     stopSessionWatcher();
   } else {
-    // User logged in — mulai periodic session check tiap 5 menit
+    // User logged in - mulai periodic session check tiap 5 menit
     startSessionWatcher(5);
   }
 });

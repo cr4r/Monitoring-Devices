@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch / MonDev — scripts/start-dev.js
+// DevWatch / MonDev - scripts/start-dev.js
 // Menjalankan server backend (port 3000) dan Vite frontend (port 5173) bersamaan
 // ================================================================
 

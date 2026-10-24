@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — routes/auth.js
+// DevWatch - routes/auth.js
 // Autentikasi pengguna, pembuatan token JWT, dan penanganan sesi
 // ================================================================
 

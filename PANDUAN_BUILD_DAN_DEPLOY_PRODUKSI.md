@@ -201,7 +201,7 @@ Sangat ideal untuk server berbasis Windows Server / Windows 10/11 di lingkungan 
    npm run service:uninstall
    ```
 
-#### Metode 2: Menggunakan NSSM (Non-Sucking Service Manager) — *Paling Stabil & Populer*
+#### Metode 2: Menggunakan NSSM (Non-Sucking Service Manager) - *Paling Stabil & Populer*
 Jika `node-windows` mengalami kendala hak akses administrator, gunakan NSSM:
 1. Unduh `nssm.exe` dari situs resmi [nssm.cc](https://nssm.cc/download) dan tempatkan di folder `C:\Windows\System32` (atau folder aplikasi).
 2. Buka **PowerShell Administrator**, lalu jalankan:

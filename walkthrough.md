@@ -1,4 +1,4 @@
-# Walkthrough — Audit & Pemenuhan Milestone Fase 1 s/d Fase 4 PRD
+# Walkthrough - Audit & Pemenuhan Milestone Fase 1 s/d Fase 4 PRD
 
 Dokumentasi audit dan pemenuhan seluruh kriteria milestone pengembangan **Fase 1 (Core Foundation)**, **Fase 2 (Fitur Utama)**, **Fase 3 (Protokol Lanjutan)**, dan **Fase 4 (Laporan & Analytics)** pada dokumen [PRD_Device_Monitoring.md](file:///d:/Projek/WEB/Monitoring-Devices/PRD_Device_Monitoring.md):
 
@@ -6,7 +6,7 @@ Dokumentasi audit dan pemenuhan seluruh kriteria milestone pengembangan **Fase 1
 
 ## 1. Status Pemenuhan Milestone PRD
 
-### A. Fase 1 — Core Foundation (Minggu 1–3) — `100% TERPENUHI`
+### A. Fase 1 - Core Foundation (Minggu 1–3) - `100% TERPENUHI`
 - [x] **Setup project Node.js + Express + SQLite**: Server berjalan di [server/index.js](file:///d:/Projek/WEB/Monitoring-Devices/server/index.js) dengan SQLite bawaan Node `node:sqlite` di [server/database/db.js](file:///d:/Projek/WEB/Monitoring-Devices/server/database/db.js).
 - [x] **Setup Windows Service (node-windows / nssm)**: Skrip instalasi service Windows otomatis di [server/scripts/install-service.js](file:///d:/Projek/WEB/Monitoring-Devices/server/scripts/install-service.js) dan [uninstall-service.js](file:///d:/Projek/WEB/Monitoring-Devices/server/scripts/uninstall-service.js).
 - [x] **Sistem autentikasi (login, sesi, role)**: Autentikasi JWT [server/middleware/auth.js](file:///d:/Projek/WEB/Monitoring-Devices/server/middleware/auth.js), kontrol sesi di [src/main.js](file:///d:/Projek/WEB/Monitoring-Devices/src/main.js), serta 3 peran pengguna (`admin`, `teknisi`, `viewer`).
@@ -16,7 +16,7 @@ Dokumentasi audit dan pemenuhan seluruh kriteria milestone pengembangan **Fase 1
 
 ---
 
-### B. Fase 2 — Fitur Utama (Minggu 4–6) — `100% TERPENUHI`
+### B. Fase 2 - Fitur Utama (Minggu 4–6) - `100% TERPENUHI`
 - [x] **CRUD manajemen device di CMS**: Tambah, edit, hapus, multiple delete, dan duplikat device lengkap di [src/pages/devices.js](file:///d:/Projek/WEB/Monitoring-Devices/src/pages/devices.js).
 - [x] **Sistem log lengkap (3 jenis log)**: Log status, aktivitas user, dan konfigurasi tercatat rapi di [server/routes/logs.js](file:///d:/Projek/WEB/Monitoring-Devices/server/routes/logs.js) dan [src/pages/logs.js](file:///d:/Projek/WEB/Monitoring-Devices/src/pages/logs.js).
 - [x] **Push notification browser**: Modul [src/services/browserNotification.js](file:///d:/Projek/WEB/Monitoring-Devices/src/services/browserNotification.js) meminta izin browser dan mengirim push alert saat device offline.
@@ -25,7 +25,7 @@ Dokumentasi audit dan pemenuhan seluruh kriteria milestone pengembangan **Fase 1
 
 ---
 
-### C. Fase 3 — Protokol Lanjutan (Minggu 7–8) — `100% TERPENUHI`
+### C. Fase 3 - Protokol Lanjutan (Minggu 7–8) - `100% TERPENUHI`
 - [x] **Integrasi ISAPI Hikvision**:
   - Diterapkan fungsi `checkIsapiDevice` dan `getIsapiDeviceInfo` pada [server/services/hikvisionService.js](file:///d:/Projek/WEB/Monitoring-Devices/server/services/hikvisionService.js) dengan dukungan otentikasi Basic/Digest dan ekstraksi XML (`model`, `firmwareVersion`, `serialNumber`, `macAddress`).
   - Disediakan endpoint `GET /api/devices/:id/isapi` di [server/routes/devices.js](file:///d:/Projek/WEB/Monitoring-Devices/server/routes/devices.js).
@@ -40,7 +40,7 @@ Dokumentasi audit dan pemenuhan seluruh kriteria milestone pengembangan **Fase 1
 
 ---
 
-### D. Fase 4 — Laporan & Analytics (Minggu 9–10) — `100% TERPENUHI`
+### D. Fase 4 - Laporan & Analytics (Minggu 9–10) - `100% TERPENUHI`
 - [x] **Uptime Score & SLA Tracker**: Formula perhitungan riil di [server/services/reportService.js](file:///d:/Projek/WEB/Monitoring-Devices/server/services/reportService.js) dan UI di [src/pages/reports.js](file:///d:/Projek/WEB/Monitoring-Devices/src/pages/reports.js).
 - [x] **Laporan mingguan otomatis**: Tabel `weekly_reports` pada basis data SQLite dan snapshot otomatis.
 - [x] **Export PDF (laporan + log)**: Modul ekspor PDF riil [src/services/pdfService.js](file:///d:/Projek/WEB/Monitoring-Devices/src/services/pdfService.js).
@@ -48,7 +48,7 @@ Dokumentasi audit dan pemenuhan seluruh kriteria milestone pengembangan **Fase 1
 
 ---
 
-### E. Fase 5 — Polish & Pengujian (Minggu 11–12) — `100% TERPENUHI`
+### E. Fase 5 - Polish & Pengujian (Minggu 11–12) - `100% TERPENUHI`
 - [x] **Network topology map visual**:
   - Engine canvas hierarkis di [src/pages/dashboard.js](file:///d:/Projek/WEB/Monitoring-Devices/src/pages/dashboard.js): Gateway Router (`192.168.1.1`) ➔ Core Switch L3 (`192.168.1.2`) ➔ Switch Distribusi Grup ➔ Host & CCTV.
   - Animasi partikel paket data real-time, denyut aura pada device online, dan garis merah putus-putus pada device offline.

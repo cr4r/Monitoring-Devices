@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — uninstall-service.js
+// DevWatch - uninstall-service.js
 // Script pencopotan Windows Service
 // ================================================================
 

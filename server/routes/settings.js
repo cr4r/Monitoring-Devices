@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — routes/settings.js
+// DevWatch - routes/settings.js
 // Pengaturan sistem: Umum, Monitoring, Notifikasi, Keamanan, Backup, Laporan
 // ================================================================
 
@@ -28,13 +28,13 @@ function getSystemSettingsObject() {
   return { ...categorized, ...flat, _categories: categorized };
 }
 
-// GET /api/settings — Mengambil seluruh konfigurasi
+// GET /api/settings - Mengambil seluruh konfigurasi
 router.get('/', authenticateToken, (req, res) => {
   const settings = getSystemSettingsObject();
   res.json({ success: true, data: settings });
 });
 
-// PUT /api/settings — Menyimpan pembaruan konfigurasi (Admin Only)
+// PUT /api/settings - Menyimpan pembaruan konfigurasi (Admin Only)
 router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
   const updates = req.body;
 
@@ -82,7 +82,7 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
   });
 });
 
-// POST /api/settings/backup — Membuat salinan cadangan database SQLite atau Log JSON
+// POST /api/settings/backup - Membuat salinan cadangan database SQLite atau Log JSON
 router.post('/backup', authenticateToken, requireRole(['admin']), (req, res) => {
   try {
     const backupType = (req.query.type || req.body?.type || 'full').toLowerCase();
@@ -209,7 +209,7 @@ router.post('/backup', authenticateToken, requireRole(['admin']), (req, res) => 
   }
 });
 
-// GET /api/settings/backup/download — Unduh berkas cadangan langsung
+// GET /api/settings/backup/download - Unduh berkas cadangan langsung
 router.get('/backup/download', authenticateToken, requireRole(['admin']), (req, res) => {
   try {
     const backupDir = path.resolve(path.dirname(config.dbPath), 'backups');
@@ -241,7 +241,7 @@ router.get('/backup/download', authenticateToken, requireRole(['admin']), (req, 
   }
 });
 
-// POST /api/settings/restore — Memulihkan data sistem dari berkas cadangan (JSON / SQLite)
+// POST /api/settings/restore - Memulihkan data sistem dari berkas cadangan (JSON / SQLite)
 router.post('/restore', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { backupData, fileBase64, filename } = req.body;
@@ -570,7 +570,7 @@ router.post('/restore', authenticateToken, requireRole(['admin']), async (req, r
   }
 });
 
-// GET /api/settings/logs-stat — Ringkasan jumlah dan tanggal log sistem
+// GET /api/settings/logs-stat - Ringkasan jumlah dan tanggal log sistem
 router.get('/logs-stat', authenticateToken, (req, res) => {
   try {
     const status = queryOne('SELECT count(*) as count, min(waktu) as oldest, max(waktu) as newest FROM device_status_logs') || {};
@@ -601,7 +601,7 @@ router.get('/logs-stat', authenticateToken, (req, res) => {
   }
 });
 
-// GET /api/settings/clean-logs/preview — Pratinjau jumlah baris log yang akan terhapus berdasarkan kriteria
+// GET /api/settings/clean-logs/preview - Pratinjau jumlah baris log yang akan terhapus berdasarkan kriteria
 router.get('/clean-logs/preview', authenticateToken, (req, res) => {
   try {
     const rawDays = req.query.days !== undefined ? req.query.days : req.query.retentionDays;
@@ -642,7 +642,7 @@ router.get('/clean-logs/preview', authenticateToken, (req, res) => {
   }
 });
 
-// POST /api/settings/clean-logs — Pembersihan riwayat log kadaluarsa sesuai batas retensi
+// POST /api/settings/clean-logs - Pembersihan riwayat log kadaluarsa sesuai batas retensi
 router.post('/clean-logs', authenticateToken, requireRole(['admin']), (req, res) => {
   try {
     const settings = getSystemSettingsObject();

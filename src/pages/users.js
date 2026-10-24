@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — users.js
+// DevWatch - users.js
 // Manajemen pengguna: CRUD, role, avatar upload/kompresi, Admin only
 // ================================================================
 
@@ -174,7 +174,7 @@ function renderUsersTable(search = '', filterRole = 'all', filterStatus = 'all')
         <td style="font-size:0.78rem; color:var(--color-muted);">
           ${formatDateWithTz(u.lastLogin)}
         </td>
-        <td><span class="ip-text">${u.ipAkses || '—'}</span></td>
+        <td><span class="ip-text">${u.ipAkses || '-'}</span></td>
         <td>
           <div class="action-group">
             <button class="btn btn-ghost btn-icon btn-sm tooltip" data-tooltip="Edit Profil & Foto" onclick="window.editUserBtn(${u.id})">✏️</button>

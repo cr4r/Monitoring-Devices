@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — mock-logs.js
+// DevWatch - mock-logs.js
 // Log sistem: status device, aktivitas user, perubahan konfigurasi
 // ================================================================
 
@@ -205,7 +205,7 @@ export const logAktivitas = [
     user: 'Budi Santoso',
     email: 'teknisi@kantor.com',
     aksi: 'Ping Manual',
-    detail: 'PC Server File — response 1 ms',
+    detail: 'PC Server File - response 1 ms',
     ip: '192.168.1.8',
     tipe: 'info',
     pesan: 'Budi Santoso melakukan ping manual ke PC Server File (192.168.1.10). Hasilnya: 1 ms (Online).',

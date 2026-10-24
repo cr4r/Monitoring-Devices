@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-# MonDev — Skrip Peluncur Proyek Linux / macOS (start.sh)
+# MonDev - Skrip Peluncur Proyek Linux / macOS (start.sh)
 # ================================================================
 
 set -e

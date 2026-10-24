@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — settings.js
+// DevWatch - settings.js
 // Pengaturan sistem: 6 kategori, form save dengan SweetAlert & database sync
 // ================================================================
 
@@ -140,10 +140,10 @@ function renderUmum() {
         </div>
         <div class="settings-item-control">
           <select class="form-control" id="set-timezone">
-            <option value="Asia/Jakarta" ${tz === 'Asia/Jakarta' ? 'selected' : ''}>WIB — Asia/Jakarta (UTC+7)</option>
-            <option value="Asia/Makassar" ${tz === 'Asia/Makassar' ? 'selected' : ''}>WITA — Asia/Makassar (UTC+8)</option>
-            <option value="Asia/Jayapura" ${tz === 'Asia/Jayapura' ? 'selected' : ''}>WIT — Asia/Jayapura (UTC+9)</option>
-            <option value="UTC" ${tz === 'UTC' ? 'selected' : ''}>UTC — Coordinated Universal Time (UTC+0)</option>
+            <option value="Asia/Jakarta" ${tz === 'Asia/Jakarta' ? 'selected' : ''}>WIB - Asia/Jakarta (UTC+7)</option>
+            <option value="Asia/Makassar" ${tz === 'Asia/Makassar' ? 'selected' : ''}>WITA - Asia/Makassar (UTC+8)</option>
+            <option value="Asia/Jayapura" ${tz === 'Asia/Jayapura' ? 'selected' : ''}>WIT - Asia/Jayapura (UTC+9)</option>
+            <option value="UTC" ${tz === 'UTC' ? 'selected' : ''}>UTC - Coordinated Universal Time (UTC+0)</option>
           </select>
         </div>
       </div>

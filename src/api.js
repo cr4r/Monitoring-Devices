@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — api.js
+// DevWatch - api.js
 // Client API terpusat untuk komunikasi dengan Backend Express & WebSocket
 // ================================================================
 
@@ -63,7 +63,7 @@ export async function request(endpoint, options = {}) {
     if (_isCurrentSessionPreview()) {
       return { success: false, message: 'Preview session active' };
     }
-    // Sesi kedaluwarsa — bersihkan sesi lokal & arahkan ke login
+    // Sesi kedaluwarsa - bersihkan sesi lokal & arahkan ke login
     _clearLocalSession();
     if (!window.location.hash.includes('login')) {
       window.location.hash = '#/login';

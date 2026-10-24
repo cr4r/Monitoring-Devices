@@ -1,5 +1,5 @@
 // ================================================================
-// MonDev — seed.js
+// MonDev - seed.js
 // Mengisi data awal database (Akun demo, perangkat, pengaturan, log)
 // ================================================================
 

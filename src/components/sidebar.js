@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — sidebar.js
+// DevWatch - sidebar.js
 // Komponen sidebar navigasi dengan role-based menu & i18n
 // ================================================================
 

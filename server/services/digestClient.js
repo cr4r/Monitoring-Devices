@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — digestClient.js
+// DevWatch - digestClient.js
 // Client HTTP dengan Digest Authentication (RFC 2617 & RFC 7616)
 // Mendukung caching nonce & realm untuk efisiensi streaming CCTV
 // ================================================================

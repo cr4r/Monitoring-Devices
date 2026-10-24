@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — reports.js
+// DevWatch - reports.js
 // Laporan: mingguan (arsip & snapshot otomatis), uptime/SLA, insiden,
 // dan pembuatan berkas PDF & CSV riil (Full SQLite Data)
 // ================================================================
@@ -660,7 +660,7 @@ function renderInsidenList(filter) {
                   ${inc.waktu_selesai ? formatDateWithTz(inc.waktu_selesai) : '<span style="color:#ef4444; font-weight:700;">Masih Berlangsung</span>'}
                 </td>
                 <td>
-                  ${inc.durasi_menit ? `<span class="chip">⏱️ ${inc.durasi_menit} mnt</span>` : (isAktif ? '<span style="color:var(--color-offline); font-weight:700; font-size:0.8rem;">Aktif</span>' : '—')}
+                  ${inc.durasi_menit ? `<span class="chip">⏱️ ${inc.durasi_menit} mnt</span>` : (isAktif ? '<span style="color:var(--color-offline); font-weight:700; font-size:0.8rem;">Aktif</span>' : '-')}
                 </td>
                 <td>
                   <span class="badge ${isAktif ? 'badge-offline' : 'badge-neutral'}">

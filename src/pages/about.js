@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — about.js
+// DevWatch - about.js
 // Halaman tentang aplikasi & Pusat Buku Panduan Interaktif Lengkap
 // ================================================================
 import Swal from 'sweetalert2';
@@ -92,7 +92,7 @@ export function renderAbout() {
               MonDev adalah perangkat lunak internal untuk pemantauan infrastruktur kantor. Seluruh hak cipta dilindungi.
             </p>
             <p style="font-size:0.78rem; color:var(--color-muted); margin-top:6px;">
-              © 2026 MonDev Network System — Dibuat oleh Fatur
+              © 2026 MonDev Network System - Dibuat oleh Fatur
             </p>
           </div>
         </div>

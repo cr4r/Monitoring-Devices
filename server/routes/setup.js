@@ -1,5 +1,5 @@
 // ================================================================
-// MonDev — routes/setup.js
+// MonDev - routes/setup.js
 // Setup awal pertama kali (First-Run Setup Wizard) & Anti-Bypass
 // ================================================================
 

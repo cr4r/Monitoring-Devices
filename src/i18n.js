@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — i18n.js
+// DevWatch - i18n.js
 // Sistem lokalisasi bahasa antarmuka (Bahasa Indonesia & English)
 // ================================================================
 

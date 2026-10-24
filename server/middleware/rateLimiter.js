@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — rateLimiter.js
+// DevWatch - rateLimiter.js
 // Proteksi brute force login: 5x gagal -> lockout 15 menit
 // ================================================================
 

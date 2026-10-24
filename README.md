@@ -1,4 +1,4 @@
-# 📡 MonDev — Sistem Monitoring Device & Jaringan
+# 📡 MonDev - Sistem Monitoring Device & Jaringan
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com)
 [![Milestones](https://img.shields.io/badge/PRD_Milestones-Fase_1--5_Complete_100%25-brightgreen.svg)](#-status-pencapaian-milestone-prd)
@@ -10,7 +10,7 @@
 
 **MonDev** adalah aplikasi web monitoring jaringan yang dirancang khusus untuk memantau status operasional perangkat kantor (seperti **Komputer/Server Kerja** dan **Kamera CCTV HIKVision**) secara langsung (*real-time*), baik di jaringan lokal (LAN) maupun jarak jauh (WAN/Internet).
 
-Aplikasi ini mengusung antarmuka modern bertema gelap (*Dark Glassmorphism*) yang nyaman di mata, responsif di berbagai ukuran layar, serta menyajikan informasi teknis dalam bahasa Indonesia yang manusiawi dan mudah dipahami oleh siapa saja — mulai dari tim IT, teknisi lapangan, hingga staf non-teknis.
+Aplikasi ini mengusung antarmuka modern bertema gelap (*Dark Glassmorphism*) yang nyaman di mata, responsif di berbagai ukuran layar, serta menyajikan informasi teknis dalam bahasa Indonesia yang manusiawi dan mudah dipahami oleh siapa saja - mulai dari tim IT, teknisi lapangan, hingga staf non-teknis.
 
 ---
 
@@ -38,11 +38,11 @@ Seluruh 5 fase pengembangan sesuai dokumen [PRD_Device_Monitoring.md](PRD_Device
 
 | Fase Milestone | Status | Fitur & Implementasi Utama |
 |---|:---:|---|
-| **Fase 1 — Core Foundation** | `[x]` Selesai | Node.js, Express 5, SQLite (`node:sqlite`), Worker Ping ICMP native, Autentikasi JWT, Windows Service. |
-| **Fase 2 — Fitur Utama** | `[x]` Selesai | CRUD Device, 3 Jenis Log (Status, Aktivitas, Konfigurasi), Push Notification, Mode Maintenance, Multiple Delete. |
-| **Fase 3 — Protokol Lanjutan** | `[x]` Selesai | ISAPI Hikvision Digest Auth, RTSP Stream Port 554, ONVIF Probe, Import Massal CSV & Download Template. |
-| **Fase 4 — Laporan & Analytics** | `[x]` Selesai | Evaluasi Uptime/SLA Tracker riil, Snapshot Mingguan Otomatis, Ekspor Laporan Resmi PDF, Timeline 24 Jam. |
-| **Fase 5 — Polish & Pengujian** | `[x]` Selesai | Peta Topologi Hierarki Canvas, Backup Database WAL & Download `.sqlite`, Vacuum Log, Uji Beban 250 Perangkat, Dual-Mode HTTPS (Native + Caddy/Nginx). |
+| **Fase 1 - Core Foundation** | `[x]` Selesai | Node.js, Express 5, SQLite (`node:sqlite`), Worker Ping ICMP native, Autentikasi JWT, Windows Service. |
+| **Fase 2 - Fitur Utama** | `[x]` Selesai | CRUD Device, 3 Jenis Log (Status, Aktivitas, Konfigurasi), Push Notification, Mode Maintenance, Multiple Delete. |
+| **Fase 3 - Protokol Lanjutan** | `[x]` Selesai | ISAPI Hikvision Digest Auth, RTSP Stream Port 554, ONVIF Probe, Import Massal CSV & Download Template. |
+| **Fase 4 - Laporan & Analytics** | `[x]` Selesai | Evaluasi Uptime/SLA Tracker riil, Snapshot Mingguan Otomatis, Ekspor Laporan Resmi PDF, Timeline 24 Jam. |
+| **Fase 5 - Polish & Pengujian** | `[x]` Selesai | Peta Topologi Hierarki Canvas, Backup Database WAL & Download `.sqlite`, Vacuum Log, Uji Beban 250 Perangkat, Dual-Mode HTTPS (Native + Caddy/Nginx). |
 
 > 📘 **Buku Panduan Operasional Lengkap:** Silakan pelajari [DOKUMENTASI_PENGGUNAAN.md](DOKUMENTASI_PENGGUNAAN.md) untuk panduan operasional IT harian, SOP perbaikan, dan pemeliharaan server.
 
@@ -196,8 +196,8 @@ Buka Halaman "Log Sistem"
          │
          ▼
 Daftar Log Terfilter Menampilkan Kronologi Lengkap:
-  • "Pukul 07:32 — CCTV Gudang Barang tidak dapat dihubungi via ISAPI. Status berubah menjadi Offline."
-  • "Pukul 08:15 — CCTV Gudang Barang kembali normal setelah penanganan teknisi (Padam 43 menit)."
+  • "Pukul 07:32 - CCTV Gudang Barang tidak dapat dihubungi via ISAPI. Status berubah menjadi Offline."
+  • "Pukul 08:15 - CCTV Gudang Barang kembali normal setelah penanganan teknisi (Padam 43 menit)."
          │
          ▼
 Klik Tombol "Export PDF" untuk Lampiran Laporan Resmi
@@ -792,4 +792,4 @@ Seluruh variabel warna didefinisikan secara rapi di file [src/styles/base.css](f
 
 ---
 
-*MonDev — Memastikan seluruh infrastruktur teknologi informasi kantor Anda tetap terhubung dan terpantau dengan tenang.* 🚀
+*MonDev - Memastikan seluruh infrastruktur teknologi informasi kantor Anda tetap terhubung dan terpantau dengan tenang.* 🚀

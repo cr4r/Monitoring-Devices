@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — routes/users.js
+// DevWatch - routes/users.js
 // Manajemen akun pengguna & hak akses (Admin Only)
 // ================================================================
 
@@ -10,7 +10,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// PUT /api/users/profile/avatar — Update foto profil sendiri (Dapat diakses semua pengguna login)
+// PUT /api/users/profile/avatar - Update foto profil sendiri (Dapat diakses semua pengguna login)
 router.put('/profile/avatar', authenticateToken, (req, res) => {
   const { avatar } = req.body;
   if (!avatar || typeof avatar !== 'string') {
@@ -42,7 +42,7 @@ router.put('/profile/avatar', authenticateToken, (req, res) => {
 // Hanya role admin yang bisa mengakses seluruh route manajemen di bawah ini
 router.use(authenticateToken, requireRole(['admin']));
 
-// GET /api/users — Daftar seluruh pengguna
+// GET /api/users - Daftar seluruh pengguna
 router.get('/', (req, res) => {
   const users = query(`
     SELECT id, nama, username, email, role, avatar, status, last_login, created_at
@@ -52,7 +52,7 @@ router.get('/', (req, res) => {
   res.json({ success: true, data: users });
 });
 
-// POST /api/users — Tambah akun pengguna baru
+// POST /api/users - Tambah akun pengguna baru
 router.post('/', (req, res) => {
   const { nama, username, email, password, role = 'viewer', status = 'aktif', avatar: customAvatar } = req.body;
 
@@ -111,7 +111,7 @@ router.post('/', (req, res) => {
   });
 });
 
-// PUT /api/users/:id — Perbarui profil atau status pengguna
+// PUT /api/users/:id - Perbarui profil atau status pengguna
 router.put('/:id', (req, res) => {
   const targetId = parseInt(req.params.id, 10);
   const user = queryOne('SELECT * FROM users WHERE id = ?', [targetId]);
@@ -187,7 +187,7 @@ router.put('/:id', (req, res) => {
   });
 });
 
-// DELETE /api/users/:id — Hapus pengguna
+// DELETE /api/users/:id - Hapus pengguna
 router.delete('/:id', (req, res) => {
   const targetId = parseInt(req.params.id, 10);
 
@@ -217,7 +217,7 @@ router.delete('/:id', (req, res) => {
   });
 });
 
-// POST /api/users/:id/reset-password — Reset kata sandi staf
+// POST /api/users/:id/reset-password - Reset kata sandi staf
 router.post('/:id/reset-password', (req, res) => {
   const targetId = parseInt(req.params.id, 10);
   const user = queryOne('SELECT * FROM users WHERE id = ?', [targetId]);

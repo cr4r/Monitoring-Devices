@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — devices.js
+// DevWatch - devices.js
 // Manajemen device: tabel CRUD, import CSV, export CSV
 // ================================================================
 
@@ -217,7 +217,7 @@ function renderDevicesTable(canEdit, isAdmin) {
             <span style="font-size:1.15rem;">${getDeviceIcon(d.jenis)}</span>
             <div>
               <div style="font-weight:600; color:var(--color-heading);">${d.nama}</div>
-              <div style="font-size:0.75rem; color:var(--color-muted);">${d.hostname || '—'}</div>
+              <div style="font-size:0.75rem; color:var(--color-muted);">${d.hostname || '-'}</div>
             </div>
           </div>
         </td>
@@ -1142,11 +1142,11 @@ async function showImportCSV(onSave) {
           <div style="display:flex; flex-direction:column; gap:6px; font-size:0.8rem; color:#cbd5e1;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
               <input type="radio" name="csv-import-mode" value="replace" checked style="accent-color:#6366f1;" />
-              <span>🔄 <b>Perbarui yang Ada (Replace)</b> — Update informasi perangkat tanpa membuat duplikat</span>
+              <span>🔄 <b>Perbarui yang Ada (Replace)</b> - Update informasi perangkat tanpa membuat duplikat</span>
             </label>
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
               <input type="radio" name="csv-import-mode" value="duplicate" style="accent-color:#6366f1;" />
-              <span>📋 <b>Buat Duplikat Baru (Duplicate)</b> — Simpan sebagai entri terpisah</span>
+              <span>📋 <b>Buat Duplikat Baru (Duplicate)</b> - Simpan sebagai entri terpisah</span>
             </label>
           </div>
         </div>
@@ -1299,7 +1299,7 @@ function handleCSVPreview(file) {
                   <td><span class="chip">${d.jenis}</span></td>
                   <td><span class="chip">${d.metode}${d.port ? `:${d.port}` : ''}</span></td>
                   <td>
-                    ${d.terhubung_ke ? `<span style="font-size:0.75rem; color:var(--color-accent); font-weight:600;">↳ ${d.terhubung_ke}</span>` : '<span style="color:var(--color-muted);">— (Root)</span>'}
+                    ${d.terhubung_ke ? `<span style="font-size:0.75rem; color:var(--color-accent); font-weight:600;">↳ ${d.terhubung_ke}</span>` : '<span style="color:var(--color-muted);">- (Root)</span>'}
                   </td>
                   <td>${d.grup} / ${d.lokasi}</td>
                 </tr>

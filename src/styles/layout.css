@@ -1,5 +1,5 @@
 /* ================================================================
-   DevWatch — layout.css
+   DevWatch - layout.css
    Sidebar, topbar, main layout, responsive
    ================================================================ */
 
@@ -1004,6 +1004,103 @@ body.map-fullscreen-active .page-container {
 
   .map-search-box input {
     width: 100% !important;
+  }
+
+  /* ---- MOBILE FRIENDLY SIDEBAR FOOTER ---- */
+  .sidebar-footer {
+    padding: 10px 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-telemetry-card {
+    padding: 8px 10px;
+    gap: 5px;
+    border-radius: 8px;
+  }
+
+  .telemetry-title {
+    font-size: 0.65rem;
+    letter-spacing: 0.5px;
+  }
+
+  .telemetry-health-badge {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+  }
+
+  .telemetry-stats-row {
+    font-size: 0.72rem;
+  }
+
+  .sidebar-user-card {
+    padding: 8px 10px;
+    gap: 8px;
+    border-radius: 8px;
+  }
+
+  .sidebar-user-main {
+    padding: 2px 0;
+  }
+
+  .user-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 0.9rem;
+  }
+
+  .user-name {
+    font-size: 0.82rem;
+  }
+
+  .user-role-badge {
+    font-size: 0.62rem;
+  }
+
+  .sidebar-toolbelt {
+    gap: 6px;
+  }
+
+  .toolbelt-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .toolbelt-btn:active {
+    transform: scale(0.92);
+    background: rgba(99, 102, 241, 0.25);
+  }
+}
+
+@media (max-height: 680px) {
+  .sidebar-footer {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .sidebar-telemetry-card {
+    padding: 6px 8px;
+    gap: 3px;
+  }
+  .sidebar-telemetry-card .telemetry-progress-bg {
+    display: none;
+  }
+  .sidebar-user-card {
+    padding: 6px 8px;
+  }
+  .user-avatar {
+    width: 30px;
+    height: 30px;
+  }
+  .toolbelt-btn {
+    width: 32px;
+    height: 32px;
   }
 }
 

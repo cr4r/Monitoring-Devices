@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — server/index.js
+// DevWatch - server/index.js
 // Entry point Express server + WebSocket + Static SPA + Monitoring
 // ================================================================
 

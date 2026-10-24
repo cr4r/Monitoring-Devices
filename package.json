@@ -1,7 +1,7 @@
 {
   "name": "mondev",
   "version": "1.0.0",
-  "description": "MonDev — Sistem Monitoring Device Jaringan",
+  "description": "MonDev - Sistem Monitoring Device Jaringan",
   "author": "Fatur",
   "type": "module",
   "scripts": {

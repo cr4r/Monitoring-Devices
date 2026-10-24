@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — themeManager.js
+// DevWatch - themeManager.js
 // Pengelola tema sistem: Mode Gelap, Mode Terang Lembut, Mode Otomatis
 // ================================================================
 

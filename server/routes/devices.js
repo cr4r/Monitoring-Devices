@@ -1,5 +1,5 @@
 // ================================================================
-// DevWatch — routes/devices.js
+// DevWatch - routes/devices.js
 // CRUD Manajemen perangkat, uji ping langsung, mode pemeliharaan, CSV
 // ================================================================
 
@@ -30,7 +30,7 @@ function normalizeMetode(val) {
   return valid.includes(up) ? up : 'PING';
 }
 
-// POST /api/devices/test-connection — Uji koneksi IP langsung tanpa perlu simpan ke DB
+// POST /api/devices/test-connection - Uji koneksi IP langsung tanpa perlu simpan ke DB
 router.post('/test-connection', authenticateToken, async (req, res) => {
   const { ip, metode = 'PING', port } = req.body;
 
@@ -70,7 +70,7 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/devices — Daftar perangkat dengan filter & statistik
+// GET /api/devices - Daftar perangkat dengan filter & statistik
 router.get('/', authenticateToken, (req, res) => {
   const { status, jenis, grup, search } = req.query;
 
@@ -121,7 +121,7 @@ router.get('/', authenticateToken, (req, res) => {
   });
 });
 
-// GET /api/devices/:id — Detail 1 perangkat beserta metrik & riwayat
+// GET /api/devices/:id - Detail 1 perangkat beserta metrik & riwayat
 router.get('/:id', authenticateToken, (req, res) => {
   const device = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
 
@@ -209,7 +209,7 @@ router.get('/:id', authenticateToken, (req, res) => {
   });
 });
 
-// GET /api/devices/:id/isapi — Ambil detail metadata ISAPI Hikvision
+// GET /api/devices/:id/isapi - Ambil detail metadata ISAPI Hikvision
 router.get('/:id/isapi', authenticateToken, async (req, res) => {
   const device = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
   if (!device) {
@@ -220,7 +220,7 @@ router.get('/:id/isapi', authenticateToken, async (req, res) => {
   res.json({ success: true, data: isapiData });
 });
 
-// GET /api/devices/:id/rtsp-stream-info — Ambil profil streaming dan telemetri RTSP
+// GET /api/devices/:id/rtsp-stream-info - Ambil profil streaming dan telemetri RTSP
 router.get('/:id/rtsp-stream-info', authenticateToken, async (req, res) => {
   const device = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
   if (!device) {
@@ -378,7 +378,7 @@ async function fetchCameraSnapshot(device, subtype = 1) {
   };
 }
 
-// GET /api/devices/:id/live-frame — Ambil 1 frame JPEG langsung dari kamera CCTV riil
+// GET /api/devices/:id/live-frame - Ambil 1 frame JPEG langsung dari kamera CCTV riil
 router.get('/:id/live-frame', async (req, res) => {
   const device = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
   if (!device) {
@@ -409,7 +409,7 @@ router.get('/:id/live-frame', async (req, res) => {
   });
 });
 
-// GET /api/devices/:id/stream.mjpg — Stream MJPEG berkelanjutan dari kamera CCTV riil
+// GET /api/devices/:id/stream.mjpg - Stream MJPEG berkelanjutan dari kamera CCTV riil
 router.get('/:id/stream.mjpg', async (req, res) => {
   const device = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
   if (!device) {
@@ -466,7 +466,7 @@ router.get('/:id/stream.mjpg', async (req, res) => {
   }, Math.floor(1000 / fps));
 });
 
-// POST /api/devices — Tambah perangkat baru
+// POST /api/devices - Tambah perangkat baru
 router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res) => {
   const {
     nama,
@@ -544,7 +544,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'teknisi']), (req, res
   });
 });
 
-// PUT /api/devices/:id — Perbarui konfigurasi perangkat
+// PUT /api/devices/:id - Perbarui konfigurasi perangkat
 router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, res) => {
   const dev = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
 
@@ -619,7 +619,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'teknisi']), (req, r
   });
 });
 
-// POST /api/devices/bulk-delete — Hapus banyak perangkat sekaligus (Admin only)
+// POST /api/devices/bulk-delete - Hapus banyak perangkat sekaligus (Admin only)
 router.post('/bulk-delete', authenticateToken, requireRole(['admin']), (req, res) => {
   const { ids } = req.body;
 
@@ -655,7 +655,7 @@ router.post('/bulk-delete', authenticateToken, requireRole(['admin']), (req, res
   });
 });
 
-// DELETE /api/devices/:id — Hapus perangkat (Admin only)
+// DELETE /api/devices/:id - Hapus perangkat (Admin only)
 router.delete('/:id', authenticateToken, requireRole(['admin']), (req, res) => {
   const dev = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
 
@@ -679,7 +679,7 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), (req, res) => {
   });
 });
 
-// POST /api/devices/ping-all — Uji ping serentak seluruh perangkat aktif on-demand
+// POST /api/devices/ping-all - Uji ping serentak seluruh perangkat aktif on-demand
 router.post('/ping-all', authenticateToken, requireRole(['admin', 'teknisi']), async (req, res) => {
   const devices = query('SELECT * FROM devices WHERE is_active = 1');
 
@@ -773,7 +773,7 @@ router.post('/ping-all', authenticateToken, requireRole(['admin', 'teknisi']), a
   });
 });
 
-// POST /api/devices/:id/ping — Uji ping langsung on-demand
+// POST /api/devices/:id/ping - Uji ping langsung on-demand
 router.post('/:id/ping', authenticateToken, requireRole(['admin', 'teknisi']), async (req, res) => {
   const dev = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
 
@@ -818,7 +818,7 @@ router.post('/:id/ping', authenticateToken, requireRole(['admin', 'teknisi']), a
   });
 });
 
-// POST /api/devices/:id/maintenance — Aktifkan atau selesaikan Maintenance Mode
+// POST /api/devices/:id/maintenance - Aktifkan atau selesaikan Maintenance Mode
 router.post('/:id/maintenance', authenticateToken, requireRole(['admin', 'teknisi']), (req, res) => {
   const dev = queryOne('SELECT * FROM devices WHERE id = ?', [req.params.id]);
 
@@ -890,7 +890,7 @@ router.post('/:id/maintenance', authenticateToken, requireRole(['admin', 'teknis
   });
 });
 
-// POST /api/devices/import-csv — Impor massal perangkat dari CSV
+// POST /api/devices/import-csv - Impor massal perangkat dari CSV
 router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']), (req, res) => {
   const { devices = [], mode = 'replace' } = req.body;
 
@@ -1048,7 +1048,7 @@ router.post('/import-csv', authenticateToken, requireRole(['admin', 'teknisi']),
   });
 });
 
-// GET /api/devices/export-csv — Unduh data perangkat dalam format CSV lengkap
+// GET /api/devices/export-csv - Unduh data perangkat dalam format CSV lengkap
 router.get('/export/csv', authenticateToken, (req, res) => {
   const devices = query(`
     SELECT d.*, p.nama AS parent_nama, p.ip AS parent_ip
